@@ -26,6 +26,8 @@
 | `ALLOWED_HOSTS` | `["kobinetur.uriteh.ru","localhost","127.0.0.1"]` — localhost/127.0.0.1 нужны для docker healthcheck и on-host `curl /health` |
 | `SECRET_KEY` | случайные 64+ символа (не `change-me-…`) |
 | `DB_PASSWORD` | не `secret` |
+| `S3_ENDPOINT` | `http://minio:9000` |
+| `S3_PUBLIC_ENDPOINT` | `https://kobinetur.uriteh.ru` |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | не `minioadmin` |
 | `CORS_ORIGINS` | `["https://kobinetur.uriteh.ru"]`, без `"*"` |
 | `MINIO_PASSWORD` | совпадает с `S3_SECRET_KEY` |
@@ -35,6 +37,11 @@
 секретов в prod/staging приводят к `RuntimeError`; `COOKIE_SECURE=false` в prod —
 тоже `RuntimeError`.
 
+`docker-compose.prod.yml` сам прокидывает контейнерам внутренние адреса
+`DATABASE_URL=postgresql+asyncpg://app:<DB_PASSWORD>@db:5432/partner_cabinet` и
+`REDIS_URL=redis://redis:6379/0`, чтобы backend не ходил к БД/Redis через
+host-порты.
+
 ### Как обновить `.env` на проде
 
 ```bash
@@ -42,7 +49,7 @@ ssh root@<server>
 cd /srv/personal_partner_account
 cp .env .env.bak-$(date +%Y%m%d-%H%M%S)
 nano .env
-docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps backend celery
+docker compose -f docker-compose.prod.yml up -d --force-recreate --no-deps backend celery celery-beat
 # проверить:
 docker inspect -f '{{.State.Health.Status}}' personal_partner_account-backend-1
 docker logs personal_partner_account-backend-1 --tail 50
@@ -56,20 +63,46 @@ JSON-списков.
 ## Nginx и TLS
 
 - TLS: Let's Encrypt, автопродление — `certbot --nginx -d kobinetur.uriteh.ru`.
-- Серверный конфиг: `/etc/nginx/sites-available/app.conf` — **source of truth**,
-  редактируется вручную/через `certbot`, **не синхронизируется автоматически** из
-  репо. `deploy.sh` его не трогает.
-- Репо-версия `deploy/nginx/app.conf` — целевой (более строгий) конфиг: rate-limits,
-  http2, HSTS always, отдельный location для YooKassa webhook, зоны `auth`/`api`/`ws`,
-  immutable-кэш для ассетов. На момент написания этой заметки **на прод-сервере
-  она не развёрнута** (нет snippets `limits.conf/proxy.conf/ssl.conf` в
-  `/etc/nginx/snippets/`). Развернуть — отдельная задача: скопировать snippets,
-  заменить `sites-available/app.conf`, `nginx -t && systemctl reload nginx`.
+- Репо-версия `deploy/nginx/app.conf` — source of truth для приложения:
+  `deploy.sh` синхронизирует её и snippets в `/etc/nginx`, проверяет `nginx -t`
+  и перезагружает nginx только при изменениях.
+- TLS: если сертификата ещё нет, перед первым HTTPS-деплоем выпустить его через
+  `certbot --nginx -d kobinetur.uriteh.ru`.
 
-## Firewall
+## Закрытые внутренние сервисы
 
-`ufw` разрешает: 22 (SSH), 80/443 (nginx), 10050 (Zabbix agent). Порт 9000 (MinIO)
-и 5432 (Postgres) наружу **не** exposed — доступ только внутри docker network.
+В проде наружу должны смотреть только SSH и nginx:
+
+- `22/tcp` — SSH;
+- `80/tcp`, `443/tcp` — nginx;
+- `10050/tcp` — Zabbix agent, если он нужен на сервере.
+
+Postgres (`5432`) и Redis (`6379`) не публикуются на host-порты вообще. MinIO
+слушает только `127.0.0.1:9000`, чтобы локальный nginx мог проксировать
+presigned URL по `/partner-cabinet/`; консоль MinIO (`9001`) не публикуется.
+DB, Redis и MinIO также вынесены в приватную Docker-сеть `internal: true`.
+
+`deploy.sh` после поднятия DB/Redis/MinIO запускает:
+
+```bash
+bash deploy/security-check.sh
+```
+
+Скрипт валит деплой, если `5432`, `6379`, `9000` или `9001` оказываются
+опубликованы на внешний интерфейс. Ручная проверка на сервере:
+
+```bash
+cd /srv/personal_partner_account
+docker compose -f docker-compose.prod.yml port db 5432
+docker compose -f docker-compose.prod.yml port redis 6379
+docker compose -f docker-compose.prod.yml port minio 9000
+docker compose -f docker-compose.prod.yml port minio 9001
+ss -ltnp | grep -E ':(5432|6379|9000|9001)\b' || true
+```
+
+Ожидаемо: у `db`, `redis`, `minio:9001` вывода нет; у `minio:9000` максимум
+`127.0.0.1:9000`. В Selectel Cloud Firewall/security group дополнительно
+оставить входящими только `22`, `80`, `443` и нужный мониторинг.
 
 ## Healthcheck и бэкапы
 

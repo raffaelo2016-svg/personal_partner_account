@@ -16,10 +16,11 @@ cd "$APP_DIR"
 trap 'status=$?; echo "[deploy.sh] failed on line $LINENO (exit=$status): ${BASH_COMMAND}" >&2' ERR
 
 echo "[1/6] Build backend images"
-$COMPOSE build backend celery
+$COMPOSE build backend celery celery-beat
 
 echo "[2/6] Ensure DB/Redis/MinIO are up"
 $COMPOSE up -d db redis minio
+COMPOSE="$COMPOSE" bash deploy/security-check.sh
 
 echo "[3/6] Backup database before migrations"
 mkdir -p "$BACKUP_DIR"
@@ -48,7 +49,7 @@ echo "[5/6] Recreate backend + celery (новый образ из шага 1 п�
 # --wait блокирует до healthy (у backend есть healthcheck в compose-файле).
 # timeout 120s покрывает start_period 20s + interval 15s × retries 5 в
 # docker-compose.prod.yml::backend.healthcheck.
-$COMPOSE up -d --wait --wait-timeout 120 backend celery
+$COMPOSE up -d --wait --wait-timeout 120 backend celery celery-beat
 
 echo "[health] backend /health"
 ok=0

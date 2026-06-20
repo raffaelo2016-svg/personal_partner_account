@@ -12,6 +12,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    networks:
+      - private
     restart: always
 
   redis:
@@ -23,6 +25,8 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
+    networks:
+      - private
     restart: always
 
   minio:
@@ -37,6 +41,8 @@ services:
       MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
     volumes:
       - miniodata:/data
+    networks:
+      - private
     restart: always
 
   backend:
@@ -66,6 +72,8 @@ services:
       # (чтобы AWS SigV4 подпись не сломалась).
       S3_PUBLIC_ENDPOINT: https://kobinetur.uriteh.ru
       S3_ENDPOINT: http://minio:9000
+      DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
+      REDIS_URL: redis://redis:6379/0
     command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "172.16.0.0/12,127.0.0.1"]
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
@@ -73,6 +81,9 @@ services:
       timeout: 5s
       retries: 5
       start_period: 20s
+    networks:
+      - private
+      - public
     restart: always
 
   celery:
@@ -87,7 +98,13 @@ services:
       ENVIRONMENT: production
       ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
       CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
     command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info"]
+    networks:
+      - private
+      - public
     restart: always
 
   celery-beat:
@@ -102,10 +119,24 @@ services:
       ENVIRONMENT: production
       ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
       CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
+      REDIS_URL: redis://redis:6379/0
+      S3_ENDPOINT: http://minio:9000
     command: ["celery", "-A", "app.celery_app", "beat", "--loglevel=info"]
+    networks:
+      - private
+      - public
     restart: always
 
 volumes:
   pgdata:
   redisdata:
   miniodata:
+
+networks:
+  # DB, Redis and MinIO live only on this Docker network. The host can still
+  # reach MinIO through 127.0.0.1:9000 for nginx presigned URL proxying.
+  private:
+    internal: true
+  # Backend/worker also need outbound internet access for external APIs.
+  public:
