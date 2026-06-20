@@ -81,6 +81,10 @@ Postgres (`5432`) и Redis (`6379`) не публикуются на host-пор
 слушает только `127.0.0.1:9000`, чтобы локальный nginx мог проксировать
 presigned URL по `/partner-cabinet/`; консоль MinIO (`9001`) не публикуется.
 DB, Redis и MinIO также вынесены в приватную Docker-сеть `internal: true`.
+Дополнительно `deploy/firewall-lockdown.sh` ставит idempotent-правила `iptables`
+и `ip6tables` для `INPUT` и `DOCKER-USER`: внешние подключения к
+`5432/6379/9000/9001` блокируются даже при ошибке в облачном firewall или
+случайной публикации Docker-порта.
 
 `deploy.sh` после поднятия DB/Redis/MinIO запускает:
 

@@ -15,6 +15,9 @@ cd "$APP_DIR"
 # Логгим команду, на которой скрипт упадёт.
 trap 'status=$?; echo "[deploy.sh] failed on line $LINENO (exit=$status): ${BASH_COMMAND}" >&2' ERR
 
+echo "[0/6] Lock down protected service ports"
+bash deploy/firewall-lockdown.sh
+
 echo "[1/6] Build backend images"
 $COMPOSE build backend celery celery-beat
 
