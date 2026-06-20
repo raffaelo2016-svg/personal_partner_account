@@ -1,0 +1,111 @@
+services:
+  db:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: partner_cabinet
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d partner_cabinet"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: always
+
+  minio:
+    image: quay.io/minio/minio:latest
+    command: server /data --console-address ":9001"
+    ports:
+      # Loopback-only публикация S3-API: нужна, чтобы host nginx мог
+      # проксировать presigned-URL (bucket-prefix → MinIO).
+      - "127.0.0.1:9000:9000"
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+    volumes:
+      - miniodata:/data
+    restart: always
+
+  backend:
+    build: ./backend
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_started
+    env_file: .env
+    environment:
+      # Prod-значения, которые не должны зависеть от .env на сервере.
+      # TrustedHostMiddleware / CORS работают только если домен здесь.
+      ENVIRONMENT: production
+      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: lax
+      YOOKASSA_RETURN_URL: https://kobinetur.uriteh.ru/dashboard/finance/court-fees
+      # Публичный base-URL для presigned S3-ссылок. Путь вида
+      # /{bucket}/{key}?X-Amz-... совпадает с nginx location /partner-cabinet/,
+      # который pass-through проксирует в MinIO без изменения pathname
+      # (чтобы AWS SigV4 подпись не сломалась).
+      S3_PUBLIC_ENDPOINT: https://kobinetur.uriteh.ru
+      S3_ENDPOINT: http://minio:9000
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "2", "--proxy-headers", "--forwarded-allow-ips", "172.16.0.0/12,127.0.0.1"]
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health').status==200 else 1)\""]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    restart: always
+
+  celery:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info"]
+    restart: always
+
+  celery-beat:
+    build: ./backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    env_file: .env
+    environment:
+      ENVIRONMENT: production
+      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+    command: ["celery", "-A", "app.celery_app", "beat", "--loglevel=info"]
+    restart: always
+
+volumes:
+  pgdata:
+  redisdata:
+  miniodata:
