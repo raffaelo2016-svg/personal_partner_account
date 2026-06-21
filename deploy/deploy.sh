@@ -22,7 +22,7 @@ echo "[1/6] Build backend images"
 $COMPOSE build backend celery celery-beat
 
 echo "[2/6] Ensure DB/Redis/MinIO are up"
-$COMPOSE up -d db redis minio
+$COMPOSE up -d --force-recreate db redis minio
 COMPOSE="$COMPOSE" bash deploy/security-check.sh
 
 echo "[3/6] Backup database before migrations"
