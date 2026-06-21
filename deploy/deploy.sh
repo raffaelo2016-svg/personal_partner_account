@@ -83,7 +83,7 @@ if [ -f "$APP_DIR/.env" ]; then
     esac
   done < "$APP_DIR/.env"
 fi
-VITE_API_URL=https://kobinetur.uriteh.ru/api/v1 npm run build
+VITE_API_URL=https://finzdorovie.ru/api/v1 npm run build
 cd ..
 
 echo "[nginx] Sync configs and reload if changed"

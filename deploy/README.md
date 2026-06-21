@@ -23,13 +23,13 @@
 |---|---|
 | `ENVIRONMENT` | `production` |
 | `COOKIE_SECURE` | `true` (без этого backend упадёт на старте) |
-| `ALLOWED_HOSTS` | `["kobinetur.uriteh.ru","localhost","127.0.0.1"]` — localhost/127.0.0.1 нужны для docker healthcheck и on-host `curl /health` |
+| `ALLOWED_HOSTS` | `["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]` — localhost/127.0.0.1 нужны для docker healthcheck и on-host `curl /health` |
 | `SECRET_KEY` | случайные 64+ символа (не `change-me-…`) |
 | `DB_PASSWORD` | не `secret` |
 | `S3_ENDPOINT` | `http://minio:9000` |
-| `S3_PUBLIC_ENDPOINT` | `https://kobinetur.uriteh.ru` |
+| `S3_PUBLIC_ENDPOINT` | `https://finzdorovie.ru` |
 | `S3_ACCESS_KEY`, `S3_SECRET_KEY` | не `minioadmin` |
-| `CORS_ORIGINS` | `["https://kobinetur.uriteh.ru"]`, без `"*"` |
+| `CORS_ORIGINS` | `["https://finzdorovie.ru","https://www.finzdorovie.ru"]`, без `"*"` |
 | `MINIO_PASSWORD` | совпадает с `S3_SECRET_KEY` |
 | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | сейчас **тестовый магазин** (`test_…`) — осознанно, до запуска боевых платежей |
 
@@ -60,14 +60,22 @@ docker logs personal_partner_account-backend-1 --tail 50
 упадёт на `validate_production_secrets` или словит `RuntimeError` при парсинге
 JSON-списков.
 
-## Nginx и TLS
+## DNS, Nginx и TLS
 
-- TLS: Let's Encrypt, автопродление — `certbot --nginx -d kobinetur.uriteh.ru`.
+- DNS у регистратора должен указывать на сервер Selectel `161.104.52.194`:
+  `A @ → 161.104.52.194`, `A www → 161.104.52.194`.
+- TLS: Let's Encrypt, автопродление — сертификат для `finzdorovie.ru` и
+  `www.finzdorovie.ru`.
 - Репо-версия `deploy/nginx/app.conf` — source of truth для приложения:
   `deploy.sh` синхронизирует её и snippets в `/etc/nginx`, проверяет `nginx -t`
   и перезагружает nginx только при изменениях.
-- TLS: если сертификата ещё нет, перед первым HTTPS-деплоем выпустить его через
-  `certbot --nginx -d kobinetur.uriteh.ru`.
+- Если сертификата ещё нет, после обновления DNS и до деплоя nginx-конфига
+  выпустить его на сервере:
+
+```bash
+certbot certonly --webroot -w /var/www/letsencrypt \
+  -d finzdorovie.ru -d www.finzdorovie.ru
+```
 
 ## Закрытые внутренние сервисы
 

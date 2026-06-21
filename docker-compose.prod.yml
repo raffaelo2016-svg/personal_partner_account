@@ -61,16 +61,16 @@ services:
       # Prod-значения, которые не должны зависеть от .env на сервере.
       # TrustedHostMiddleware / CORS работают только если домен здесь.
       ENVIRONMENT: production
-      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
-      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      ALLOWED_HOSTS: '["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
       COOKIE_SECURE: "true"
       COOKIE_SAMESITE: lax
-      YOOKASSA_RETURN_URL: https://kobinetur.uriteh.ru/dashboard/finance/court-fees
+      YOOKASSA_RETURN_URL: https://finzdorovie.ru/dashboard/finance/court-fees
       # Публичный base-URL для presigned S3-ссылок. Путь вида
       # /{bucket}/{key}?X-Amz-... совпадает с nginx location /partner-cabinet/,
       # который pass-through проксирует в MinIO без изменения pathname
       # (чтобы AWS SigV4 подпись не сломалась).
-      S3_PUBLIC_ENDPOINT: https://kobinetur.uriteh.ru
+      S3_PUBLIC_ENDPOINT: https://finzdorovie.ru
       S3_ENDPOINT: http://minio:9000
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
       REDIS_URL: redis://redis:6379/0
@@ -96,8 +96,8 @@ services:
     env_file: .env
     environment:
       ENVIRONMENT: production
-      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
-      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      ALLOWED_HOSTS: '["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
@@ -117,8 +117,8 @@ services:
     env_file: .env
     environment:
       ENVIRONMENT: production
-      ALLOWED_HOSTS: '["kobinetur.uriteh.ru","localhost","127.0.0.1"]'
-      CORS_ORIGINS: '["https://kobinetur.uriteh.ru"]'
+      ALLOWED_HOSTS: '["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]'
+      CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
