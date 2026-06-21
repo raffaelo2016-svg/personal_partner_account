@@ -19,6 +19,9 @@ for spec in db:5432 redis:6379 minio:9000 minio:9001; do
   while IFS= read -r mapping; do
     [ -z "$mapping" ] && continue
     case "$mapping" in
+      *:0 | *]:0)
+        echo "  OK: $service:$port is not published"
+        ;;
       127.0.0.1:* | \[::1\]:*)
         echo "  OK: $service:$port -> $mapping"
         ;;
