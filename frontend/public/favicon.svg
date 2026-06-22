@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Ю">
+  <defs>
+    <linearGradient id="yu-gradient" x1="10" y1="8" x2="54" y2="56" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#74A1BF"/>
+      <stop offset="0.52" stop-color="#429CD7"/>
+      <stop offset="1" stop-color="#417EA5"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="#F8FBFD"/>
+  <text
+    x="31.5"
+    y="47"
+    fill="url(#yu-gradient)"
+    font-family="Arial, Helvetica, sans-serif"
+    font-size="45"
+    font-weight="800"
+    text-anchor="middle"
+  >Ю</text>
+  <path
+    d="M24.8 29.8 29.4 34.3 39.2 24.8"
+    fill="none"
+    stroke="#429CD7"
+    stroke-width="3.4"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+</svg>
