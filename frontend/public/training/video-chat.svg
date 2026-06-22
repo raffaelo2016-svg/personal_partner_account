@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Training preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fef08a"/>
+      <stop offset="1" stop-color="#bbf7d0"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="520" fill="url(#bg)"/>
+  <circle cx="95" cy="82" r="120" fill="#fff" opacity=".22"/>
+  <circle cx="795" cy="455" r="150" fill="#fff" opacity=".22"/>
+  <path d="M160 138h410c42 0 76 34 76 76v58c0 42-34 76-76 76H338l-112 74 25-74h-91c-42 0-76-34-76-76v-58c0-42 34-76 76-76z" fill="#064e3b" opacity=".9"/>
+  <rect x="158" y="205" width="312" height="18" rx="9" fill="#fff" opacity=".8"/>
+  <rect x="158" y="250" width="410" height="18" rx="9" fill="#fff" opacity=".55"/>
+  <rect x="158" y="295" width="250" height="18" rx="9" fill="#fff" opacity=".45"/>
+  <path d="M618 92h92c59 0 106 48 106 106v10c0 58-47 106-106 106h-8l24 61-84-61h-24c-59 0-106-48-106-106v-10c0-58 47-106 106-106z" fill="#fff" opacity=".92"/>
+  <circle cx="632" cy="205" r="18" fill="#4f46e5"/>
+  <circle cx="672" cy="205" r="18" fill="#4f46e5" opacity=".72"/>
+  <circle cx="712" cy="205" r="18" fill="#4f46e5" opacity=".44"/>
+</svg>

@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-label="Training preview">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fef3c7"/>
+      <stop offset="1" stop-color="#eef2ff"/>
+    </linearGradient>
+  </defs>
+  <rect width="900" height="520" fill="url(#bg)"/>
+  <rect x="88" y="86" width="724" height="348" rx="34" fill="#fff" opacity=".9"/>
+  <rect x="135" y="135" width="220" height="250" rx="28" fill="#eff6ff"/>
+  <circle cx="245" cy="210" r="54" fill="#6366f1"/>
+  <path d="M172 345c18-52 128-52 146 0" fill="none" stroke="#6366f1" stroke-width="34" stroke-linecap="round"/>
+  <rect x="410" y="142" width="300" height="26" rx="13" fill="#111827" opacity=".82"/>
+  <rect x="410" y="202" width="360" height="18" rx="9" fill="#64748b" opacity=".35"/>
+  <rect x="410" y="242" width="310" height="18" rx="9" fill="#64748b" opacity=".26"/>
+  <rect x="410" y="282" width="245" height="18" rx="9" fill="#64748b" opacity=".22"/>
+  <rect x="410" y="334" width="175" height="56" rx="18" fill="#4f46e5"/>
+  <path d="M490 349v26l24-13z" fill="#fff"/>
+  <circle cx="735" cy="350" r="50" fill="#22c55e" opacity=".9"/>
+  <path d="M713 351l18 18 33-42" fill="none" stroke="#fff" stroke-width="15" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>
