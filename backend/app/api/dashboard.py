@@ -24,18 +24,8 @@ async def partner_dashboard(
         Client.partner_id == partner_id,
     )
     total_clients = (await db.execute(base_clients)).scalar() or 0
-    before_court = (
-        await db.execute(
-            base_clients.where(
-                Client.status.in_(
-                    ["documents_collection", "documents_formation", "sent_to_court", "documents_decision"]
-                )
-            )
-        )
-    ).scalar() or 0
-    in_court = (
-        await db.execute(base_clients.where(Client.status.in_(["waiting_hearing", "restructuring", "auction"])))
-    ).scalar() or 0
+    before_court = (await db.execute(base_clients.where(Client.type == "before_court"))).scalar() or 0
+    in_court = (await db.execute(base_clients.where(Client.type == "in_court"))).scalar() or 0
     completed = (await db.execute(base_clients.where(Client.status == "realization"))).scalar() or 0
     new_this_week = (
         await db.execute(base_clients.where(Client.created_at >= func.now() - text("interval '7 days'")))

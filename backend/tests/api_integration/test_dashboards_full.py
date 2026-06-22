@@ -25,6 +25,11 @@ class TestPartnerDashboard:
         data = (await client.get("/api/v1/dashboard", headers=auth(partner_token))).json()
         assert data["stats"]["total_clients"] >= 1
 
+    async def test_stats_count_by_client_type(self, client: AsyncClient, partner_token):
+        await create_client(client, partner_token, client_type="in_court", full_name="В суде")
+        data = (await client.get("/api/v1/dashboard", headers=auth(partner_token))).json()["stats"]
+        assert data["in_court"] >= 1
+
     async def test_recent_clients(self, client: AsyncClient, partner_token):
         await create_client(client, partner_token, full_name="Недавний")
         recent = (await client.get("/api/v1/dashboard", headers=auth(partner_token))).json()["recent_clients"]

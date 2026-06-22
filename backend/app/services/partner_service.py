@@ -87,10 +87,6 @@ async def get_partner(session: AsyncSession, partner_id: str) -> PartnerRead:
     return _partner_to_read(partner, email=email, **counts, **finance)
 
 
-BEFORE_COURT_STATUSES = ["documents_collection", "documents_formation", "sent_to_court", "documents_decision"]
-IN_COURT_STATUSES = ["waiting_hearing", "restructuring", "auction"]
-
-
 async def _get_client_status_counts(session: AsyncSession, partner_id) -> dict:
     """Single-partner version (used by get_partner)."""
     result = await _get_client_status_counts_batch(session, [partner_id])
@@ -113,8 +109,8 @@ async def _get_client_status_counts_batch(session: AsyncSession, partner_ids: li
         select(
             Client.partner_id,
             func.count().label("clients_count"),
-            func.count().filter(Client.status.in_(BEFORE_COURT_STATUSES)).label("before_court_count"),
-            func.count().filter(Client.status.in_(IN_COURT_STATUSES)).label("in_court_count"),
+            func.count().filter(Client.type == "before_court").label("before_court_count"),
+            func.count().filter(Client.type == "in_court").label("in_court_count"),
             func.count().filter(Client.status == "realization").label("completed_count"),
         )
         .where(Client.partner_id.in_(partner_ids), Client.deleted_at.is_(None))
