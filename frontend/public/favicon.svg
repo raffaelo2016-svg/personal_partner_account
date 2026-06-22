@@ -8,20 +8,12 @@
   </defs>
   <rect width="64" height="64" rx="14" fill="#F8FBFD"/>
   <text
-    x="31.5"
-    y="47"
+    x="32"
+    y="50"
     fill="url(#yu-gradient)"
     font-family="Arial, Helvetica, sans-serif"
-    font-size="45"
+    font-size="53"
     font-weight="800"
     text-anchor="middle"
   >Ю</text>
-  <path
-    d="M24.8 29.8 29.4 34.3 39.2 24.8"
-    fill="none"
-    stroke="#429CD7"
-    stroke-width="3.4"
-    stroke-linecap="round"
-    stroke-linejoin="round"
-  />
 </svg>
