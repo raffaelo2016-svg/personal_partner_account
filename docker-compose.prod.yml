@@ -98,6 +98,8 @@ services:
       ENVIRONMENT: production
       ALLOWED_HOSTS: '["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]'
       CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: lax
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
@@ -119,6 +121,8 @@ services:
       ENVIRONMENT: production
       ALLOWED_HOSTS: '["finzdorovie.ru","www.finzdorovie.ru","localhost","127.0.0.1"]'
       CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
+      COOKIE_SECURE: "true"
+      COOKIE_SAMESITE: lax
       DATABASE_URL: postgresql+asyncpg://app:${DB_PASSWORD}@db:5432/partner_cabinet
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT: http://minio:9000
