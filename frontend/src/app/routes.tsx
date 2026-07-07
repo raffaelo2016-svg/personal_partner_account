@@ -22,18 +22,7 @@ export const router = createBrowserRouter([
   },
   {
     path: '/register',
-    lazy: async () => {
-      const AdminAddPartner = (await import('./pages/AdminAddPartner')).default;
-      return {
-        element: (
-          <div className="min-h-screen bg-gray-50">
-            <div className="max-w-5xl mx-auto px-4 py-8">
-              <AdminAddPartner />
-            </div>
-          </div>
-        ),
-      };
-    },
+    lazy: lazyPage(() => import('./pages/Registration')),
   },
   {
     path: '/dashboard',
@@ -69,6 +58,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: lazyPage(() => import('./pages/AdminDashboard')) },
           { path: 'partners', lazy: lazyPage(() => import('./pages/AdminPartners')) },
+          { path: 'partners/new', lazy: lazyPage(() => import('./pages/AdminAddPartner')) },
           { path: 'partners/:id', lazy: lazyPage(() => import('./pages/AdminPartnerDetails')) },
           { path: 'clients', lazy: lazyPage(() => import('./pages/AdminClients')) },
           { path: 'clients/:id', lazy: lazyPage(() => import('./pages/AdminDebtorDetails')) },

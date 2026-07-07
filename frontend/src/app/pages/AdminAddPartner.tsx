@@ -251,7 +251,7 @@ export default function AdminAddPartner() {
         >
           <ArrowLeft className="w-5 h-5 text-gray-600" />
         </Link>
-        <h1 className="text-3xl font-semibold text-gray-900">Регистрация партнёра</h1>
+        <h1 className="text-3xl font-semibold text-gray-900">Добавление партнёра</h1>
       </div>
 
       {/* Form */}
@@ -693,10 +693,10 @@ export default function AdminAddPartner() {
             disabled={isSubmitting}
             className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {isSubmitting ? 'Отправка...' : 'Зарегистрироваться'}
+            {isSubmitting ? 'Сохранение...' : 'Добавить партнера'}
           </button>
           <Link
-            to="/login"
+            to="/admin/partners"
             className="px-8 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
           >
             Отменить
