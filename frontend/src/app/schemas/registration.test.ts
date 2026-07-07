@@ -7,6 +7,7 @@ import {
 
 describe('registrationStep1Schema', () => {
   const valid = {
+    partnerType: 'legal' as const,
     companyName: 'ООО Ромашка',
     inn: '1234567890',
     ogrn: '1234567890123',
@@ -31,12 +32,43 @@ describe('registrationStep1Schema', () => {
   it('reports multiple errors at once', () => {
     const result = registrationStep1Schema.safeParse({
       companyName: '',
+      partnerType: 'legal',
       inn: '',
       ogrn: '',
       legalAddress: '',
     });
     const errors = flattenZodErrors(result);
     expect(Object.keys(errors).length).toBe(4);
+  });
+
+  it('accepts individual input without INN and company fields', () => {
+    const result = registrationStep1Schema.safeParse({
+      partnerType: 'individual',
+      lastName: 'Иванов',
+      firstName: 'Иван',
+      middleName: 'Иванович',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('accepts entrepreneur input with 12-digit INN', () => {
+    const result = registrationStep1Schema.safeParse({
+      partnerType: 'entrepreneur',
+      lastName: 'Иванов',
+      firstName: 'Иван',
+      inn: '500100732259',
+    });
+    expect(result.success).toBe(true);
+  });
+
+  it('rejects entrepreneur INN with wrong length', () => {
+    const result = registrationStep1Schema.safeParse({
+      partnerType: 'entrepreneur',
+      lastName: 'Иванов',
+      firstName: 'Иван',
+      inn: '1234567890',
+    });
+    expect(flattenZodErrors(result).inn).toBe('ИНН должен содержать 12 цифр');
   });
 
   it('rejects INN with non-digit characters', () => {
@@ -125,6 +157,7 @@ describe('registrationStep2Schema', () => {
 describe('flattenZodErrors', () => {
   it('returns empty object for successful parse', () => {
     const valid = {
+      partnerType: 'legal' as const,
       companyName: 'ООО Ромашка',
       inn: '1234567890',
       ogrn: '1234567890123',
@@ -137,6 +170,7 @@ describe('flattenZodErrors', () => {
   it('keeps only first issue per field', () => {
     const result = registrationStep1Schema.safeParse({
       companyName: 'ок',
+      partnerType: 'legal',
       inn: 'abc',
       ogrn: '1234567890123',
       legalAddress: 'ок',

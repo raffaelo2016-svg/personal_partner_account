@@ -3,16 +3,36 @@ import { z } from 'zod';
 const REQUIRED = 'Обязательное поле';
 
 export const registrationStep1Schema = z.object({
-  companyName: z.string().min(1, REQUIRED),
-  inn: z
-    .string()
-    .min(1, REQUIRED)
-    .regex(/^\d{10}$/, 'ИНН должен содержать 10 цифр'),
-  ogrn: z
-    .string()
-    .min(1, REQUIRED)
-    .regex(/^\d{13}$/, 'ОГРН должен содержать 13 цифр'),
-  legalAddress: z.string().min(1, REQUIRED),
+  partnerType: z.enum(['individual', 'legal', 'entrepreneur']),
+  companyName: z.string().optional(),
+  lastName: z.string().optional(),
+  firstName: z.string().optional(),
+  middleName: z.string().optional(),
+  inn: z.string().optional(),
+  ogrn: z.string().optional(),
+  legalAddress: z.string().optional(),
+}).superRefine((data, ctx) => {
+  const add = (path: string, message = REQUIRED) => {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
+  };
+
+  if (data.partnerType === 'legal') {
+    if (!data.companyName) add('companyName');
+    if (!data.legalAddress) add('legalAddress');
+    if (!data.inn) add('inn');
+    else if (!/^\d{10}$/.test(data.inn)) add('inn', 'ИНН должен содержать 10 цифр');
+    if (!data.ogrn) add('ogrn');
+    else if (!/^\d{13}$/.test(data.ogrn)) add('ogrn', 'ОГРН должен содержать 13 цифр');
+    return;
+  }
+
+  if (!data.lastName) add('lastName');
+  if (!data.firstName) add('firstName');
+
+  if (data.partnerType === 'entrepreneur') {
+    if (!data.inn) add('inn');
+    else if (!/^\d{12}$/.test(data.inn)) add('inn', 'ИНН должен содержать 12 цифр');
+  }
 });
 
 export const registrationStep2Schema = z

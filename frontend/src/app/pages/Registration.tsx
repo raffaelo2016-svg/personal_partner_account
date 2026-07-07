@@ -36,8 +36,12 @@ export default function Registration() {
   const captchaContainerRef = useRef<HTMLDivElement | null>(null);
   const captchaWidgetIdRef = useRef<number | null>(null);
   const [formData, setFormData] = useState({
+    partnerType: 'legal' as 'individual' | 'legal' | 'entrepreneur',
     // Данные компании
     companyName: '',
+    lastName: '',
+    firstName: '',
+    middleName: '',
     inn: '',
     ogrn: '',
     legalAddress: '',
@@ -72,10 +76,29 @@ export default function Registration() {
       setErrors({ ...errors, [name]: '' });
     }
   };
+
+  const changePartnerType = (partnerType: 'individual' | 'legal' | 'entrepreneur') => {
+    setFormData({
+      ...formData,
+      partnerType,
+      companyName: '',
+      lastName: '',
+      firstName: '',
+      middleName: '',
+      inn: '',
+      ogrn: '',
+      legalAddress: '',
+    });
+    setErrors({});
+  };
   
   const validateStep1 = () => {
     const result = registrationStep1Schema.safeParse({
+      partnerType: formData.partnerType,
       companyName: formData.companyName,
+      lastName: formData.lastName,
+      firstName: formData.firstName,
+      middleName: formData.middleName,
       inn: formData.inn,
       ogrn: formData.ogrn,
       legalAddress: formData.legalAddress,
@@ -149,13 +172,20 @@ export default function Registration() {
     setIsSubmitting(true);
     setApiError('');
     try {
+      const fullName = `${formData.lastName} ${formData.firstName} ${formData.middleName}`.trim();
+      const isPerson = formData.partnerType !== 'legal';
+      const displayName = isPerson ? fullName : formData.companyName;
+
       await registerApi({
         email: formData.contactEmail,
         password: formData.password,
-        company_name: formData.companyName,
-        director_name: formData.contactName,
-        inn: formData.inn,
+        partner_type: formData.partnerType,
+        company_name: displayName,
+        director_name: isPerson ? fullName : formData.contactName,
+        inn: formData.partnerType === 'individual' ? '' : formData.inn,
         phone: phoneE164,
+        full_legal_name: formData.partnerType === 'legal' ? formData.companyName : undefined,
+        legal_address: formData.partnerType === 'legal' ? formData.legalAddress : undefined,
         captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });
       setStep(3);
@@ -280,91 +310,203 @@ export default function Registration() {
                 Регистрация партнера
               </h2>
               <p className="text-gray-600 mb-8">
-                Заполните информацию о вашей юридической компании
+                Выберите тип партнёра и заполните данные
               </p>
               
               <div className="space-y-5">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Название компании <span className="text-red-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    name="companyName"
-                    value={formData.companyName}
-                    onChange={handleChange}
-                    placeholder='ООО "Юридическая компания"'
-                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.companyName ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.companyName && (
-                    <p className="text-sm text-red-500 mt-1">{errors.companyName}</p>
-                  )}
-                </div>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ИНН <span className="text-red-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      inputMode="numeric"
-                      pattern="\d*"
-                      name="inn"
-                      value={formData.inn}
-                      onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      placeholder="1234567890"
-                      maxLength={10}
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.inn ? 'border-red-500' : 'border-gray-300'
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {[
+                    { value: 'individual', label: 'Физическое лицо' },
+                    { value: 'legal', label: 'Юридическое лицо' },
+                    { value: 'entrepreneur', label: 'ИП' },
+                  ].map((item) => (
+                    <label
+                      key={item.value}
+                      className={`flex items-center justify-center rounded-lg border px-4 py-3 cursor-pointer transition-colors ${
+                        formData.partnerType === item.value
+                          ? 'border-blue-600 bg-blue-50 text-blue-700'
+                          : 'border-gray-300 hover:bg-gray-50'
                       }`}
-                    />
-                    {errors.inn && (
-                      <p className="text-sm text-red-500 mt-1">{errors.inn}</p>
-                    )}
-                  </div>
-                  
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ОГРН <span className="text-red-500">*</span>
+                    >
+                      <input
+                        type="radio"
+                        name="partnerType"
+                        value={item.value}
+                        checked={formData.partnerType === item.value}
+                        onChange={() =>
+                          changePartnerType(item.value as 'individual' | 'legal' | 'entrepreneur')
+                        }
+                        className="sr-only"
+                      />
+                      <span className="font-medium">{item.label}</span>
                     </label>
-                    <input
-                      type="text"
-                      name="ogrn"
-                      value={formData.ogrn}
-                      onChange={handleChange}
-                      placeholder="1234567890123"
-                      maxLength={13}
-                      className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                        errors.ogrn ? 'border-red-500' : 'border-gray-300'
-                      }`}
-                    />
-                    {errors.ogrn && (
-                      <p className="text-sm text-red-500 mt-1">{errors.ogrn}</p>
+                  ))}
+                </div>
+
+                {formData.partnerType === 'legal' ? (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Название компании <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        name="companyName"
+                        value={formData.companyName}
+                        onChange={handleChange}
+                        placeholder='ООО "Юридическая компания"'
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.companyName ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      {errors.companyName && (
+                        <p className="text-sm text-red-500 mt-1">{errors.companyName}</p>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          ИНН <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          name="inn"
+                          value={formData.inn}
+                          onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
+                          placeholder="1234567890"
+                          maxLength={10}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.inn ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.inn && (
+                          <p className="text-sm text-red-500 mt-1">{errors.inn}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          ОГРН <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          name="ogrn"
+                          value={formData.ogrn}
+                          onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
+                          placeholder="1234567890123"
+                          maxLength={13}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.ogrn ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.ogrn && (
+                          <p className="text-sm text-red-500 mt-1">{errors.ogrn}</p>
+                        )}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">
+                        Юридический адрес <span className="text-red-500">*</span>
+                      </label>
+                      <textarea
+                        name="legalAddress"
+                        value={formData.legalAddress}
+                        onChange={handleChange}
+                        placeholder="г. Москва, ул. Примерная, д. 1, офис 100"
+                        rows={3}
+                        className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                          errors.legalAddress ? 'border-red-500' : 'border-gray-300'
+                        }`}
+                      />
+                      {errors.legalAddress && (
+                        <p className="text-sm text-red-500 mt-1">{errors.legalAddress}</p>
+                      )}
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Фамилия <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="lastName"
+                          value={formData.lastName}
+                          onChange={handleChange}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.lastName ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.lastName && (
+                          <p className="text-sm text-red-500 mt-1">{errors.lastName}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Имя <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          name="firstName"
+                          value={formData.firstName}
+                          onChange={handleChange}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.firstName ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.firstName && (
+                          <p className="text-sm text-red-500 mt-1">{errors.firstName}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          Отчество
+                        </label>
+                        <input
+                          type="text"
+                          name="middleName"
+                          value={formData.middleName}
+                          onChange={handleChange}
+                          className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                      </div>
+                    </div>
+
+                    {formData.partnerType === 'entrepreneur' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          ИНН <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          name="inn"
+                          value={formData.inn}
+                          onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
+                          placeholder="500100732259"
+                          maxLength={12}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.inn ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.inn && (
+                          <p className="text-sm text-red-500 mt-1">{errors.inn}</p>
+                        )}
+                      </div>
                     )}
-                  </div>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Юридический адрес <span className="text-red-500">*</span>
-                  </label>
-                  <textarea
-                    name="legalAddress"
-                    value={formData.legalAddress}
-                    onChange={handleChange}
-                    placeholder="г. Москва, ул. Примерная, д. 1, офис 100"
-                    rows={3}
-                    className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.legalAddress ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.legalAddress && (
-                    <p className="text-sm text-red-500 mt-1">{errors.legalAddress}</p>
-                  )}
-                </div>
+                  </>
+                )}
               </div>
 
               <div className="mt-8 flex justify-between">
