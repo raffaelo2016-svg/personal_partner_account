@@ -1,7 +1,7 @@
 import { ArrowLeft, Eye, EyeOff, Check, CircleDollarSign, CalendarDays } from 'lucide-react';
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router';
-import { registerApi } from '@/app/api/auth';
+import { createPartner } from '@/app/api/partners';
 import { toast } from 'sonner';
 import { PhoneField } from '@/app/components/PhoneField';
 import { normalizePhoneForApi, validatePhoneField } from '@/app/utils/phone';
@@ -11,23 +11,6 @@ import {
   validateInnForPartnerType,
   validateKpp,
 } from '@/app/utils/innKpp';
-
-// Yandex SmartCaptcha глобальный объект, который подгружает <script> в index.html.
-declare global {
-  interface Window {
-    smartCaptcha?: {
-      render: (
-        container: HTMLElement | string,
-        options: { sitekey: string; callback?: (token: string) => void; hl?: string },
-      ) => number;
-      reset: (widgetId?: number) => void;
-      destroy: (widgetId: number) => void;
-    };
-  }
-}
-
-const CAPTCHA_SITEKEY = import.meta.env.VITE_YANDEX_CAPTCHA_CLIENT_KEY as string | undefined;
-const CAPTCHA_ENABLED = Boolean(CAPTCHA_SITEKEY);
 
 export default function AdminAddPartner() {
   const [partnerType, setPartnerType] = useState<'individual' | 'legal' | 'entrepreneur'>('individual');
@@ -39,33 +22,6 @@ export default function AdminAddPartner() {
   const [innError, setInnError] = useState('');
   const [kppError, setKppError] = useState('');
   const [success, setSuccess] = useState(false);
-  const [captchaToken, setCaptchaToken] = useState('');
-  const captchaContainerRef = useRef<HTMLDivElement | null>(null);
-  const captchaWidgetIdRef = useRef<number | null>(null);
-
-  // Рендер виджета после первого показа формы. Скрипт smartcaptcha.js
-  // грузится лениво (defer в index.html) — если его ещё нет, поллим.
-  useEffect(() => {
-    if (!CAPTCHA_ENABLED || captchaWidgetIdRef.current !== null) return;
-    let cancelled = false;
-    const tryRender = () => {
-      if (cancelled) return;
-      if (!captchaContainerRef.current || !window.smartCaptcha) {
-        setTimeout(tryRender, 200);
-        return;
-      }
-      const id = window.smartCaptcha.render(captchaContainerRef.current, {
-        sitekey: CAPTCHA_SITEKEY!,
-        hl: 'ru',
-        callback: (token: string) => setCaptchaToken(token),
-      });
-      captchaWidgetIdRef.current = id;
-    };
-    tryRender();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
   
   // Common fields
   const [email, setEmail] = useState('');
@@ -191,14 +147,9 @@ export default function AdminAddPartner() {
       }
     }
 
-    if (CAPTCHA_ENABLED && !captchaToken) {
-      setApiError('Подтвердите, что вы не робот.');
-      return;
-    }
-
     setIsSubmitting(true);
     try {
-      await registerApi({
+      await createPartner({
         email,
         password,
         partner_type: partnerType,
@@ -213,10 +164,9 @@ export default function AdminAddPartner() {
         kpp: partnerType === 'legal' ? kpp : undefined,
         court_fee_per_client: Math.round(Number(courtFee) * 100),
         payment_term_days: Number(paymentTermDays),
-        captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });
       setSuccess(true);
-      toast.success('Заявка на регистрацию отправлена');
+      toast.success('Партнёр добавлен');
     } catch (err) {
       const axiosErr = err as import('axios').AxiosError<{ code?: string; detail?: unknown }>;
       const data = axiosErr.response?.data;
@@ -227,12 +177,6 @@ export default function AdminAddPartner() {
 
       if (detailObj?.code === 'DUPLICATE_EMAIL') {
         setApiError('Пользователь с таким email уже зарегистрирован.');
-      } else if (detailObj?.code === 'CAPTCHA_REQUIRED' || detailObj?.code === 'CAPTCHA_INVALID') {
-        setApiError('Подтвердите, что вы не робот, и повторите отправку.');
-        setCaptchaToken('');
-        if (captchaWidgetIdRef.current !== null) {
-          window.smartCaptcha?.reset(captchaWidgetIdRef.current);
-        }
       } else if (data?.code === 'VALIDATION_ERROR' && Array.isArray(detail)) {
         const fieldLabels: Record<string, string> = {
           email: 'Email',
@@ -282,15 +226,15 @@ export default function AdminAddPartner() {
           <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <Check className="w-8 h-8 text-green-600" />
           </div>
-          <h2 className="text-2xl font-semibold text-gray-900 mb-2">Заявка отправлена!</h2>
+          <h2 className="text-2xl font-semibold text-gray-900 mb-2">Партнёр добавлен</h2>
           <p className="text-gray-600 mb-6">
-            Ваша заявка на регистрацию успешно отправлена. Мы свяжемся с вами в течение 24 часов для подтверждения.
+            Данные партнёра сохранены. Сумма судебных расходов и срок оплаты установлены администратором.
           </p>
           <Link
-            to="/login"
+            to="/admin/partners"
             className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
           >
-            Вернуться на страницу входа
+            Вернуться к партнёрам
           </Link>
         </div>
       </div>
@@ -302,7 +246,7 @@ export default function AdminAddPartner() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Link
-          to="/login"
+          to="/admin/partners"
           className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
         >
           <ArrowLeft className="w-5 h-5 text-gray-600" />
@@ -735,12 +679,6 @@ export default function AdminAddPartner() {
           </div>
         </div>
 
-        {CAPTCHA_ENABLED && (
-          <div className="my-6 flex justify-center">
-            <div ref={captchaContainerRef} />
-          </div>
-        )}
-
         {/* Error */}
         {apiError && (
           <div className="mb-4 p-4 bg-red-50 text-red-700 rounded-lg text-sm">
@@ -752,7 +690,7 @@ export default function AdminAddPartner() {
         <div className="flex gap-3 pt-4">
           <button
             type="submit"
-            disabled={isSubmitting || (CAPTCHA_ENABLED && !captchaToken)}
+            disabled={isSubmitting}
             className="px-8 py-3 bg-blue-600 text-white rounded-lg font-medium hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isSubmitting ? 'Отправка...' : 'Зарегистрироваться'}

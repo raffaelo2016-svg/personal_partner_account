@@ -13,14 +13,6 @@ export const registrationStep1Schema = z.object({
     .min(1, REQUIRED)
     .regex(/^\d{13}$/, 'ОГРН должен содержать 13 цифр'),
   legalAddress: z.string().min(1, REQUIRED),
-  courtFee: z
-    .string()
-    .min(1, REQUIRED)
-    .refine((v) => Number(v) > 0, 'Сумма должна быть больше 0'),
-  paymentTermDays: z
-    .string()
-    .min(1, REQUIRED)
-    .refine((v) => Number(v) > 0, 'Срок должен быть больше 0'),
 });
 
 export const registrationStep2Schema = z

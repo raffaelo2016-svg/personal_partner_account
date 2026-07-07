@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router';
-import { ArrowRight, Check, Loader2, CircleDollarSign, CalendarDays } from 'lucide-react';
+import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo-color.svg';
 import { PhoneField } from '@/app/components/PhoneField';
 import { registerApi } from '../api/auth';
@@ -42,10 +42,6 @@ export default function Registration() {
     ogrn: '',
     legalAddress: '',
     
-    // Финансовые параметры
-    courtFee: '',
-    paymentTermDays: '',
-    
     // Контактное лицо
     contactName: '',
     contactPhone: '',
@@ -83,8 +79,6 @@ export default function Registration() {
       inn: formData.inn,
       ogrn: formData.ogrn,
       legalAddress: formData.legalAddress,
-      courtFee: formData.courtFee,
-      paymentTermDays: formData.paymentTermDays,
     });
     const newErrors = flattenZodErrors(result);
     setErrors(newErrors);
@@ -162,8 +156,6 @@ export default function Registration() {
         director_name: formData.contactName,
         inn: formData.inn,
         phone: phoneE164,
-        court_fee_per_client: Math.round(Number(formData.courtFee) * 100),
-        payment_term_days: Number(formData.paymentTermDays),
         captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });
       setStep(3);
@@ -375,79 +367,6 @@ export default function Registration() {
                 </div>
               </div>
 
-              {/* Финансовые параметры */}
-              <div className="space-y-5 mt-6">
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
-                      <CircleDollarSign className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-900">
-                        Сумма судебных расходов
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-0.5">
-                        Укажите сумму судебных расходов для данного партнёра. Эта сумма будет автоматически умножена на количество должников.
-                      </p>
-                    </div>
-                  </div>
-                  <input
-                    type="number"
-                    name="courtFee"
-                    value={formData.courtFee}
-                    onChange={handleChange}
-                    placeholder="Введите сумму в рублях"
-                    min="1"
-                    className={`w-full max-w-sm px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.courtFee ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.courtFee ? (
-                    <p className="text-sm text-red-500 mt-2">{errors.courtFee}</p>
-                  ) : (
-                    <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
-                      Обязательное поле для расчета платежей
-                    </p>
-                  )}
-                </div>
-
-                <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">
-                  <div className="flex items-start gap-3 mb-3">
-                    <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center flex-shrink-0">
-                      <CalendarDays className="w-5 h-5 text-white" />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-semibold text-gray-900">
-                        Срок оплаты
-                      </h3>
-                      <p className="text-sm text-gray-600 mt-0.5">
-                        Укажите срок оплаты (в днях) с даты вынесения судом определения о назначении процедуры банкротства.
-                      </p>
-                    </div>
-                  </div>
-                  <input
-                    type="number"
-                    name="paymentTermDays"
-                    value={formData.paymentTermDays}
-                    onChange={handleChange}
-                    placeholder="Введите количество дней"
-                    min="1"
-                    className={`w-full max-w-sm px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
-                      errors.paymentTermDays ? 'border-red-500' : 'border-gray-300'
-                    }`}
-                  />
-                  {errors.paymentTermDays ? (
-                    <p className="text-sm text-red-500 mt-2">{errors.paymentTermDays}</p>
-                  ) : (
-                    <p className="text-sm text-blue-600 mt-2 flex items-center gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full bg-blue-600 inline-block" />
-                      Обязательное поле для расчета платежей
-                    </p>
-                  )}
-                </div>
-              </div>
-              
               <div className="mt-8 flex justify-between">
                 <Link
                   to="/"

@@ -1,4 +1,5 @@
 from httpx import AsyncClient
+from sqlalchemy import select
 
 REGISTER_DATA = {
     "email": "newpartner@test.com",
@@ -18,6 +19,32 @@ class TestRegister:
         assert data["message"] == "Registration successful. Awaiting admin approval."
         assert data["user"]["email"] == "newpartner@test.com"
         assert data["user"]["role"] == "partner"
+
+    async def test_register_ignores_financial_terms_from_partner(self, client: AsyncClient, setup_db):
+        from app.models.partner import Partner
+        from app.models.user import User
+        from tests.conftest import async_session_test
+
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={
+                **REGISTER_DATA,
+                "email": "terms@test.com",
+                "court_fee_per_client": 99,
+                "payment_term_days": 99,
+            },
+        )
+        assert resp.status_code == 201
+
+        async with async_session_test() as session:
+            row = await session.execute(
+                select(Partner)
+                .join(User, Partner.user_id == User.id)
+                .where(User.email == "terms@test.com"),
+            )
+            partner = row.scalar_one()
+            assert partner.court_fee_per_client == 1_500_000
+            assert partner.payment_term_days == 10
 
     async def test_register_duplicate_email(self, client: AsyncClient, setup_db):
         await client.post("/api/v1/auth/register", json=REGISTER_DATA)
@@ -94,7 +121,7 @@ class TestRegisterCaptcha:
         assert resp.status_code == 201
 
     async def test_admin_bypass(self, client: AsyncClient, setup_db, monkeypatch):
-        """Админ с Bearer-токеном регистрирует партнёра без капчи (сценарий AdminAddPartner)."""
+        """Админ с Bearer-токеном может использовать endpoint без капчи для совместимости."""
         from unittest.mock import AsyncMock, patch
 
         from app.config import settings

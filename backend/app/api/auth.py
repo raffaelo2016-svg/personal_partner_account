@@ -116,9 +116,8 @@ async def register(
 ):
     ip = request.client.host if request.client else None
 
-    # Админ регистрирует партнёра через тот же endpoint (AdminAddPartner) —
-    # ему капча не нужна. Остальным (публичная форма регистрации) —
-    # обязательна, если ключ сконфигурирован.
+    # Публичная форма регистрации требует капчу, если ключ сконфигурирован.
+    # Bearer-токен админа оставлен как совместимый обход для служебных сценариев.
     is_admin_bypass = current_user is not None and current_user.role == "admin"
     if not is_admin_bypass and settings.YANDEX_CAPTCHA_SECRET_KEY:
         from app.services.captcha_service import verify_captcha
@@ -158,8 +157,8 @@ async def register(
         legal_address=body.legal_address,
         postal_address=body.postal_address,
         kpp=body.kpp,
-        court_fee_per_client=body.court_fee_per_client,
-        payment_term_days=body.payment_term_days,
+        court_fee_per_client=1_500_000,
+        payment_term_days=10,
         status="pending",
     )
     db.add(partner)

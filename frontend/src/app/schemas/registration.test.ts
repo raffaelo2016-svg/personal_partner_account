@@ -11,8 +11,6 @@ describe('registrationStep1Schema', () => {
     inn: '1234567890',
     ogrn: '1234567890123',
     legalAddress: 'г. Москва',
-    courtFee: '1500',
-    paymentTermDays: '10',
   };
 
   it('accepts valid input', () => {
@@ -30,37 +28,15 @@ describe('registrationStep1Schema', () => {
     expect(flattenZodErrors(result).ogrn).toBe('ОГРН должен содержать 13 цифр');
   });
 
-  it('rejects zero courtFee', () => {
-    const result = registrationStep1Schema.safeParse({ ...valid, courtFee: '0' });
-    expect(flattenZodErrors(result).courtFee).toBe('Сумма должна быть больше 0');
-  });
-
   it('reports multiple errors at once', () => {
     const result = registrationStep1Schema.safeParse({
       companyName: '',
       inn: '',
       ogrn: '',
       legalAddress: '',
-      courtFee: '',
-      paymentTermDays: '',
     });
     const errors = flattenZodErrors(result);
-    expect(Object.keys(errors).length).toBe(6);
-  });
-
-  it('rejects zero paymentTermDays', () => {
-    const result = registrationStep1Schema.safeParse({ ...valid, paymentTermDays: '0' });
-    expect(flattenZodErrors(result).paymentTermDays).toBe('Срок должен быть больше 0');
-  });
-
-  it('rejects non-numeric courtFee as "больше 0"', () => {
-    const result = registrationStep1Schema.safeParse({ ...valid, courtFee: 'abc' });
-    expect(flattenZodErrors(result).courtFee).toBe('Сумма должна быть больше 0');
-  });
-
-  it('rejects negative courtFee', () => {
-    const result = registrationStep1Schema.safeParse({ ...valid, courtFee: '-100' });
-    expect(flattenZodErrors(result).courtFee).toBe('Сумма должна быть больше 0');
+    expect(Object.keys(errors).length).toBe(4);
   });
 
   it('rejects INN with non-digit characters', () => {
@@ -153,8 +129,6 @@ describe('flattenZodErrors', () => {
       inn: '1234567890',
       ogrn: '1234567890123',
       legalAddress: 'г. Москва',
-      courtFee: '1500',
-      paymentTermDays: '10',
     };
     const result = registrationStep1Schema.safeParse(valid);
     expect(flattenZodErrors(result)).toEqual({});
@@ -166,8 +140,6 @@ describe('flattenZodErrors', () => {
       inn: 'abc',
       ogrn: '1234567890123',
       legalAddress: 'ок',
-      courtFee: '100',
-      paymentTermDays: '1',
     });
     const errors = flattenZodErrors(result);
     expect(Object.keys(errors)).toEqual(['inn']);

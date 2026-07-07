@@ -22,9 +22,6 @@ async function fillIndividual(page: Page, p: ReturnType<typeof uniquePartnerPayl
   await inputByLabel(page, 'Имя').fill('Иван');
   await inputByLabel(page, 'Отчество').fill('Иванович');
   await page.locator('input[type="password"]').fill(p.password);
-  const numbers = page.locator('input[type="number"]');
-  await numbers.nth(0).fill('1500');
-  await numbers.nth(1).fill('10');
 }
 
 async function selectPartnerType(page: Page, type: 'individual' | 'legal' | 'entrepreneur') {
@@ -40,8 +37,8 @@ test.describe('Registration — happy path', () => {
       expect(payload).toHaveProperty('email', p.email);
       expect(payload).toHaveProperty('password', p.password);
       expect(payload).toHaveProperty('partner_type', 'individual');
-      expect(payload).toHaveProperty('court_fee_per_client', 150000);
-      expect(payload).toHaveProperty('payment_term_days', 10);
+      expect(payload).not.toHaveProperty('court_fee_per_client');
+      expect(payload).not.toHaveProperty('payment_term_days');
       await route.fulfill({
         status: 201,
         contentType: 'application/json',
@@ -93,28 +90,6 @@ test.describe('Registration — валидация', () => {
     await expect(page.getByText('Заявка отправлена!')).toHaveCount(0);
   });
 
-  test('без courtFee: валидация не даёт отправить', async ({ page }) => {
-    const p = uniquePartnerPayload();
-    await page.locator('input[type="email"]').fill(p.email);
-    await page.locator('input#register-phone').fill(p.phone);
-    await inputByLabel(page, 'Фамилия').fill('И');
-    await inputByLabel(page, 'Имя').fill('И');
-    await page.locator('input[type="password"]').fill(p.password);
-    // courtFee пустой, term заполнен
-    await page.locator('input[type="number"]').nth(1).fill('10');
-
-    await page.getByRole('button', { name: /^Зарегистрироваться$/ }).click();
-    // Экран успеха не появился
-    await expect(page.getByText('Заявка отправлена!')).toHaveCount(0);
-    // Либо inline-ошибка у суммы, либо баннер "Заполните поля"
-    const hasError = await page
-      .getByText(/Обязательное поле|обязательн|больше 0/i)
-      .first()
-      .isVisible()
-      .catch(() => false);
-    expect(hasError).toBe(true);
-  });
-
   test('для legal пустой ИНН: форма не отправляется', async ({ page }) => {
     const p = uniquePartnerPayload();
     await selectPartnerType(page, 'legal');
@@ -123,8 +98,6 @@ test.describe('Registration — валидация', () => {
     await inputByLabel(page, 'Полное наименование').fill('ООО Тест');
     await inputByLabel(page, 'Сокращенное наименование').fill('Тест');
     await page.locator('input[type="password"]').fill(p.password);
-    await page.locator('input[type="number"]').nth(0).fill('1500');
-    await page.locator('input[type="number"]').nth(1).fill('10');
 
     await page.getByRole('button', { name: /^Зарегистрироваться$/ }).click();
     // Экран успеха не появился (форма не прошла валидацию ИНН/КПП)

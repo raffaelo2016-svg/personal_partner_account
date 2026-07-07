@@ -63,12 +63,8 @@ class RegisterRequest(BaseModel):
     legal_address: str | None = None
     postal_address: str | None = None
     kpp: str | None = None
-    court_fee_per_client: int = 1_500_000
-    payment_term_days: int = 10
 
-    # Yandex SmartCaptcha. None для dev-окружения без ключа, а также когда
-    # админ регистрирует партнёра через тот же endpoint — backend тогда
-    # пропускает проверку по Bearer-токену.
+    # Yandex SmartCaptcha. None для dev-окружения без ключа.
     captcha_token: str | None = None
 
     @model_validator(mode="after")

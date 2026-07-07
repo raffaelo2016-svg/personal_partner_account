@@ -53,8 +53,6 @@ export interface RegisterPayload {
   legal_address?: string;
   postal_address?: string;
   kpp?: string;
-  court_fee_per_client?: number;
-  payment_term_days?: number;
   captcha_token?: string;
 }
 
