@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, Query
+import html
+
+from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.ws_chat import broadcast_messages_read, broadcast_new_message
@@ -6,15 +8,33 @@ from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageRead, ChatRoomRead
+from app.services.s3_service import delete_file_async
 from app.services.chat_service import (
     get_admin_messages,
     get_total_unread_for_admin,
     list_admin_rooms,
     mark_messages_read,
     send_message,
+    upload_chat_file,
 )
 
 router = APIRouter(prefix="/admin/chat", tags=["admin-chat"])
+
+
+def _message_payload(msg: ChatMessageRead) -> dict:
+    return {
+        "id": msg.id,
+        "room_id": msg.room_id,
+        "sender_id": msg.sender_id,
+        "sender_type": msg.sender_type,
+        "text": msg.text,
+        "delivery_status": msg.delivery_status,
+        "attachment_url": msg.attachment_url,
+        "attachment_filename": msg.attachment_filename,
+        "attachment_size": msg.attachment_size,
+        "attachment_mime_type": msg.attachment_mime_type,
+        "created_at": str(msg.created_at),
+    }
 
 
 @router.get("/rooms", response_model=list[ChatRoomRead])
@@ -63,17 +83,37 @@ async def admin_post_message(
     msg = await send_message(db, room_id, str(current_user.id), "admin", body.text)
     await db.commit()
 
-    await broadcast_new_message(
-        {
-            "id": msg.id,
-            "room_id": msg.room_id,
-            "sender_id": msg.sender_id,
-            "sender_type": msg.sender_type,
-            "text": msg.text,
-            "created_at": str(msg.created_at),
-        },
-        exclude_user_id=str(current_user.id),
-        room_id=room_id,
-    )
+    await broadcast_new_message(_message_payload(msg), exclude_user_id=str(current_user.id), room_id=room_id)
 
+    return msg
+
+
+@router.post("/rooms/{room_id}/attachments", response_model=ChatMessageRead, status_code=201)
+async def admin_post_attachment(
+    room_id: str,
+    text: str = Form(""),  # noqa: B008
+    file: UploadFile = File(...),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    s3_key, filename, size, mime_type = await upload_chat_file(file)
+    try:
+        msg = await send_message(
+            db,
+            room_id,
+            str(current_user.id),
+            "admin",
+            html.escape(text.strip(), quote=True) if text else "",
+            attachment_s3_key=s3_key,
+            attachment_filename=filename,
+            attachment_size=size,
+            attachment_mime_type=mime_type,
+        )
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await delete_file_async(s3_key)
+        raise
+
+    await broadcast_new_message(_message_payload(msg), exclude_user_id=str(current_user.id), room_id=room_id)
     return msg

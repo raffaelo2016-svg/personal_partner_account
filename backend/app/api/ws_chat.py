@@ -290,6 +290,11 @@ async def websocket_chat(ws: WebSocket):
                         "sender_id": result.sender_id,
                         "sender_type": result.sender_type,
                         "text": result.text,
+                        "delivery_status": result.delivery_status,
+                        "attachment_url": result.attachment_url,
+                        "attachment_filename": result.attachment_filename,
+                        "attachment_size": result.attachment_size,
+                        "attachment_mime_type": result.attachment_mime_type,
                         "created_at": str(result.created_at),
                     }
 
@@ -313,6 +318,11 @@ async def websocket_chat(ws: WebSocket):
                             "sender_id": ai_msg.sender_id,
                             "sender_type": ai_msg.sender_type,
                             "text": ai_msg.text,
+                            "delivery_status": ai_msg.delivery_status,
+                            "attachment_url": ai_msg.attachment_url,
+                            "attachment_filename": ai_msg.attachment_filename,
+                            "attachment_size": ai_msg.attachment_size,
+                            "attachment_mime_type": ai_msg.attachment_mime_type,
                             "created_at": str(ai_msg.created_at),
                         },
                         target_user_ids=targets,

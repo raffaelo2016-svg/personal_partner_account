@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Search, User, Loader2, WifiOff, MessageSquare } from 'lucide-react';
+import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X } from 'lucide-react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminChatRooms,
   fetchAdminChatMessages,
+  sendAdminChatAttachment,
   sendAdminChatMessage,
   ChatMessageData,
 } from '../api/chat';
@@ -11,6 +12,7 @@ import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
 
 const PAGE_SIZE = 20;
 
@@ -18,10 +20,13 @@ export default function AdminChat() {
   const tz = useTimezone();
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isInitialLoad = useRef(true);
   const queryClient = useQueryClient();
 
@@ -60,7 +65,8 @@ export default function AdminChat() {
   const cachedMessages = useMemo(() => (messagesData?.pages ?? []).flat(), [messagesData]);
 
   const sendMutation = useMutation({
-    mutationFn: ({ roomId, text }: { roomId: string; text: string }) => sendAdminChatMessage(roomId, text),
+    mutationFn: ({ roomId, text, file }: { roomId: string; text: string; file?: File | null }) =>
+      file ? sendAdminChatAttachment(roomId, text, file) : sendAdminChatMessage(roomId, text),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminChatMessages', activeRoomId] });
       queryClient.invalidateQueries({ queryKey: ['adminChatRooms'] });
@@ -102,10 +108,63 @@ export default function AdminChat() {
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeRoomId) return;
-    sendMutation.mutate({ roomId: activeRoomId, text: inputText }, { onSuccess: scrollToBottom });
+    if ((!inputText.trim() && !selectedFile) || !activeRoomId) return;
+    sendMutation.mutate(
+      { roomId: activeRoomId, text: inputText, file: selectedFile },
+      {
+        onSuccess: () => {
+          setSelectedFile(null);
+          setFileError('');
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          scrollToBottom();
+        },
+      },
+    );
     setInputText('');
     scrollToBottom();
+  };
+
+  const handleFileSelect = (files: FileList | null) => {
+    setFileError('');
+    if (!files || files.length === 0) return;
+    const { valid, invalidFormat, tooLarge } = partitionFiles(files);
+    if (invalidFormat.length > 0) {
+      setSelectedFile(null);
+      setFileError('Можно прикрепить PDF, JPG, PNG, DOC или DOCX');
+      return;
+    }
+    if (tooLarge.length > 0) {
+      setSelectedFile(null);
+      setFileError(`Файл должен быть не больше ${MAX_FILE_SIZE_LABEL}`);
+      return;
+    }
+    setSelectedFile(valid[0] ?? null);
+  };
+
+  const renderAttachment = (msg: ChatMessageData, isOwn: boolean) => {
+    if (!msg.attachment_filename || !msg.attachment_url) return null;
+    return (
+      <a
+        href={msg.attachment_url}
+        target="_blank"
+        rel="noreferrer"
+        className={`mt-2 flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
+          isOwn
+            ? 'border-slate-500 bg-slate-600 hover:bg-slate-800 text-white'
+            : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-900'
+        }`}
+      >
+        <FileText className="w-5 h-5 flex-shrink-0" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium">{msg.attachment_filename}</span>
+          {msg.attachment_size ? (
+            <span className={`block text-xs ${isOwn ? 'text-slate-200' : 'text-gray-500'}`}>
+              {formatFileSize(msg.attachment_size)}
+            </span>
+          ) : null}
+        </span>
+      </a>
+    );
   };
 
   const allMessages = useMemo(() => {
@@ -193,7 +252,8 @@ export default function AdminChat() {
                         </div>
                       )}
                       <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                        <p>{msg.text}</p>
+                        {msg.text ? <p>{msg.text}</p> : null}
+                        {renderAttachment(msg, isAdmin)}
                       </div>
                       <div className={`flex items-center gap-0.5 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
                         <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
@@ -210,7 +270,43 @@ export default function AdminChat() {
               {activeRoomId && typingUsers[activeRoomId] && (
                 <p className="text-xs text-gray-400 mb-2 animate-pulse">Партнёр печатает...</p>
               )}
+              {selectedFile && (
+                <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                  <div className="flex min-w-0 items-center gap-2">
+                    <FileText className="w-4 h-4 text-slate-600 flex-shrink-0" />
+                    <span className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
+                    <span className="text-xs text-gray-500 flex-shrink-0">{formatFileSize(selectedFile.size)}</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="rounded-md p-1 text-gray-500 hover:bg-white hover:text-gray-700"
+                    onClick={() => {
+                      setSelectedFile(null);
+                      if (fileInputRef.current) fileInputRef.current.value = '';
+                    }}
+                    aria-label="Убрать файл"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+              {fileError && <p className="mb-2 text-xs text-red-600">{fileError}</p>}
               <form onSubmit={handleSend} className="flex items-center gap-3">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept={ALLOWED_FILE_EXTENSIONS.join(',')}
+                  onChange={(e) => handleFileSelect(e.target.files)}
+                />
+                <button
+                  type="button"
+                  className="p-3 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+                  onClick={() => fileInputRef.current?.click()}
+                  aria-label="Прикрепить файл"
+                >
+                  <Paperclip className="w-5 h-5" />
+                </button>
                 <input type="text" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
                   placeholder="Введите сообщение..."
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />

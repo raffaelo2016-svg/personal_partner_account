@@ -35,6 +35,10 @@ class ChatMessage(Base, TimestampMixin):
     sender_type: Mapped[str] = mapped_column(String(20))
     text: Mapped[str] = mapped_column(Text)
     delivery_status: Mapped[str] = mapped_column(String(10), default="sent")  # sent, delivered, read
+    attachment_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    attachment_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_size: Mapped[int | None] = mapped_column(nullable=True)
+    attachment_mime_type: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     room: Mapped[ChatRoom] = relationship("ChatRoom")
     sender: Mapped[User | None] = relationship("User")

@@ -1,11 +1,19 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, User, Bot, Loader2, WifiOff } from 'lucide-react';
+import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X } from 'lucide-react';
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
-import { fetchChatRooms, fetchChatMessages, sendChatMessage, ChatMessageData, ChatRoomData } from '../api/chat';
+import {
+  fetchChatRooms,
+  fetchChatMessages,
+  sendChatAttachment,
+  sendChatMessage,
+  ChatMessageData,
+  ChatRoomData,
+} from '../api/chat';
 import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
 
 const PAGE_SIZE = 20;
 
@@ -24,8 +32,11 @@ export default function Chat() {
   const tz = useTimezone();
   const [activeRoomId, setActiveRoomId] = useState<string | null>(null);
   const [inputText, setInputText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [fileError, setFileError] = useState('');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const isInitialLoad = useRef(true);
   const queryClient = useQueryClient();
 
@@ -56,7 +67,8 @@ export default function Chat() {
   const cachedMessages = useMemo(() => (messagesData?.pages ?? []).flat(), [messagesData]);
 
   const sendMutation = useMutation({
-    mutationFn: ({ roomId, text }: { roomId: string; text: string }) => sendChatMessage(roomId, text),
+    mutationFn: ({ roomId, text, file }: { roomId: string; text: string; file?: File | null }) =>
+      file ? sendChatAttachment(roomId, text, file) : sendChatMessage(roomId, text),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['chatMessages', activeRoomId] });
       queryClient.invalidateQueries({ queryKey: ['chatRooms'] });
@@ -100,10 +112,63 @@ export default function Chat() {
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputText.trim() || !activeRoomId) return;
-    sendMutation.mutate({ roomId: activeRoomId, text: inputText }, { onSuccess: scrollToBottom });
+    if ((!inputText.trim() && !selectedFile) || !activeRoomId) return;
+    sendMutation.mutate(
+      { roomId: activeRoomId, text: inputText, file: selectedFile },
+      {
+        onSuccess: () => {
+          setSelectedFile(null);
+          setFileError('');
+          if (fileInputRef.current) fileInputRef.current.value = '';
+          scrollToBottom();
+        },
+      },
+    );
     setInputText('');
     scrollToBottom();
+  };
+
+  const handleFileSelect = (files: FileList | null) => {
+    setFileError('');
+    if (!files || files.length === 0) return;
+    const { valid, invalidFormat, tooLarge } = partitionFiles(files);
+    if (invalidFormat.length > 0) {
+      setSelectedFile(null);
+      setFileError('Можно прикрепить PDF, JPG, PNG, DOC или DOCX');
+      return;
+    }
+    if (tooLarge.length > 0) {
+      setSelectedFile(null);
+      setFileError(`Файл должен быть не больше ${MAX_FILE_SIZE_LABEL}`);
+      return;
+    }
+    setSelectedFile(valid[0] ?? null);
+  };
+
+  const renderAttachment = (msg: ChatMessageData, isOwn: boolean) => {
+    if (!msg.attachment_filename || !msg.attachment_url) return null;
+    return (
+      <a
+        href={msg.attachment_url}
+        target="_blank"
+        rel="noreferrer"
+        className={`mt-2 flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
+          isOwn
+            ? 'border-blue-400 bg-blue-500 hover:bg-blue-700 text-white'
+            : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-900'
+        }`}
+      >
+        <FileText className="w-5 h-5 flex-shrink-0" />
+        <span className="min-w-0">
+          <span className="block truncate text-sm font-medium">{msg.attachment_filename}</span>
+          {msg.attachment_size ? (
+            <span className={`block text-xs ${isOwn ? 'text-blue-100' : 'text-gray-500'}`}>
+              {formatFileSize(msg.attachment_size)}
+            </span>
+          ) : null}
+        </span>
+      </a>
+    );
   };
 
   const allMessages = useMemo(() => {
@@ -186,7 +251,8 @@ export default function Chat() {
               <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                 <div className="max-w-md">
                   <div className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                    <p>{msg.text}</p>
+                    {msg.text ? <p>{msg.text}</p> : null}
+                    {renderAttachment(msg, isUser)}
                   </div>
                   <div className={`flex items-center gap-0.5 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
                     <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
@@ -203,7 +269,43 @@ export default function Chat() {
           {activeRoomId && typingUsers[activeRoomId] && (
             <p className="text-xs text-gray-400 mb-2 animate-pulse">Печатает...</p>
           )}
+          {selectedFile && (
+            <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
+              <div className="flex min-w-0 items-center gap-2">
+                <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
+                <span className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
+                <span className="text-xs text-gray-500 flex-shrink-0">{formatFileSize(selectedFile.size)}</span>
+              </div>
+              <button
+                type="button"
+                className="rounded-md p-1 text-gray-500 hover:bg-white hover:text-gray-700"
+                onClick={() => {
+                  setSelectedFile(null);
+                  if (fileInputRef.current) fileInputRef.current.value = '';
+                }}
+                aria-label="Убрать файл"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+          {fileError && <p className="mb-2 text-xs text-red-600">{fileError}</p>}
           <form onSubmit={handleSend} className="flex items-center gap-3">
+            <input
+              ref={fileInputRef}
+              type="file"
+              className="hidden"
+              accept={ALLOWED_FILE_EXTENSIONS.join(',')}
+              onChange={(e) => handleFileSelect(e.target.files)}
+            />
+            <button
+              type="button"
+              className="p-3 border border-gray-300 rounded-lg text-gray-600 hover:bg-gray-50 transition-colors"
+              onClick={() => fileInputRef.current?.click()}
+              aria-label="Прикрепить файл"
+            >
+              <Paperclip className="w-5 h-5" />
+            </button>
             <input type="text" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
               placeholder="Введите сообщение..." className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <button type="submit" disabled={sendMutation.isPending}

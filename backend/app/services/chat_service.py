@@ -1,14 +1,27 @@
+import os
+
 import structlog
+from fastapi import UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import Forbidden, NotFound
+from app.core.exceptions import BadRequest, FileTooLarge, Forbidden, NotFound, UnsupportedFileType
 from app.models.chat import ChatMessage, ChatRoom
 from app.schemas.chat import ChatMessageRead, ChatRoomRead
+from app.services.s3_service import delete_file_async, get_presigned_url, upload_file_async
 
 logger = structlog.get_logger()
 
 ROOM_TYPES = ["admin", "arbitration_manager", "assistant", "ai_assistant"]
+CHAT_UPLOAD_MAX_SIZE_MB = 10
+CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+CHAT_ALLOWED_MIME_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "application/msword",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+}
 
 
 def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
@@ -19,8 +32,40 @@ def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
         sender_type=m.sender_type,
         text=m.text,
         delivery_status=m.delivery_status,
+        attachment_url=get_presigned_url(m.attachment_s3_key) if m.attachment_s3_key else None,
+        attachment_filename=m.attachment_filename,
+        attachment_size=m.attachment_size,
+        attachment_mime_type=m.attachment_mime_type,
         created_at=m.created_at,
     )
+
+
+def _last_message_text(text: str | None, attachment_filename: str | None) -> str:
+    if text:
+        return text
+    if attachment_filename:
+        return f"Файл: {attachment_filename}"
+    return "Файл"
+
+
+async def upload_chat_file(file: UploadFile) -> tuple[str, str, int, str]:
+    if not file.filename:
+        raise BadRequest("No filename")
+
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in CHAT_ALLOWED_EXTENSIONS:
+        raise UnsupportedFileType()
+
+    content_type = file.content_type or ""
+    if content_type not in CHAT_ALLOWED_MIME_TYPES:
+        raise UnsupportedFileType()
+
+    data = await file.read()
+    if len(data) > CHAT_UPLOAD_MAX_SIZE_MB * 1024 * 1024:
+        raise FileTooLarge()
+
+    s3_key = await upload_file_async(data, file.filename, content_type)
+    return s3_key, file.filename, len(data), content_type
 
 
 async def ensure_rooms_for_partner(session: AsyncSession, partner_id: str) -> list[ChatRoom]:
@@ -51,6 +96,7 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
         select(
             ChatMessage.room_id,
             ChatMessage.text,
+            ChatMessage.attachment_filename,
             func.row_number()
             .over(
                 partition_by=ChatMessage.room_id,
@@ -61,8 +107,13 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
         .where(ChatMessage.room_id.in_(room_ids))
         .subquery()
     )
-    last_msgs_q = select(last_msg_sub.c.room_id, last_msg_sub.c.text).where(last_msg_sub.c.rn == 1)
-    last_msgs = {str(r.room_id): r.text for r in (await session.execute(last_msgs_q)).all()}
+    last_msgs_q = select(last_msg_sub.c.room_id, last_msg_sub.c.text, last_msg_sub.c.attachment_filename).where(
+        last_msg_sub.c.rn == 1
+    )
+    last_msgs = {
+        str(r.room_id): _last_message_text(r.text, r.attachment_filename)
+        for r in (await session.execute(last_msgs_q)).all()
+    }
 
     # Один запрос: unread count per room
     unread_q = (
@@ -122,6 +173,10 @@ async def send_message(
     text: str,
     *,
     partner_id: str | None = None,
+    attachment_s3_key: str | None = None,
+    attachment_filename: str | None = None,
+    attachment_size: int | None = None,
+    attachment_mime_type: str | None = None,
 ) -> ChatMessageRead:
     room = await session.get(ChatRoom, room_id)
     if not room:
@@ -133,14 +188,23 @@ async def send_message(
         room_id=room_id,
         sender_id=sender_id if sender_type != "bot" else None,
         sender_type=sender_type,
-        text=text,
+        text=text.strip() if text else "",
+        attachment_s3_key=attachment_s3_key,
+        attachment_filename=attachment_filename,
+        attachment_size=attachment_size,
+        attachment_mime_type=attachment_mime_type,
     )
     session.add(msg)
     await session.flush()
     await session.refresh(msg)
 
-    logger.info("chat_message_sent", room_id=room_id, sender_type=sender_type)
-    return _msg_to_read(msg)
+    try:
+        logger.info("chat_message_sent", room_id=room_id, sender_type=sender_type)
+        return _msg_to_read(msg)
+    except Exception:
+        if attachment_s3_key:
+            await delete_file_async(attachment_s3_key)
+        raise
 
 
 async def list_admin_rooms(
@@ -179,6 +243,7 @@ async def list_admin_rooms(
         select(
             ChatMessage.room_id,
             ChatMessage.text,
+            ChatMessage.attachment_filename,
             ChatMessage.created_at,
             func.row_number()
             .over(
@@ -190,10 +255,16 @@ async def list_admin_rooms(
         .where(ChatMessage.room_id.in_(room_ids))
         .subquery()
     )
-    last_msgs_q = select(last_msg_sub.c.room_id, last_msg_sub.c.text, last_msg_sub.c.created_at).where(
-        last_msg_sub.c.rn == 1
-    )
-    last_msgs = {str(r.room_id): (r.text, r.created_at) for r in (await session.execute(last_msgs_q)).all()}
+    last_msgs_q = select(
+        last_msg_sub.c.room_id,
+        last_msg_sub.c.text,
+        last_msg_sub.c.attachment_filename,
+        last_msg_sub.c.created_at,
+    ).where(last_msg_sub.c.rn == 1)
+    last_msgs = {
+        str(r.room_id): (_last_message_text(r.text, r.attachment_filename), r.created_at)
+        for r in (await session.execute(last_msgs_q)).all()
+    }
 
     # Один запрос: unread count per room
     unread_q = (

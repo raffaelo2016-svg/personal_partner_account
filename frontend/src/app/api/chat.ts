@@ -17,6 +17,10 @@ export interface ChatMessageData {
   sender_type: string;
   text: string;
   delivery_status: 'sent' | 'delivered' | 'read';
+  attachment_url?: string | null;
+  attachment_filename?: string | null;
+  attachment_size?: number | null;
+  attachment_mime_type?: string | null;
   created_at: string;
 }
 
@@ -35,6 +39,16 @@ export async function fetchChatMessages(
 
 export async function sendChatMessage(roomId: string, text: string): Promise<ChatMessageData> {
   const res = await apiClient.post<ChatMessageData>(`/chat/rooms/${roomId}/messages`, { text });
+  return res.data;
+}
+
+export async function sendChatAttachment(roomId: string, text: string, file: File): Promise<ChatMessageData> {
+  const formData = new FormData();
+  formData.append('text', text);
+  formData.append('file', file);
+  const res = await apiClient.post<ChatMessageData>(`/chat/rooms/${roomId}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return res.data;
 }
 
@@ -58,6 +72,16 @@ export async function fetchAdminChatMessages(
 
 export async function sendAdminChatMessage(roomId: string, text: string): Promise<ChatMessageData> {
   const res = await apiClient.post<ChatMessageData>(`/admin/chat/rooms/${roomId}/messages`, { text });
+  return res.data;
+}
+
+export async function sendAdminChatAttachment(roomId: string, text: string, file: File): Promise<ChatMessageData> {
+  const formData = new FormData();
+  formData.append('text', text);
+  formData.append('file', file);
+  const res = await apiClient.post<ChatMessageData>(`/admin/chat/rooms/${roomId}/attachments`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
   return res.data;
 }
 

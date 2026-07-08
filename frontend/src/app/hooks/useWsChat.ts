@@ -6,16 +6,21 @@ import { useAuthStore } from '../store/authStore';
 import { captureError } from '../sentry';
 import type { ChatMessageData } from '../api/chat';
 
+const deliveryStatusSchema = z.enum(['sent', 'delivered', 'read']);
+
 const wsMessagePayloadSchema = z.object({
   id: z.string(),
   room_id: z.string(),
-  sender_id: z.string(),
+  sender_id: z.string().nullable().optional(),
   sender_type: z.string(),
   text: z.string(),
+  delivery_status: deliveryStatusSchema.optional(),
+  attachment_url: z.string().nullable().optional(),
+  attachment_filename: z.string().nullable().optional(),
+  attachment_size: z.number().nullable().optional(),
+  attachment_mime_type: z.string().nullable().optional(),
   created_at: z.string(),
 });
-
-const deliveryStatusSchema = z.enum(['sent', 'delivered', 'read']);
 
 const wsIncomingSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('new_message'), message: wsMessagePayloadSchema }),
@@ -92,10 +97,14 @@ export function useWsChat(activeRoomId: string | null, options: UseWsChatOptions
         const msg: ChatMessageData = {
           id: data.message.id,
           room_id: data.message.room_id,
-          sender_id: data.message.sender_id,
+          sender_id: data.message.sender_id ?? null,
           sender_type: data.message.sender_type,
           text: data.message.text,
-          delivery_status: 'sent',
+          delivery_status: data.message.delivery_status ?? 'sent',
+          attachment_url: data.message.attachment_url,
+          attachment_filename: data.message.attachment_filename,
+          attachment_size: data.message.attachment_size,
+          attachment_mime_type: data.message.attachment_mime_type,
           created_at: data.message.created_at,
         };
         setWsMessages((prev) => [...prev, msg]);
