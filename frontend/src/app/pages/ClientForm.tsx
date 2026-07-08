@@ -43,6 +43,20 @@ const EMPTY_FORM = {
   email: '',
 };
 
+function formatSnils(value: string): string {
+  const digits = value.replace(/\D/g, '').slice(0, 11);
+  const first = digits.slice(0, 3);
+  const second = digits.slice(3, 6);
+  const third = digits.slice(6, 9);
+  const control = digits.slice(9, 11);
+
+  let formatted = first;
+  if (second) formatted += `-${second}`;
+  if (third) formatted += `-${third}`;
+  if (control) formatted += ` ${control}`;
+  return formatted;
+}
+
 export default function ClientForm() {
   const { id } = useParams<{ id: string }>();
   const isEditMode = !!id;
@@ -69,7 +83,7 @@ export default function ClientForm() {
         passportIssuedBy: existingClient.passport_issued_by || '',
         registrationAddress: existingClient.registration_address || '',
         inn: existingClient.inn || '',
-        snils: existingClient.snils || '',
+        snils: formatSnils(existingClient.snils || ''),
         region: existingClient.region || '',
         arbitrageCourt: existingClient.arbitrage_court || '',
         phone: existingClient.phone ?? '',
@@ -643,7 +657,7 @@ export default function ClientForm() {
                       inputMode="numeric"
                       name="snils"
                       value={formData.snils}
-                      onChange={(e) => { e.target.value = e.target.value.replace(/[^\d\s-]/g, ''); handleChange(e); }}
+                      onChange={(e) => { e.target.value = formatSnils(e.target.value); handleChange(e); }}
                       required
                       placeholder="123-456-789 00"
                       maxLength={14}
