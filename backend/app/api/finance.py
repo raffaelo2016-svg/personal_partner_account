@@ -42,6 +42,7 @@ router = APIRouter(prefix="/finance", tags=["finance"])
 @router.get("/court-fees", response_model=PaginatedResponse[CourtFeeRead])
 async def court_fees_list(
     status: str | None = Query(None),  # noqa: B008
+    category: str | None = Query(None),  # noqa: B008
     pagination: PaginationParams = Depends(),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
@@ -51,6 +52,7 @@ async def court_fees_list(
         db,
         partner_id,
         status=status,
+        category=category,
         offset=pagination.offset,
         limit=pagination.page_size,
     )

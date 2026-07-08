@@ -99,16 +99,31 @@ async def list_court_fees(
     *,
     client_id: str | None = None,
     status: str | None = None,
+    category: str | None = None,
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[CourtFeeRead], int]:
     base = select(CourtFee).where(CourtFee.deleted_at.is_(None))
+    today = date.today()
     if partner_id:
         base = base.where(CourtFee.partner_id == partner_id)
     if client_id:
         base = base.where(CourtFee.client_id == client_id)
     if status:
         base = base.where(CourtFee.status == status)
+    if category == "paid":
+        base = base.where(CourtFee.status == "paid")
+    elif category == "unpaid":
+        base = base.where(CourtFee.status.in_(["unpaid", "overdue"]))
+    elif category == "overdue":
+        base = base.where(CourtFee.status.in_(["unpaid", "overdue"]), CourtFee.due_date < today)
+    elif category == "current":
+        base = base.join(Client, Client.id == CourtFee.client_id).where(
+            CourtFee.status.in_(["unpaid", "overdue"]),
+            Client.court_procedure_date.isnot(None),
+            Client.court_procedure_date <= today,
+            CourtFee.due_date >= today,
+        )
 
     count_q = select(func.count()).select_from(base.subquery())
     total = (await session.execute(count_q)).scalar() or 0

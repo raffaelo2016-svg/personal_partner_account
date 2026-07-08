@@ -1,22 +1,35 @@
-import { AlertCircle, Users, TrendingUp, DollarSign, Loader2, Clock } from 'lucide-react';
+import { AlertCircle, Users, TrendingUp, DollarSign, Loader2, Clock, Filter } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchCourtFees, fetchCourtFeeSummary, payCourtFee } from '../api/finance';
 import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import PaymentModal from '../components/PaymentModal';
+import CustomSelect from '../components/ui/CustomSelect';
+
+const COURT_FEE_FILTERS = [
+  { value: 'all', label: 'Все клиенты' },
+  { value: 'unpaid', label: 'Требуют оплаты' },
+  { value: 'current', label: 'Текущая задолженность' },
+  { value: 'overdue', label: 'Просроченная задолженность' },
+  { value: 'paid', label: 'Оплачено' },
+];
 
 export default function CourtFees() {
   const tz = useTimezone();
   const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [selectedDebt, setSelectedDebt] = useState<string | null>(null);
   const [payDebtType, setPayDebtType] = useState<'overdue' | 'current' | 'all'>('all');
+  const [feeFilter, setFeeFilter] = useState('all');
   const [page, setPage] = useState(1);
   const queryClient = useQueryClient();
 
   const { data: feesData, isLoading } = useQuery({
-    queryKey: ['courtFees', page],
-    queryFn: () => fetchCourtFees({ page }),
+    queryKey: ['courtFees', page, feeFilter],
+    queryFn: () => fetchCourtFees({
+      page,
+      ...(feeFilter !== 'all' ? { category: feeFilter } : {}),
+    }),
   });
   const { data: summary } = useQuery({
     queryKey: ['courtFeeSummary'],
@@ -95,6 +108,7 @@ export default function CourtFees() {
   const unpaidCount = clientDebts.filter(
     (d) => d.status === 'unpaid' || d.status === 'overdue'
   ).length;
+  const selectedFilterLabel = COURT_FEE_FILTERS.find((item) => item.value === feeFilter)?.label ?? 'Все клиенты';
 
   return (
     <div className="p-8 space-y-8">
@@ -234,10 +248,31 @@ export default function CourtFees() {
 
       {/* Client Debts Table */}
       <div className="bg-white rounded-xl border border-gray-200">
-        <div className="p-6 border-b border-gray-200">
-          <h2 className="text-xl font-semibold text-gray-900">
-            Судебные расходы по клиентам
-          </h2>
+        <div className="p-6 border-b border-gray-200 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900">
+              Судебные расходы по клиентам
+            </h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Показано {clientDebts.length} из {feesData?.total ?? 0}
+            </p>
+          </div>
+          <div className="w-full lg:w-72">
+            <label className="sr-only">Фильтр клиентов по задолженности</label>
+            <div className="flex items-center gap-2">
+              <Filter className="w-4 h-4 text-gray-400 flex-shrink-0" />
+              <CustomSelect
+                value={feeFilter}
+                onChange={(value) => {
+                  setFeeFilter(value);
+                  setPage(1);
+                }}
+                options={COURT_FEE_FILTERS}
+                className="flex-1 min-w-0"
+                size="md"
+              />
+            </div>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full">
@@ -279,8 +314,14 @@ export default function CourtFees() {
                 <tr>
                   <td colSpan={7} className="px-6 py-12 text-center">
                     <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />
-                    <p className="text-sm text-gray-500">Нет клиентов</p>
-                    <p className="text-xs text-gray-400 mt-1">Клиенты появятся здесь после добавления</p>
+                    <p className="text-sm text-gray-500">
+                      {feeFilter === 'all' ? 'Нет клиентов' : `Нет клиентов: ${selectedFilterLabel.toLowerCase()}`}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      {feeFilter === 'all'
+                        ? 'Клиенты появятся здесь после добавления'
+                        : 'Выберите другой фильтр, чтобы посмотреть остальные судебные расходы'}
+                    </p>
                   </td>
                 </tr>
               )}

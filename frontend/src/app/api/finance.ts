@@ -61,7 +61,7 @@ export interface PaginatedTransactions {
   page_size: number;
 }
 
-export async function fetchCourtFees(params: { status?: string; page?: number } = {}): Promise<PaginatedCourtFees> {
+export async function fetchCourtFees(params: { status?: string; category?: string; page?: number } = {}): Promise<PaginatedCourtFees> {
   const res = await apiClient.get<PaginatedCourtFees>('/finance/court-fees', { params });
   return res.data;
 }
