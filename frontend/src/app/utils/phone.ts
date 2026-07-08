@@ -85,16 +85,12 @@ export function processPhoneInputForDisplay(raw: string): string {
   let d = t.replace(/\D/g, '');
   if (!d) return '';
 
-  if (d.length === 11 && d.startsWith('8')) {
-    d = `7${d.slice(1)}`;
-  } else if (d.length === 10) {
-    d = `7${d}`;
-  } else if (d.startsWith('9') && d.length < 10) {
-    d = `7${d}`;
-  }
-
-  if (d.startsWith('7') && d.length > 11) {
+  if (d.startsWith('8')) {
+    d = `7${d.slice(1, 11)}`;
+  } else if (d.startsWith('7')) {
     d = d.slice(0, 11);
+  } else {
+    d = `7${d.slice(0, 10)}`;
   }
 
   if (d.startsWith('7') && d.length <= 11) {

@@ -58,6 +58,10 @@ describe('processPhoneInputForDisplay', () => {
     expect(processPhoneInputForDisplay('9991234567')).toBe('+7 (999) 123-45-67');
   });
 
+  it('номер без плюса по умолчанию форматирует как российский', () => {
+    expect(processPhoneInputForDisplay('654646464864684')).toBe('+7 (654) 646-46-48');
+  });
+
   it('начинается с 8 → переводит в +7', () => {
     expect(processPhoneInputForDisplay('89991234567')).toBe('+7 (999) 123-45-67');
   });
