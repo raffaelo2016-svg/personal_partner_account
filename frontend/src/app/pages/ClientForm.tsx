@@ -296,7 +296,6 @@ export default function ClientForm() {
     { id: 'tax_debt', label: 'Справка об исполнении обязанности по уплате налогов, сборов, страховых взносов, пеней, штрафов, процентов', required: true },
     { id: 'credit_debt', label: 'Справка о задолженности по кредитным обязательствам', required: true },
     { id: 'credit_agreements', label: 'Копии кредитных договоров', required: true },
-    { id: 'court_fee', label: 'Квитанция по уплате госпошлины в арбитражный суд 300 рублей', required: true },
     { id: 'criminal_record', label: 'Справка о наличии (отсутствии) судимости', required: true },
     { id: 'deposit_payment', label: 'Квитанция по оплате 25000 на депозит', required: true },
     { id: 'other', label: 'Прочее', required: false },
