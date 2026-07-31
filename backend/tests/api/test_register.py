@@ -38,9 +38,7 @@ class TestRegister:
 
         async with async_session_test() as session:
             row = await session.execute(
-                select(Partner)
-                .join(User, Partner.user_id == User.id)
-                .where(User.email == "terms@test.com"),
+                select(Partner).join(User, Partner.user_id == User.id).where(User.email == "terms@test.com"),
             )
             partner = row.scalar_one()
             assert partner.court_fee_per_client == 1_500_000

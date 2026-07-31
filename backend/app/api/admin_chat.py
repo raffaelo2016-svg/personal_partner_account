@@ -8,7 +8,6 @@ from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageRead, ChatRoomRead
-from app.services.s3_service import delete_file_async
 from app.services.chat_service import (
     get_admin_messages,
     get_total_unread_for_admin,
@@ -17,6 +16,7 @@ from app.services.chat_service import (
     send_message,
     upload_chat_file,
 )
+from app.services.s3_service import delete_file_async
 
 router = APIRouter(prefix="/admin/chat", tags=["admin-chat"])
 

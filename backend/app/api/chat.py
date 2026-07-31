@@ -8,7 +8,6 @@ from app.core.dependencies import get_current_user
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageRead, ChatRoomRead
-from app.services.s3_service import delete_file_async
 from app.services.chat_service import (
     get_ai_response,
     get_messages,
@@ -19,6 +18,7 @@ from app.services.chat_service import (
     upload_chat_file,
 )
 from app.services.client_service import _get_partner_id_for_user
+from app.services.s3_service import delete_file_async
 
 router = APIRouter(prefix="/chat", tags=["chat"])
 
