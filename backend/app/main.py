@@ -18,6 +18,7 @@ from app.api.admin_finance import router as admin_finance_router
 from app.api.admin_partners import router as admin_partners_router
 from app.api.admin_settings import router as admin_settings_router
 from app.api.auth import router as auth_router
+from app.api.bitrix24_integration import router as bitrix24_integration_router
 from app.api.chat import router as chat_router
 from app.api.clients import router as clients_router
 from app.api.dashboard import router as dashboard_router
@@ -310,6 +311,7 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 # ── Routers ──────────────────────────────────────────────────────
 
 app.include_router(auth_router, prefix="/api/v1")
+app.include_router(bitrix24_integration_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")
 app.include_router(ws_chat_router)
 app.include_router(clients_router, prefix="/api/v1")
