@@ -26,7 +26,20 @@
 
 ## Запуск read-only обследования
 
-В `backend/.env` временно задаются:
+После установки локального приложения команда по умолчанию берёт access token из
+зашифрованного хранилища PostgreSQL. Из папки `backend` выполните:
+
+```bash
+poetry run python -m app.integrations.bitrix24.survey_cli \
+  --portal-domain bitrix.uriteh.ru \
+  --output ../docs/bitrix24/survey-result.json
+```
+
+Токен расшифровывается только в памяти процесса и не выводится в терминал или
+JSON-отчёт.
+
+Для локальной разработки без сохранённой установки можно явно использовать
+переменные окружения. В `backend/.env` временно задаются:
 
 ```text
 BITRIX_CLIENT_ENDPOINT=https://bitrix.uriteh.ru/rest/
@@ -39,6 +52,7 @@ BITRIX_DEAL_CATEGORY_ID=3
 
 ```bash
 poetry run python -m app.integrations.bitrix24.survey_cli \
+  --from-env \
   --output ../docs/bitrix24/survey-result.json
 ```
 
