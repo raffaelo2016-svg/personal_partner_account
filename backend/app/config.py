@@ -56,6 +56,12 @@ class Settings(BaseSettings):
     BITRIX_DEAL_CATEGORY_ID: int = 3
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"
     BITRIX_TOKEN_ENCRYPTION_KEY: str = ""
+    BITRIX_OUTBOX_BATCH_SIZE: int = 25
+    BITRIX_OUTBOX_MAX_ATTEMPTS: int = 8
+    BITRIX_RETRY_BASE_SECONDS: int = 30
+    BITRIX_RETRY_MAX_SECONDS: int = 3600
+    BITRIX_PROCESSING_STALE_MINUTES: int = 15
+    BITRIX_RECONCILE_AFTER_HOURS: int = 24
 
     ENVIRONMENT: str = "development"
 

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
+from app.integrations.bitrix24.sync import register_inbound_event
 from app.integrations.bitrix24.token_storage import TokenStorageError, decrypt_token, encrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 
@@ -149,6 +150,13 @@ async def bitrix24_handler(
     if not hmac.compare_digest(application_token, expected_token):
         raise HTTPException(status_code=401, detail="Invalid event authorization")
 
-    event_name = str(payload.get("event", "UNKNOWN"))[:100]
-    logger.info("bitrix_event_received", event=event_name, member_id=member_id)
-    return {"ok": True}
+    event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
+    event_id, created = await register_inbound_event(db, member_id=member_id, payload=payload)
+    logger.info(
+        "bitrix_event_received",
+        event=event_name,
+        member_id=member_id,
+        duplicate=not created,
+        event_receipt_id=str(event_id) if event_id else None,
+    )
+    return {"ok": True, "duplicate": not created}
