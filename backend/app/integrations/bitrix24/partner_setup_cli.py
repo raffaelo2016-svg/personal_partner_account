@@ -56,12 +56,7 @@ async def _existing_field_names(client: Bitrix24Client) -> set[str]:
     for field_key, field in fields.items():
         if not isinstance(field, dict):
             continue
-        name = (
-            field.get("upperName")
-            or field.get("fieldName")
-            or field.get("FIELD_NAME")
-            or field_key
-        )
+        name = field.get("upperName") or field.get("fieldName") or field.get("FIELD_NAME") or field_key
         if name:
             names.add(str(name).upper())
     return names
