@@ -14,6 +14,7 @@ from app.services.task_service import (
     get_task_stats,
     get_urgent_tasks,
     list_tasks,
+    retry_task_bitrix_sync,
     update_task,
 )
 
@@ -89,7 +90,20 @@ async def create_task_endpoint(
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    result = await create_task(db, body, str(current_user.id))
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await create_task(db, body, str(current_user.id), partner_id=partner_id)
+    await db.commit()
+    return result
+
+
+@router.post("/{task_id}/bitrix/retry", response_model=TaskRead)
+async def retry_task_bitrix_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await retry_task_bitrix_sync(db, task_id, partner_id=partner_id)
     await db.commit()
     return result
 

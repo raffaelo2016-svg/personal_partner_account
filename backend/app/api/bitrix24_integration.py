@@ -15,8 +15,10 @@ from app.database import get_db
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.partners import mark_remote_partner_conflict
 from app.integrations.bitrix24.sync import register_inbound_event
+from app.integrations.bitrix24.tasks import process_task_status_event
 from app.integrations.bitrix24.token_storage import TokenStorageError, decrypt_token, encrypt_token
 from app.models.bitrix_installation import BitrixInstallation
+from app.models.bitrix_sync import BitrixInboundEvent
 
 logger = structlog.get_logger()
 router = APIRouter(prefix="/integrations/bitrix24", tags=["bitrix24"])
@@ -154,6 +156,7 @@ async def bitrix24_handler(
     event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
     event_id, created = await register_inbound_event(db, member_id=member_id, payload=payload)
     conflict = False
+    task_status_synced = False
     if created:
         conflict = await mark_remote_partner_conflict(
             db,
@@ -163,6 +166,11 @@ async def bitrix24_handler(
         )
         if conflict:
             await db.commit()
+        if event_id:
+            receipt = await db.get(BitrixInboundEvent, event_id)
+            if receipt is not None and receipt.remote_entity_type == "task":
+                task_status_synced = await process_task_status_event(db, receipt)
+                await db.commit()
     logger.info(
         "bitrix_event_received",
         event=event_name,
@@ -170,4 +178,9 @@ async def bitrix24_handler(
         duplicate=not created,
         event_receipt_id=str(event_id) if event_id else None,
     )
-    return {"ok": True, "duplicate": not created, "conflict": conflict}
+    return {
+        "ok": True,
+        "duplicate": not created,
+        "conflict": conflict,
+        "task_status_synced": task_status_synced,
+    }

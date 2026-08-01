@@ -55,6 +55,12 @@ class BitrixInboundEvent(Base, TimestampMixin):
             name="ck_bitrix_inbound_events_status",
         ),
         Index("ix_bitrix_inbound_events_work", "status", "created_at"),
+        Index(
+            "ix_bitrix_inbound_events_remote",
+            "member_id",
+            "remote_entity_type",
+            "remote_entity_id",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -64,6 +70,8 @@ class BitrixInboundEvent(Base, TimestampMixin):
     )
     event_key: Mapped[str] = mapped_column(String(64))
     event_name: Mapped[str] = mapped_column(String(100))
+    remote_entity_type: Mapped[str | None] = mapped_column(String(50), default=None)
+    remote_entity_id: Mapped[str | None] = mapped_column(String(100), default=None)
     payload_hash: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20), default="received")
     attempts: Mapped[int] = mapped_column(default=0)

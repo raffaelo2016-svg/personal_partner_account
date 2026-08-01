@@ -20,11 +20,13 @@ from app.integrations.bitrix24.clients import (
 )
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE
+from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event_reference, schedule_task_creation
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
 from app.models.partner import Partner
+from app.models.task import Task
 
 logger = structlog.get_logger()
 
@@ -79,6 +81,7 @@ async def register_inbound_event(
     event_key, payload_hash = event_fingerprint(payload)
     status = "ignored" if is_self_originated_event(payload) else "received"
     event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
+    task_id = extract_task_event_reference(event_name, payload)
     statement = (
         insert(BitrixInboundEvent)
         .values(
@@ -86,6 +89,8 @@ async def register_inbound_event(
             member_id=member_id,
             event_key=event_key,
             event_name=event_name,
+            remote_entity_type=TASK_ENTITY_TYPE if task_id else None,
+            remote_entity_id=task_id,
             payload_hash=payload_hash,
             status=status,
         )
@@ -199,6 +204,10 @@ async def claim_outbox_batch(db: AsyncSession, *, limit: int | None = None) -> l
             client = await db.get(Client, operation.local_entity_id)
             if client is not None:
                 client.bitrix_sync_status = "processing"
+        elif operation.local_entity_type == TASK_ENTITY_TYPE:
+            task = await db.get(Task, operation.local_entity_id)
+            if task is not None:
+                task.bitrix_sync_status = "processing"
     await db.commit()
     return operations
 
@@ -253,6 +262,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     operation.result_reference = _safe_result_reference(result)
     await _complete_partner_projection(db, operation)
     await _complete_client_projection(db, operation)
+    await _complete_task_projection(db, operation)
     await db.commit()
     logger.info(
         "bitrix_outbox_operation_completed",
@@ -269,6 +279,19 @@ async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOper
         list_method = "crm.contact.list"
     elif operation.local_entity_type == CLIENT_DEAL_ENTITY_TYPE:
         list_method = "crm.deal.list"
+    elif operation.local_entity_type == TASK_ENTITY_TYPE:
+        existing = await client.call(
+            "tasks.task.list",
+            {
+                "filter": {"XML_ID": f"partner_cabinet:{operation.local_entity_id}"},
+                "select": ["ID", "XML_ID"],
+            },
+        )
+        tasks = existing.get("tasks", []) if isinstance(existing, dict) else []
+        if isinstance(tasks, list) and tasks:
+            first = tasks[0]
+            if isinstance(first, dict) and (first.get("id") or first.get("ID")):
+                return first.get("id") or first.get("ID")
     if list_method:
         fields = operation.payload.get("fields", {})
         originator_id = fields.get("ORIGINATOR_ID")
@@ -297,6 +320,8 @@ async def _update_projection_failure(
         entity = await db.get(Partner, operation.local_entity_id)
     elif operation.local_entity_type in _CLIENT_ENTITY_TYPES:
         entity = await db.get(Client, operation.local_entity_id)
+    elif operation.local_entity_type == TASK_ENTITY_TYPE:
+        entity = await db.get(Task, operation.local_entity_id)
     else:
         return
     if entity is not None:
@@ -431,6 +456,58 @@ async def _complete_client_projection(db: AsyncSession, operation: BitrixOutboxO
     client.bitrix_sync_status = "synced"
     client.bitrix_sync_error_code = None
     client.bitrix_synced_at = now
+    pending_tasks = list(
+        (
+            await db.scalars(
+                select(Task).where(
+                    Task.client_id == client.id,
+                    Task.bitrix_sync_status == "pending",
+                    Task.bitrix_sync_error_code == "CLIENT_NOT_SYNCED",
+                )
+            )
+        ).all()
+    )
+    for task in pending_tasks:
+        await schedule_task_creation(db, task)
+
+
+async def _complete_task_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
+    if operation.local_entity_type != TASK_ENTITY_TYPE:
+        return
+    task = await db.get(Task, operation.local_entity_id)
+    remote_id = operation.result_reference
+    if task is None or not remote_id:
+        if task is not None:
+            task.bitrix_sync_status = "failed"
+            task.bitrix_sync_error_code = "REMOTE_ID_MISSING"
+        operation.status = "failed"
+        operation.error_code = "REMOTE_ID_MISSING"
+        operation.completed_at = None
+        return
+
+    now = datetime.now(UTC)
+    await db.execute(
+        insert(BitrixEntityMap)
+        .values(
+            id=uuid.uuid4(),
+            member_id=operation.member_id,
+            local_entity_type=TASK_ENTITY_TYPE,
+            local_entity_id=task.id,
+            bitrix_entity_type="task",
+            bitrix_entity_id=remote_id,
+            sync_version=1,
+            last_synced_at=now,
+            last_verified_at=now,
+        )
+        .on_conflict_do_update(
+            constraint="uq_bitrix_entity_maps_local",
+            set_={"bitrix_entity_id": remote_id, "last_synced_at": now, "last_verified_at": now},
+        )
+    )
+    task.bitrix_task_id = remote_id
+    task.bitrix_sync_status = "synced"
+    task.bitrix_sync_error_code = None
+    task.bitrix_synced_at = now
 
 
 async def release_stale_operations(db: AsyncSession) -> int:
