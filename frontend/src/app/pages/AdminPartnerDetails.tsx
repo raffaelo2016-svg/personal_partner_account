@@ -1,10 +1,16 @@
 import {
   ArrowLeft, Mail, Phone, Calendar, Users, Briefcase,
-  Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2,
+  Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
-import { usePartner, useUpdatePartner, useDeletePartner } from '@/app/hooks/usePartners';
+import {
+  useBindPartnerBitrixCollab,
+  useDeletePartner,
+  usePartner,
+  useRetryPartnerBitrixSync,
+  useUpdatePartner,
+} from '@/app/hooks/usePartners';
 import { formatDate } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { toast } from 'sonner';
@@ -32,6 +38,15 @@ const PARTNER_TYPE_LABELS: Record<string, string> = {
   individual: 'Физическое лицо',
   legal: 'Юридическое лицо',
   entrepreneur: 'Индивидуальный предприниматель',
+};
+
+const BITRIX_SYNC_LABELS: Record<string, string> = {
+  not_scheduled: 'Не запланировано',
+  pending: 'Ожидает отправки',
+  processing: 'Отправляется',
+  synced: 'Синхронизировано',
+  failed: 'Ошибка',
+  conflict: 'Изменено в Битрикс24',
 };
 
 function parseFio(full: string) {
@@ -269,9 +284,14 @@ export default function AdminPartnerDetails() {
   const { data: partner, isLoading } = usePartner(id);
   const updatePartner = useUpdatePartner();
   const deletePartnerMutation = useDeletePartner();
+  const retryBitrixSync = useRetryPartnerBitrixSync();
+  const bindBitrixCollab = useBindPartnerBitrixCollab();
   const [showConfirm, setShowConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [collabId, setCollabId] = useState('');
+  const [chatId, setChatId] = useState('');
+  const [rootFolderId, setRootFolderId] = useState('');
 
   if (isLoading) {
     return (
@@ -480,6 +500,71 @@ export default function AdminPartnerDetails() {
 
         {/* Правая колонка */}
         <div className="space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+            <div className="flex items-center justify-between gap-3 mb-4">
+              <h2 className="text-lg font-semibold text-gray-900">Битрикс24</h2>
+              <span className={`text-xs font-medium px-2 py-1 rounded-full ${
+                partner.bitrix_sync_status === 'synced'
+                  ? 'bg-green-100 text-green-700'
+                  : partner.bitrix_sync_status === 'failed' || partner.bitrix_sync_status === 'conflict'
+                    ? 'bg-red-100 text-red-700'
+                    : 'bg-yellow-100 text-yellow-700'
+              }`}>
+                {BITRIX_SYNC_LABELS[partner.bitrix_sync_status] ?? partner.bitrix_sync_status}
+              </span>
+            </div>
+            <div className="space-y-2 text-sm">
+              <p className="text-gray-600">Карточка партнёра: <span className="text-gray-900">{partner.bitrix_partner_item_id ?? 'ещё не создана'}</span></p>
+              <p className="text-gray-600">Коллаба: <span className="text-gray-900">{partner.bitrix_collab_status === 'linked' ? 'привязана' : 'нужна привязка'}</span></p>
+              {partner.bitrix_sync_error_code && (
+                <p className="text-red-600">Код состояния: {partner.bitrix_sync_error_code}</p>
+              )}
+            </div>
+
+            {partner.status === 'active' && ['not_scheduled', 'failed'].includes(partner.bitrix_sync_status) && (
+              <button
+                onClick={() => retryBitrixSync.mutate(partner.id, {
+                  onSuccess: () => toast.success('Синхронизация поставлена в очередь'),
+                  onError: () => toast.error('Не удалось повторить синхронизацию'),
+                })}
+                disabled={retryBitrixSync.isPending}
+                className="mt-4 w-full flex items-center justify-center gap-2 px-3 py-2 text-sm border border-blue-200 text-blue-700 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${retryBitrixSync.isPending ? 'animate-spin' : ''}`} />
+                Повторить синхронизацию
+              </button>
+            )}
+
+            {partner.bitrix_sync_status === 'conflict' && (
+              <p className="mt-4 text-sm text-red-700 bg-red-50 rounded-lg p-3">
+                Реквизиты изменены в Битрикс24. Данные кабинета не перезаписаны; требуется решение администратора.
+              </p>
+            )}
+
+            {partner.bitrix_collab_status !== 'linked' && (
+              <div className="mt-5 pt-4 border-t border-gray-200 space-y-2">
+                <p className="text-sm font-medium text-gray-900">Привязать готовую коллабу</p>
+                <input value={collabId} onChange={(e) => setCollabId(e.target.value)} placeholder="ID коллабы" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="ID чата" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <input value={rootFolderId} onChange={(e) => setRootFolderId(e.target.value)} placeholder="ID корневой папки" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <button
+                  onClick={() => bindBitrixCollab.mutate({
+                    id: partner.id,
+                    data: { collab_id: collabId, chat_id: chatId, root_folder_id: rootFolderId },
+                  }, {
+                    onSuccess: () => toast.success('Коллаба привязана'),
+                    onError: () => toast.error('Не удалось сохранить привязку'),
+                  })}
+                  disabled={!collabId || !chatId || !rootFolderId || bindBitrixCollab.isPending}
+                  className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                >
+                  <Link2 className="w-4 h-4" />
+                  Сохранить привязку
+                </button>
+              </div>
+            )}
+          </div>
+
           {/* Действия */}
           <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4">Действия</h2>

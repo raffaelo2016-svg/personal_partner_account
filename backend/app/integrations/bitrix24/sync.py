@@ -14,9 +14,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
+from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
-from app.models.bitrix_sync import BitrixInboundEvent, BitrixOutboxOperation
+from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
+from app.models.partner import Partner
 
 logger = structlog.get_logger()
 
@@ -144,6 +146,8 @@ def _safe_result_reference(result: Any) -> str | None:
         candidate = result.get("id") or result.get("ID")
         if candidate is None and isinstance(result.get("task"), dict):
             candidate = result["task"].get("id") or result["task"].get("ID")
+        if candidate is None and isinstance(result.get("item"), dict):
+            candidate = result["item"].get("id") or result["item"].get("ID")
     if isinstance(candidate, str | int):
         text = str(candidate)
         return text[:100] if text else None
@@ -180,6 +184,10 @@ async def claim_outbox_batch(db: AsyncSession, *, limit: int | None = None) -> l
     for operation in operations:
         operation.status = "processing"
         operation.locked_at = now
+        if operation.local_entity_type == PARTNER_ENTITY_TYPE:
+            partner = await db.get(Partner, operation.local_entity_id)
+            if partner is not None:
+                partner.bitrix_sync_status = "processing"
     await db.commit()
     return operations
 
@@ -190,6 +198,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
         operation.status = "failed"
         operation.error_code = "INSTALLATION_NOT_FOUND"
         operation.attempts += 1
+        await _update_partner_failure(db, operation, retrying=False)
         await db.commit()
         return False
 
@@ -213,6 +222,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
             operation.next_attempt_at = datetime.now(UTC) + timedelta(seconds=retry_delay_seconds(operation.attempts))
         else:
             operation.status = "failed"
+        await _update_partner_failure(db, operation, retrying=operation.status == "retry")
         await db.commit()
         logger.warning(
             "bitrix_outbox_operation_failed",
@@ -230,6 +240,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     operation.locked_at = None
     operation.completed_at = datetime.now(UTC)
     operation.result_reference = _safe_result_reference(result)
+    await _complete_partner_projection(db, operation)
     await db.commit()
     logger.info(
         "bitrix_outbox_operation_completed",
@@ -237,6 +248,67 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
         method=operation.bitrix_method,
     )
     return True
+
+
+async def _update_partner_failure(
+    db: AsyncSession,
+    operation: BitrixOutboxOperation,
+    *,
+    retrying: bool,
+) -> None:
+    if operation.local_entity_type != PARTNER_ENTITY_TYPE:
+        return
+    partner = await db.get(Partner, operation.local_entity_id)
+    if partner is None:
+        return
+    partner.bitrix_sync_status = "pending" if retrying else "failed"
+    partner.bitrix_sync_error_code = operation.error_code
+
+
+async def _complete_partner_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
+    if operation.local_entity_type != PARTNER_ENTITY_TYPE:
+        return
+    partner = await db.get(Partner, operation.local_entity_id)
+    remote_id = operation.result_reference
+    if partner is None or not remote_id:
+        if partner is not None:
+            partner.bitrix_sync_status = "failed"
+            partner.bitrix_sync_error_code = "REMOTE_ID_MISSING"
+        operation.status = "failed"
+        operation.error_code = "REMOTE_ID_MISSING"
+        operation.completed_at = None
+        return
+
+    now = datetime.now(UTC)
+    statement = (
+        insert(BitrixEntityMap)
+        .values(
+            id=uuid.uuid4(),
+            member_id=operation.member_id,
+            local_entity_type=PARTNER_ENTITY_TYPE,
+            local_entity_id=partner.id,
+            bitrix_entity_type=f"crm_dynamic_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}",
+            bitrix_entity_id=remote_id,
+            sync_version=1,
+            last_synced_at=now,
+            last_verified_at=now,
+        )
+        .on_conflict_do_update(
+            constraint="uq_bitrix_entity_maps_local",
+            set_={
+                "bitrix_entity_id": remote_id,
+                "last_synced_at": now,
+                "last_verified_at": now,
+            },
+        )
+    )
+    await db.execute(statement)
+    partner.bitrix_partner_item_id = remote_id
+    partner.bitrix_sync_status = "synced"
+    partner.bitrix_sync_error_code = None
+    partner.bitrix_synced_at = now
+    if partner.bitrix_collab_status == "not_linked":
+        partner.bitrix_collab_status = "binding_required"
 
 
 async def release_stale_operations(db: AsyncSession) -> int:

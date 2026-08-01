@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
+from app.models.types import UTCDateTime
 
 if TYPE_CHECKING:
     from app.models.client import Client
@@ -15,6 +17,17 @@ if TYPE_CHECKING:
 
 class Partner(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "partners"
+    __table_args__ = (
+        CheckConstraint(
+            "bitrix_sync_status IN ('not_scheduled', 'pending', 'processing', 'synced', 'failed', 'conflict')",
+            name="ck_partners_bitrix_sync_status",
+        ),
+        CheckConstraint(
+            "bitrix_collab_status IN ('not_linked', 'binding_required', 'linked')",
+            name="ck_partners_bitrix_collab_status",
+        ),
+        Index("ix_partners_bitrix_sync_status", "bitrix_sync_status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), unique=True)
@@ -34,6 +47,17 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
     court_fee_per_client: Mapped[int] = mapped_column(default=1_500_000)
     payment_term_days: Mapped[int] = mapped_column(default=10)
     status: Mapped[str] = mapped_column(String(20), default="pending")
+
+    # Bitrix24 is an operational projection. Cabinet requisites remain authoritative.
+    bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
+    bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_partner_item_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_collab_status: Mapped[str] = mapped_column(String(20), default="not_linked")
+    bitrix_collab_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_chat_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_root_folder_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     user: Mapped[User] = relationship("User", back_populates="partner")
     clients: Mapped[list[Client]] = relationship("Client", back_populates="partner")

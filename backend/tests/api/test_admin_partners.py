@@ -101,6 +101,8 @@ class TestCreatePartner:
         data = resp.json()
         assert data["company_name"] == "Test Company"
         assert data["status"] == "active"
+        assert data["bitrix_sync_status"] == "not_scheduled"
+        assert data["bitrix_sync_error_code"] == "INSTALLATION_NOT_FOUND"
 
     async def test_create_partner_duplicate_email(self, client: AsyncClient, admin_token: str):
         payload = {
@@ -123,6 +125,67 @@ class TestGetPartner:
             headers=auth_headers(admin_token),
         )
         assert resp.status_code == 404
+
+
+class TestPartnerBitrix24:
+    async def _create_partner(self, client: AsyncClient, admin_token: str) -> dict:
+        response = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "bitrix-partner@test.com",
+                "password": "securepass123",
+                "company_name": "Bitrix Test Company",
+                "director_name": "Test Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-33",
+            },
+            headers=auth_headers(admin_token),
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    async def test_retry_reports_missing_installation_without_blocking_partner(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+    ):
+        partner = await self._create_partner(client, admin_token)
+        response = await client.post(
+            f"/api/v1/admin/partners/{partner['id']}/bitrix24/retry",
+            headers=auth_headers(admin_token),
+        )
+        assert response.status_code == 409
+
+        partner_response = await client.get(
+            f"/api/v1/admin/partners/{partner['id']}",
+            headers=auth_headers(admin_token),
+        )
+        assert partner_response.status_code == 200
+        data = partner_response.json()
+        assert data["status"] == "active"
+        assert data["bitrix_sync_status"] == "not_scheduled"
+
+    async def test_admin_can_bind_collab_identifiers(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+    ):
+        partner = await self._create_partner(client, admin_token)
+        response = await client.put(
+            f"/api/v1/admin/partners/{partner['id']}/bitrix24/collab",
+            json={
+                "collab_id": "collab-101",
+                "chat_id": "chat-202",
+                "root_folder_id": "folder-303",
+            },
+            headers=auth_headers(admin_token),
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert data["bitrix_collab_status"] == "linked"
+        assert data["bitrix_collab_id"] == "collab-101"
+        assert data["bitrix_chat_id"] == "chat-202"
+        assert data["bitrix_root_folder_id"] == "folder-303"
 
 
 class TestPartnerStats:

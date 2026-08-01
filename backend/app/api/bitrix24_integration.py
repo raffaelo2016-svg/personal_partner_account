@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
+from app.integrations.bitrix24.partners import mark_remote_partner_conflict
 from app.integrations.bitrix24.sync import register_inbound_event
 from app.integrations.bitrix24.token_storage import TokenStorageError, decrypt_token, encrypt_token
 from app.models.bitrix_installation import BitrixInstallation
@@ -152,6 +153,16 @@ async def bitrix24_handler(
 
     event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
     event_id, created = await register_inbound_event(db, member_id=member_id, payload=payload)
+    conflict = False
+    if created:
+        conflict = await mark_remote_partner_conflict(
+            db,
+            member_id=member_id,
+            event_name=event_name,
+            payload=payload,
+        )
+        if conflict:
+            await db.commit()
     logger.info(
         "bitrix_event_received",
         event=event_name,
@@ -159,4 +170,4 @@ async def bitrix24_handler(
         duplicate=not created,
         event_receipt_id=str(event_id) if event_id else None,
     )
-    return {"ok": True, "duplicate": not created}
+    return {"ok": True, "duplicate": not created, "conflict": conflict}

@@ -1,5 +1,5 @@
 import apiClient from './client';
-import type { Partner, PartnerCreate, PartnerUpdate } from '@/app/types';
+import type { Partner, PartnerBitrixCollabBinding, PartnerCreate, PartnerUpdate } from '@/app/types';
 
 export interface PaginatedResponse<T> {
   items: T[];
@@ -59,5 +59,18 @@ export async function deletePartner(id: string): Promise<void> {
 
 export async function fetchPartnerStats(): Promise<PartnerStats> {
   const { data } = await apiClient.get<PartnerStats>('/admin/partners/stats');
+  return data;
+}
+
+export async function retryPartnerBitrixSync(id: string): Promise<Partner> {
+  const { data } = await apiClient.post<Partner>(`/admin/partners/${id}/bitrix24/retry`);
+  return data;
+}
+
+export async function bindPartnerBitrixCollab(
+  id: string,
+  payload: PartnerBitrixCollabBinding,
+): Promise<Partner> {
+  const { data } = await apiClient.put<Partner>(`/admin/partners/${id}/bitrix24/collab`, payload);
   return data;
 }

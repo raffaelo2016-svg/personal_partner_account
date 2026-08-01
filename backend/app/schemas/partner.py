@@ -66,6 +66,15 @@ class PartnerRead(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    bitrix_sync_status: str = "not_scheduled"
+    bitrix_sync_error_code: str | None = None
+    bitrix_partner_item_id: str | None = None
+    bitrix_collab_status: str = "not_linked"
+    bitrix_collab_id: str | None = None
+    bitrix_chat_id: str | None = None
+    bitrix_root_folder_id: str | None = None
+    bitrix_sync_requested_at: datetime | None = None
+    bitrix_synced_at: datetime | None = None
     clients_count: int = 0
     active_cases_count: int = 0
     before_court_count: int = 0
@@ -84,3 +93,9 @@ class PartnerStats(BaseModel):
     active_partners: int
     total_clients: int
     pending_partners: int
+
+
+class PartnerBitrixCollabBinding(BaseModel):
+    collab_id: str = Field(min_length=1, max_length=100)
+    chat_id: str = Field(min_length=1, max_length=100)
+    root_folder_id: str = Field(min_length=1, max_length=100)

@@ -33,6 +33,15 @@ export interface Partner {
   status: PartnerStatus;
   created_at: string;
   updated_at: string;
+  bitrix_sync_status: 'not_scheduled' | 'pending' | 'processing' | 'synced' | 'failed' | 'conflict';
+  bitrix_sync_error_code?: string | null;
+  bitrix_partner_item_id?: string | null;
+  bitrix_collab_status: 'not_linked' | 'binding_required' | 'linked';
+  bitrix_collab_id?: string | null;
+  bitrix_chat_id?: string | null;
+  bitrix_root_folder_id?: string | null;
+  bitrix_sync_requested_at?: string | null;
+  bitrix_synced_at?: string | null;
   clients_count?: number;
   active_cases_count?: number;
   before_court_count?: number;
@@ -42,6 +51,12 @@ export interface Partner {
   finance_current_debt?: number;
   finance_overdue_debt?: number;
   finance_paid?: number;
+}
+
+export interface PartnerBitrixCollabBinding {
+  collab_id: string;
+  chat_id: string;
+  root_folder_id: string;
 }
 
 export interface PartnerCreate {
