@@ -1,6 +1,7 @@
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bitrix_installation import BitrixInstallation
+from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.chat import ChatMessage, ChatRoom
 from app.models.client import Client
 from app.models.client_status_log import ClientStatusLog
@@ -18,6 +19,9 @@ __all__ = [
     "AuditLog",
     "Base",
     "BitrixInstallation",
+    "BitrixEntityMap",
+    "BitrixInboundEvent",
+    "BitrixOutboxOperation",
     "ChatMessage",
     "ChatRoom",
     "Client",
