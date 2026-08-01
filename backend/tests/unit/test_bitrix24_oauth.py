@@ -23,6 +23,10 @@ def test_rejects_untrusted_oauth_endpoint():
         oauth._token_endpoint("https://example.com/rest/")
 
 
+def test_uses_central_oauth_host_for_regional_endpoint():
+    assert oauth._token_endpoint("https://oauth.bitrix24.tech/rest/") == "https://oauth.bitrix.info/oauth/token/"
+
+
 @pytest.mark.asyncio
 async def test_refresh_rotates_and_encrypts_both_tokens(monkeypatch):
     monkeypatch.setattr(settings, "BITRIX_CLIENT_ID", "local.app")
@@ -38,6 +42,7 @@ async def test_refresh_rotates_and_encrypts_both_tokens(monkeypatch):
         return f"encrypted:{value}".encode()
 
     async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "oauth.bitrix.info"
         query = parse_qs(request.url.query.decode())
         assert query["client_secret"] == ["application-secret"]
         assert query["refresh_token"] == ["old-refresh"]
