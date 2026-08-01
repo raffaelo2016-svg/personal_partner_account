@@ -28,11 +28,11 @@ PARTNER_FIELDS = {
     "phone": "UF_CRM_31_1733299746918",
     "email": "UF_CRM_31_1733299758806",
     "legal_address": "UF_CRM_31_1743589990820",
-    "partner_type": "UF_CRM_31_YRITECH_PARTNER_TYPE",
-    "inn": "UF_CRM_31_YRITECH_PARTNER_INN",
-    "kpp": "UF_CRM_31_YRITECH_PARTNER_KPP",
-    "court_fee": "UF_CRM_31_YRITECH_COURT_FEE",
-    "payment_days": "UF_CRM_31_YRITECH_PAYMENT_DAYS",
+    "partner_type": "UF_CRM_16_YRITECH_PARTNER_TYPE",
+    "inn": "UF_CRM_16_YRITECH_PARTNER_INN",
+    "kpp": "UF_CRM_16_YRITECH_PARTNER_KPP",
+    "court_fee": "UF_CRM_16_YRITECH_COURT_FEE",
+    "payment_days": "UF_CRM_16_YRITECH_PAYMENT_DAYS",
 }
 
 
