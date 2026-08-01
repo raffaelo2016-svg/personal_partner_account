@@ -26,18 +26,45 @@ async def test_call_sends_oauth_token_without_exposing_it_in_error():
     assert "top-secret-token" not in str(exc_info.value)
 
 
-async def test_list_all_uses_start_pagination():
+async def test_list_all_uses_next_cursor_from_response():
     starts: list[int] = []
 
     async def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
         starts.append(payload["start"])
-        count = 50 if payload["start"] == 0 else 2
-        return httpx.Response(200, json={"result": [{"ID": i} for i in range(count)]})
+        if payload["start"] == 0:
+            return httpx.Response(200, json={"result": [{"ID": 1}], "next": 75, "total": 2})
+        return httpx.Response(200, json={"result": [{"ID": 2}], "total": 2})
 
     transport = httpx.MockTransport(handler)
     async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
         result = await client.list_all("user.get")
 
-    assert len(result) == 52
-    assert starts == [0, 50]
+    assert result == [{"ID": 1}, {"ID": 2}]
+    assert starts == [0, 75]
+
+
+async def test_list_all_stops_when_next_cursor_is_absent():
+    calls = 0
+
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal calls
+        calls += 1
+        return httpx.Response(200, json={"result": [{"ID": i} for i in range(50)], "total": 50})
+
+    transport = httpx.MockTransport(handler)
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        result = await client.list_all("crm.status.list")
+
+    assert len(result) == 50
+    assert calls == 1
+
+
+async def test_list_all_rejects_repeated_next_cursor():
+    async def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"result": [], "next": 0})
+
+    transport = httpx.MockTransport(handler)
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        with pytest.raises(Bitrix24Error, match="repeated pagination cursor"):
+            await client.list_all("user.get")
