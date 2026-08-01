@@ -13,6 +13,7 @@ from app.integrations.bitrix24.token_storage import decrypt_token, encrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 
 _ALLOWED_OAUTH_HOSTS = {"oauth.bitrix.info", "oauth.bitrix24.tech"}
+_CENTRAL_OAUTH_HOST = "oauth.bitrix.info"
 
 
 def _token_endpoint(server_endpoint: str) -> str:
@@ -22,7 +23,10 @@ def _token_endpoint(server_endpoint: str) -> str:
         raise Bitrix24Error("INVALID_OAUTH_ENDPOINT", "Bitrix24 OAuth endpoint is not allowed")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
         raise Bitrix24Error("INVALID_OAUTH_ENDPOINT", "Bitrix24 OAuth endpoint is invalid")
-    return f"https://{host}/oauth/token/"
+    # Bitrix24 installation payloads can contain a regional REST server host,
+    # but application credentials must only be sent to the central OAuth
+    # authorization server documented by Bitrix24.
+    return f"https://{_CENTRAL_OAUTH_HOST}/oauth/token/"
 
 
 def _expiry(payload: dict[str, Any]) -> datetime:
