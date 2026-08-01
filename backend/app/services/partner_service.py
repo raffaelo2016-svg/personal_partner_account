@@ -10,7 +10,7 @@ from app.models.client import Client
 from app.models.court_fee import CourtFee
 from app.models.partner import Partner
 from app.models.user import User
-from app.schemas.partner import PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
+from app.schemas.partner import PartnerBitrixCollabBinding, PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
 from app.services.audit import audit_log
 
 logger = structlog.get_logger()
@@ -251,6 +251,15 @@ def _partner_to_read(
         status=partner.status,
         created_at=partner.created_at,
         updated_at=partner.updated_at,
+        bitrix_sync_status=partner.bitrix_sync_status,
+        bitrix_sync_error_code=partner.bitrix_sync_error_code,
+        bitrix_partner_item_id=partner.bitrix_partner_item_id,
+        bitrix_collab_status=partner.bitrix_collab_status,
+        bitrix_collab_id=partner.bitrix_collab_id,
+        bitrix_chat_id=partner.bitrix_chat_id,
+        bitrix_root_folder_id=partner.bitrix_root_folder_id,
+        bitrix_sync_requested_at=partner.bitrix_sync_requested_at,
+        bitrix_synced_at=partner.bitrix_synced_at,
         clients_count=clients_count,
         before_court_count=before_court_count,
         in_court_count=in_court_count,
@@ -299,10 +308,14 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
 
     await ensure_rooms_for_partner(session, str(partner.id))
 
+    from app.integrations.bitrix24.partners import schedule_partner_creation
+
+    await schedule_partner_creation(session, partner)
+
     audit_log(action="create_partner", target_id=str(partner.id), target_type="partner")
     logger.info("partner_created", partner_id=str(partner.id), company=data.company_name)
 
-    return _partner_to_read(partner)
+    return _partner_to_read(partner, email=user.email)
 
 
 async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUpdate) -> PartnerRead:
@@ -310,12 +323,17 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
     if not partner or partner.deleted_at is not None:
         raise NotFound("Partner not found")
 
+    previous_status = partner.status
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         if hasattr(partner, key):
             setattr(partner, key, value if not hasattr(value, "value") else value.value)
 
     await session.flush()
+    if previous_status != "active" and partner.status == "active":
+        from app.integrations.bitrix24.partners import schedule_partner_creation
+
+        await schedule_partner_creation(session, partner)
     audit_log(
         action="update_partner",
         target_id=str(partner.id),
@@ -329,6 +347,41 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
         new_status=update_data.get("status"),
     )
 
+    return await get_partner(session, partner_id)
+
+
+async def retry_partner_bitrix_sync(session: AsyncSession, partner_id: str) -> PartnerRead:
+    partner = await session.get(Partner, partner_id)
+    if not partner or partner.deleted_at is not None:
+        raise NotFound("Partner not found")
+    if partner.status != "active":
+        raise ValueError("Синхронизация доступна только активному партнёру")
+    if partner.bitrix_sync_status == "conflict":
+        raise ValueError("Конфликт требует решения администратора")
+
+    from app.integrations.bitrix24.partners import schedule_partner_creation
+
+    queued = await schedule_partner_creation(session, partner, retry=True)
+    if not queued and partner.bitrix_sync_status == "not_scheduled":
+        raise ValueError("Активная установка Битрикс24 не найдена")
+    audit_log(action="retry_partner_bitrix_sync", target_id=str(partner.id), target_type="partner")
+    return await get_partner(session, partner_id)
+
+
+async def bind_partner_bitrix_collab(
+    session: AsyncSession,
+    partner_id: str,
+    data: PartnerBitrixCollabBinding,
+) -> PartnerRead:
+    partner = await session.get(Partner, partner_id)
+    if not partner or partner.deleted_at is not None:
+        raise NotFound("Partner not found")
+    partner.bitrix_collab_id = data.collab_id
+    partner.bitrix_chat_id = data.chat_id
+    partner.bitrix_root_folder_id = data.root_folder_id
+    partner.bitrix_collab_status = "linked"
+    await session.flush()
+    audit_log(action="bind_partner_bitrix_collab", target_id=str(partner.id), target_type="partner")
     return await get_partner(session, partner_id)
 
 

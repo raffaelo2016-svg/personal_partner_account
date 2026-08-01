@@ -86,6 +86,7 @@ def test_transient_error_classification(code: str, status_code: int | None, expe
         ({"id": 456}, "456"),
         ({"ID": "789"}, "789"),
         ({"task": {"id": 12}}, "12"),
+        ({"item": {"id": 34}}, "34"),
         ({"items": [{"name": "personal data"}]}, None),
     ],
 )

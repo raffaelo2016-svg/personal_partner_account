@@ -1,22 +1,50 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_role
 from app.database import get_db
 from app.schemas.pagination import PaginatedResponse, PaginationParams
-from app.schemas.partner import PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
+from app.schemas.partner import PartnerBitrixCollabBinding, PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
 from app.services.partner_service import (
+    bind_partner_bitrix_collab,
     create_partner,
     delete_partner,
     get_partner,
     get_partners_stats,
     list_partners,
+    retry_partner_bitrix_sync,
     update_partner,
 )
 
 router = APIRouter(prefix="/admin/partners", tags=["admin-partners"])
+
+
+@router.post("/{partner_id}/bitrix24/retry", response_model=PartnerRead)
+async def retry_partner_bitrix_sync_endpoint(
+    partner_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user=Depends(require_role("admin")),  # noqa: B008
+):
+    try:
+        result = await retry_partner_bitrix_sync(db, partner_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    await db.commit()
+    return result
+
+
+@router.put("/{partner_id}/bitrix24/collab", response_model=PartnerRead)
+async def bind_partner_bitrix_collab_endpoint(
+    partner_id: str,
+    body: PartnerBitrixCollabBinding,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user=Depends(require_role("admin")),  # noqa: B008
+):
+    result = await bind_partner_bitrix_collab(db, partner_id, body)
+    await db.commit()
+    return result
 
 
 @router.get("", response_model=PaginatedResponse[PartnerRead])

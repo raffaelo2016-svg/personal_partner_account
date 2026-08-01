@@ -6,9 +6,11 @@ import {
   updatePartner,
   deletePartner,
   fetchPartnerStats,
+  bindPartnerBitrixCollab,
+  retryPartnerBitrixSync,
   type PartnerFilters,
 } from '@/app/api/partners';
-import type { PartnerCreate, PartnerUpdate } from '@/app/types';
+import type { PartnerBitrixCollabBinding, PartnerCreate, PartnerUpdate } from '@/app/types';
 
 export function usePartners(filters: PartnerFilters = {}) {
   return useQuery({
@@ -72,5 +74,22 @@ export function usePartnerStats() {
   return useQuery({
     queryKey: ['admin', 'partners', 'stats'],
     queryFn: fetchPartnerStats,
+  });
+}
+
+export function useRetryPartnerBitrixSync() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => retryPartnerBitrixSync(id),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'partners'] }),
+  });
+}
+
+export function useBindPartnerBitrixCollab() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, data }: { id: string; data: PartnerBitrixCollabBinding }) =>
+      bindPartnerBitrixCollab(id, data),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'partners'] }),
   });
 }
