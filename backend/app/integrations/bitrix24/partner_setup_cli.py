@@ -16,7 +16,10 @@ from app.integrations.bitrix24.client import Bitrix24Client
 from app.integrations.bitrix24.partners import PARTNER_FIELDS, active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 
-ENTITY_ID = "CRM_31"
+# The on-prem portal exposes this smart process as entityTypeId=1070 and
+# stores its field codes under UF_CRM_31_*, but userfieldconfig uses the
+# legacy internal configuration entity CRM_16.
+ENTITY_ID = "CRM_16"
 EVENT_NAME = "ONCRMDYNAMICITEMUPDATE"
 EVENT_HANDLER = "https://finzdorovie.ru/api/v1/integrations/bitrix24/handler"
 

@@ -38,6 +38,10 @@
 обработчик на `ONCRMDYNAMICITEMUPDATE`. Токен читается из зашифрованного хранилища;
 секреты и реквизиты партнёров в вывод не попадают.
 
+Для текущего on-prem портала конфигурация пользовательских полей использует
+внутренний идентификатор `CRM_16`, хотя REST-тип смарт-процесса — `1070`, а коды
+его полей имеют префикс `UF_CRM_31_`.
+
 ```bash
 python -m app.integrations.bitrix24.partner_setup_cli
 python -m app.integrations.bitrix24.partner_setup_cli --apply

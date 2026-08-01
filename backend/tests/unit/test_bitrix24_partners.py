@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.bitrix24.partner_setup_cli import (
+    ENTITY_ID,
     FIELD_DEFINITIONS,
     _existing_field_names,
     _provision_field,
@@ -65,6 +66,7 @@ async def test_partner_field_setup_uses_full_bitrix_field_name():
     await _provision_field(client, FIELD_DEFINITIONS[0])
 
     params = client.call.await_args.args[1]
+    assert params["field"]["entityId"] == ENTITY_ID == "CRM_16"
     assert params["field"]["fieldName"] == PARTNER_FIELDS["partner_type"]
 
 
