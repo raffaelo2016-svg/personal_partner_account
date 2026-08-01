@@ -35,6 +35,11 @@ class TaskRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     client_name: str | None = None
+    bitrix_sync_status: str = "not_scheduled"
+    bitrix_sync_error_code: str | None = None
+    bitrix_task_id: str | None = None
+    bitrix_sync_requested_at: datetime | None = None
+    bitrix_synced_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

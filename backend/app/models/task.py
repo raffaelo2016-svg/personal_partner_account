@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -17,6 +17,13 @@ if TYPE_CHECKING:
 
 class Task(Base, TimestampMixin):
     __tablename__ = "tasks"
+    __table_args__ = (
+        CheckConstraint(
+            "bitrix_sync_status IN ('not_scheduled', 'pending', 'processing', 'synced', 'failed')",
+            name="ck_tasks_bitrix_sync_status",
+        ),
+        Index("ix_tasks_bitrix_sync_status", "bitrix_sync_status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), index=True)
@@ -28,6 +35,12 @@ class Task(Base, TimestampMixin):
     created_by: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     due_date: Mapped[date] = mapped_column(index=True)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
+    bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
+    bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_task_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     client: Mapped[Client] = relationship("Client")
     creator: Mapped[User] = relationship("User")

@@ -5,7 +5,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.exceptions import Forbidden, NotFound
+from app.core.exceptions import BadRequest, Forbidden, NotFound
 from app.models.client import Client
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskRead, TaskStats, TaskUpdate
@@ -29,6 +29,11 @@ def _task_to_read(t: Task, client_name: str | None = None) -> TaskRead:
         created_at=t.created_at,
         updated_at=t.updated_at,
         client_name=client_name,
+        bitrix_sync_status=t.bitrix_sync_status,
+        bitrix_sync_error_code=t.bitrix_sync_error_code,
+        bitrix_task_id=t.bitrix_task_id,
+        bitrix_sync_requested_at=t.bitrix_sync_requested_at,
+        bitrix_synced_at=t.bitrix_synced_at,
     )
 
 
@@ -67,7 +72,18 @@ async def list_tasks(
     return [_task_to_read(t, t.client.full_name if t.client else None) for t in rows], total
 
 
-async def create_task(session: AsyncSession, data: TaskCreate, user_id: str) -> TaskRead:
+async def create_task(
+    session: AsyncSession,
+    data: TaskCreate,
+    user_id: str,
+    *,
+    partner_id: str | None = None,
+) -> TaskRead:
+    client = await session.get(Client, data.client_id)
+    if client is None or client.deleted_at is not None:
+        raise NotFound("Client not found")
+    if partner_id and str(client.partner_id) != partner_id:
+        raise Forbidden("Access denied")
     task = Task(
         client_id=data.client_id,
         title=data.title,
@@ -80,7 +96,10 @@ async def create_task(session: AsyncSession, data: TaskCreate, user_id: str) -> 
     )
     session.add(task)
     await session.flush()
-    await session.refresh(task, ["client"])
+
+    from app.integrations.bitrix24.tasks import schedule_task_creation
+
+    await schedule_task_creation(session, task)
     audit_log(action="create_task", target_id=str(task.id), target_type="task")
     logger.info(
         "task_created",
@@ -89,6 +108,25 @@ async def create_task(session: AsyncSession, data: TaskCreate, user_id: str) -> 
         created_by=user_id,
         priority=task.priority,
     )
+    return _task_to_read(task, client.full_name)
+
+
+async def retry_task_bitrix_sync(
+    session: AsyncSession,
+    task_id: str,
+    *,
+    partner_id: str | None = None,
+) -> TaskRead:
+    task = await session.get(Task, task_id, options=[selectinload(Task.client)])
+    if task is None:
+        raise NotFound("Task not found")
+    if partner_id and task.client and str(task.client.partner_id) != partner_id:
+        raise Forbidden("Access denied")
+
+    from app.integrations.bitrix24.tasks import schedule_task_creation
+
+    await schedule_task_creation(session, task, retry=True)
+    await session.flush()
     return _task_to_read(task, task.client.full_name if task.client else None)
 
 
@@ -106,6 +144,8 @@ async def update_task(
         raise Forbidden("Access denied")
 
     update_data = data.model_dump(exclude_unset=True, mode="json")
+    if "status" in update_data and task.bitrix_task_id:
+        raise BadRequest("Task status is managed in Bitrix24")
     for key, value in update_data.items():
         if hasattr(task, key):
             setattr(task, key, value)
