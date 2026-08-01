@@ -46,10 +46,12 @@ class Settings(BaseSettings):
 
     YANDEX_CAPTCHA_SECRET_KEY: str = ""
 
-    # Bitrix24 technical survey (stage 1). OAuth tokens are temporary here;
-    # persistent encrypted storage is introduced with the integration core.
+    # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
+    # the local application's credentials stay only in the server environment.
     BITRIX_CLIENT_ENDPOINT: str = ""
     BITRIX_ACCESS_TOKEN: str = ""
+    BITRIX_CLIENT_ID: str = ""
+    BITRIX_CLIENT_SECRET: str = ""
     BITRIX_SMART_PROCESS_ENTITY_TYPE_ID: int = 1070
     BITRIX_DEAL_CATEGORY_ID: int = 3
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"

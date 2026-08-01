@@ -17,11 +17,7 @@ class Bitrix24Error(RuntimeError):
 
 
 class Bitrix24Client:
-    """Small OAuth REST client used by the stage-1 portal survey.
-
-    Token persistence and refresh are intentionally outside this class until the
-    encrypted installation storage from stage 2 is available.
-    """
+    """Small OAuth REST client used by the Bitrix24 integration."""
 
     def __init__(
         self,

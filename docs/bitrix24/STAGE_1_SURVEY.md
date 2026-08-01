@@ -38,12 +38,17 @@ poetry run python -m app.integrations.bitrix24.survey_cli \
 Токен расшифровывается только в памяти процесса и не выводится в терминал или
 JSON-отчёт.
 
+Если access token истёк или скоро истечёт, команда автоматически получает новую
+пару токенов и сохраняет оба значения в PostgreSQL в зашифрованном виде.
+
 Для локальной разработки без сохранённой установки можно явно использовать
 переменные окружения. В `backend/.env` временно задаются:
 
 ```text
 BITRIX_CLIENT_ENDPOINT=https://bitrix.uriteh.ru/rest/
 BITRIX_ACCESS_TOKEN=<access_token из auth callback>
+BITRIX_CLIENT_ID=<код локального приложения>
+BITRIX_CLIENT_SECRET=<ключ локального приложения>
 BITRIX_SMART_PROCESS_ENTITY_TYPE_ID=1070
 BITRIX_DEAL_CATEGORY_ID=3
 ```
