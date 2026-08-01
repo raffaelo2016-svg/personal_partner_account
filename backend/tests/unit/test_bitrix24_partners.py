@@ -8,7 +8,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.integrations.bitrix24.partner_setup_cli import FIELD_DEFINITIONS, _provision_field
+from app.integrations.bitrix24.partner_setup_cli import (
+    FIELD_DEFINITIONS,
+    _existing_field_names,
+    _provision_field,
+)
 from app.integrations.bitrix24.partners import (
     PARTNER_ENTITY_TYPE,
     PARTNER_FIELDS,
@@ -62,6 +66,27 @@ async def test_partner_field_setup_uses_full_bitrix_field_name():
 
     params = client.call.await_args.args[1]
     assert params["field"]["fieldName"] == PARTNER_FIELDS["partner_type"]
+
+
+@pytest.mark.asyncio
+async def test_partner_field_setup_reads_fields_through_crm_item_fields():
+    client = AsyncMock()
+    client.call.return_value = {
+        "fields": {
+            "ufCrm31YritechPartnerType": {
+                "upperName": PARTNER_FIELDS["partner_type"],
+                "type": "string",
+            }
+        }
+    }
+
+    names = await _existing_field_names(client)
+
+    assert names == {PARTNER_FIELDS["partner_type"]}
+    client.call.assert_awaited_once_with(
+        "crm.item.fields",
+        {"entityTypeId": settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID},
+    )
 
 
 async def _installation(db: AsyncSession) -> BitrixInstallation:

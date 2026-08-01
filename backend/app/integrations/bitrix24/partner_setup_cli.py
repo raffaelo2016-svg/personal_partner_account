@@ -44,17 +44,21 @@ def _parse_args() -> argparse.Namespace:
 
 
 async def _existing_field_names(client: Bitrix24Client) -> set[str]:
-    fields = await client.list_all(
-        "userfieldconfig.list",
-        {"moduleId": "crm", "filter": {"entityId": ENTITY_ID}},
-        result_key="fields",
+    result = await client.call(
+        "crm.item.fields",
+        {"entityTypeId": settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID},
     )
+    fields = result.get("fields", {}) if isinstance(result, dict) else {}
+    if not isinstance(fields, dict):
+        return set()
+
     names: set[str] = set()
-    for field in fields:
-        if isinstance(field, dict):
-            name = field.get("fieldName") or field.get("FIELD_NAME")
-            if name:
-                names.add(str(name).upper())
+    for field_key, field in fields.items():
+        if not isinstance(field, dict):
+            continue
+        name = field.get("upperName") or field.get("fieldName") or field.get("FIELD_NAME") or field_key
+        if name:
+            names.add(str(name).upper())
     return names
 
 
