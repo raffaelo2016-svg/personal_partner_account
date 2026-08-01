@@ -67,7 +67,7 @@ async def test_partner_field_setup_uses_full_bitrix_field_name():
 
     params = client.call.await_args.args[1]
     assert params["field"]["entityId"] == ENTITY_ID == "CRM_16"
-    assert params["field"]["fieldName"] == PARTNER_FIELDS["partner_type"]
+    assert params["field"]["fieldName"] == PARTNER_FIELDS["partner_type"] == "UF_CRM_16_YRITECH_PARTNER_TYPE"
 
 
 @pytest.mark.asyncio
