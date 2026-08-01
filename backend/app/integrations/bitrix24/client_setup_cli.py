@@ -72,7 +72,9 @@ async def run(*, apply: bool) -> None:
             raise SystemExit("Active Bitrix24 installation not found")
         endpoint, token, _ = await _stored_credentials(db, settings.BITRIX_ALLOWED_DOMAIN)
 
-    async with Bitrix24Client(endpoint, token) as client:
+    # On-prem portals may rebuild CRM field metadata during creation and need
+    # longer than the regular operational request timeout.
+    async with Bitrix24Client(endpoint, token, timeout=60.0) as client:
         existing = await _existing_field_names(client)
         missing = [item for item in FIELD_DEFINITIONS if CLIENT_DEAL_FIELDS[item.key] not in existing]
         if apply:
