@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import uuid
-from datetime import date
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
+from app.models.types import UTCDateTime
 
 if TYPE_CHECKING:
     from app.models.partner import Partner
@@ -15,6 +16,13 @@ if TYPE_CHECKING:
 
 class Client(Base, TimestampMixin, SoftDeleteMixin):
     __tablename__ = "clients"
+    __table_args__ = (
+        CheckConstraint(
+            "bitrix_sync_status IN ('not_scheduled', 'pending', 'processing', 'synced', 'failed')",
+            name="ck_clients_bitrix_sync_status",
+        ),
+        Index("ix_clients_bitrix_sync_status", "bitrix_sync_status"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     partner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("partners.id"), index=True)
@@ -38,6 +46,14 @@ class Client(Base, TimestampMixin, SoftDeleteMixin):
     arbitrage_court: Mapped[str | None] = mapped_column(String(255), default=None)
     case_number: Mapped[str | None] = mapped_column(String(50), default=None)
     court_procedure_date: Mapped[date | None] = mapped_column(default=None, index=True)
+
+    # Bitrix24 is an operational projection. Sensitive identity data stays here.
+    bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
+    bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_contact_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_deal_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     partner: Mapped[Partner] = relationship("Partner", back_populates="clients")
 
