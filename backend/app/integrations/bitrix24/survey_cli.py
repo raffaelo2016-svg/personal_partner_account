@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from sqlalchemy import select
@@ -16,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client
+from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.survey import Bitrix24Survey
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
@@ -37,28 +39,35 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _stored_credentials(db: AsyncSession, portal_domain: str) -> tuple[str, str]:
+async def _stored_credentials(db: AsyncSession, portal_domain: str) -> tuple[str, str, bool]:
     installation = await db.scalar(
-        select(BitrixInstallation).where(BitrixInstallation.portal_domain == portal_domain.strip().lower())
+        select(BitrixInstallation)
+        .where(BitrixInstallation.portal_domain == portal_domain.strip().lower())
+        .with_for_update()
     )
     if installation is None:
         raise SystemExit(f"No encrypted Bitrix24 installation found for {portal_domain}")
+    refresh_before = datetime.now(UTC) + timedelta(minutes=2)
+    expires_at = installation.token_expires_at
+    if expires_at is None or expires_at <= refresh_before:
+        access_token = await refresh_installation_tokens(db, installation)
+        return installation.client_endpoint, access_token, True
     access_token = await decrypt_token(db, installation.access_token_encrypted)
-    return installation.client_endpoint, access_token
+    return installation.client_endpoint, access_token, False
 
 
-async def _credentials(portal_domain: str, *, from_env: bool) -> tuple[str, str]:
+async def _credentials(portal_domain: str, *, from_env: bool) -> tuple[str, str, bool]:
     if from_env:
         if not settings.BITRIX_CLIENT_ENDPOINT or not settings.BITRIX_ACCESS_TOKEN:
             raise SystemExit("Set BITRIX_CLIENT_ENDPOINT and BITRIX_ACCESS_TOKEN in backend/.env")
-        return settings.BITRIX_CLIENT_ENDPOINT, settings.BITRIX_ACCESS_TOKEN
+        return settings.BITRIX_CLIENT_ENDPOINT, settings.BITRIX_ACCESS_TOKEN, False
 
     async with async_session() as db:
         return await _stored_credentials(db, portal_domain)
 
 
 async def _run(output: Path, portal_domain: str, *, from_env: bool = False) -> None:
-    client_endpoint, access_token = await _credentials(portal_domain, from_env=from_env)
+    client_endpoint, access_token, refreshed = await _credentials(portal_domain, from_env=from_env)
 
     async with Bitrix24Client(client_endpoint, access_token) as client:
         survey = Bitrix24Survey(
@@ -67,6 +76,9 @@ async def _run(output: Path, portal_domain: str, *, from_env: bool = False) -> N
             deal_category_id=settings.BITRIX_DEAL_CATEGORY_ID,
         )
         result = await survey.run()
+    if refreshed:
+        result["oauth_refresh_verified"] = True
+        result["oauth_refresh_note"] = "OAuth token pair was rotated and saved encrypted before the survey."
 
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
