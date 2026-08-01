@@ -39,6 +39,12 @@ def _client_to_read(
         case_number=c.case_number,
         court_procedure_date=c.court_procedure_date,
         court_fee_per_client=court_fee_per_client,
+        bitrix_sync_status=c.bitrix_sync_status,
+        bitrix_sync_error_code=c.bitrix_sync_error_code,
+        bitrix_contact_id=c.bitrix_contact_id,
+        bitrix_deal_id=c.bitrix_deal_id,
+        bitrix_sync_requested_at=c.bitrix_sync_requested_at,
+        bitrix_synced_at=c.bitrix_synced_at,
         created_at=c.created_at,
         updated_at=c.updated_at,
     )
@@ -155,10 +161,29 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
 
     await create_court_fee_for_client(session, client, partner)
 
+    from app.integrations.bitrix24.clients import schedule_client_creation
+
+    await schedule_client_creation(session, client, partner=partner)
+
     audit_log(action="create_client", target_id=str(client.id), target_type="client")
     logger.info("client_created", client_id=str(client.id), partner_id=partner_id)
     p_name = partner.company_name if partner else None
     return _client_to_read(client, partner_name=p_name)
+
+
+async def retry_client_bitrix_sync(session: AsyncSession, client_id: str) -> ClientRead:
+    client = await session.get(Client, client_id)
+    if not client or client.deleted_at is not None:
+        raise NotFound("Client not found")
+    partner = await session.get(Partner, client.partner_id)
+    if partner is None:
+        raise NotFound("Partner profile not found")
+
+    from app.integrations.bitrix24.clients import schedule_client_creation
+
+    await schedule_client_creation(session, client, partner=partner, retry=True)
+    await session.flush()
+    return _client_to_read(client, partner_name=partner.company_name)
 
 
 async def update_client(

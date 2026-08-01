@@ -6,7 +6,7 @@ from app.database import get_db
 from app.schemas.client import ClientRead, ClientUpdate
 from app.schemas.finance import CourtFeeRead
 from app.schemas.pagination import PaginatedResponse, PaginationParams
-from app.services.client_service import get_client, list_clients, update_client
+from app.services.client_service import get_client, list_clients, retry_client_bitrix_sync, update_client
 from app.services.finance_service import list_court_fees
 
 router = APIRouter(prefix="/admin/clients", tags=["admin-clients"])
@@ -81,5 +81,16 @@ async def update_any_client(
     _current_user=Depends(require_role("admin")),  # noqa: B008
 ):
     result = await update_client(db, client_id, body)
+    await db.commit()
+    return result
+
+
+@router.post("/{client_id}/bitrix/retry", response_model=ClientRead)
+async def retry_client_bitrix(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user=Depends(require_role("admin")),  # noqa: B008
+):
+    result = await retry_client_bitrix_sync(db, client_id)
     await db.commit()
     return result
