@@ -24,10 +24,7 @@ def test_rejects_untrusted_oauth_endpoint():
 
 
 def test_uses_central_oauth_host_for_regional_endpoint():
-    assert (
-        oauth._token_endpoint("https://oauth.bitrix24.tech/rest/")
-        == "https://oauth.bitrix.info/oauth/token/"
-    )
+    assert oauth._token_endpoint("https://oauth.bitrix24.tech/rest/") == "https://oauth.bitrix.info/oauth/token/"
 
 
 @pytest.mark.asyncio
