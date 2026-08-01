@@ -77,12 +77,12 @@
 | `Client.snils` | контакт: `UF_CRM_1608074428505` | Однозначное поле «СНИЛС»; только после проверки прав. |
 | `Client.partner_id` | сделка: `parentId1070` | Связь с элементом смарт-процесса партнёра. |
 | контакт клиента | сделка: `contactId`/`contactIds` | Штатная связь. |
-| `Client.region` | новое `UF_CRM_YRITECH_CLIENT_REGION` | Есть несколько дублей «Регион». |
-| `Client.arbitrage_court` | новое `UF_CRM_YRITECH_ARBITRAGE_COURT` | Строка; существующие поля имеют разную семантику. |
-| `Client.case_number` | новое `UF_CRM_YRITECH_CASE_NUMBER` | Существующее «Номер дела» имеет несовместимый тип `url` и является множественным. |
-| `Client.court_procedure_date` | новое `UF_CRM_YRITECH_COURT_DATE` | Тип `date`. |
-| `Client.type` | новое `UF_CRM_YRITECH_CLIENT_TYPE` | `before_court` и `in_court`. |
-| `Client.status` | новое `UF_CRM_YRITECH_CLIENT_STATUS` | Копия статуса кабинета; CRM-стадией управляет Битрикс24. |
+| `Client.region` | новое `UF_CRM_DEAL_YRITECH_CLIENT_REGION` | Есть несколько дублей «Регион». |
+| `Client.arbitrage_court` | новое `UF_CRM_DEAL_YRITECH_ARBITRAGE_COURT` | Строка; существующие поля имеют разную семантику. |
+| `Client.case_number` | новое `UF_CRM_DEAL_YRITECH_CASE_NUMBER` | Существующее «Номер дела» имеет несовместимый тип `url` и является множественным. |
+| `Client.court_procedure_date` | новое `UF_CRM_DEAL_YRITECH_COURT_DATE` | Тип `date`. |
+| `Client.type` | новое `UF_CRM_DEAL_YRITECH_CLIENT_TYPE` | `before_court` и `in_court`. |
+| `Client.status` | новое `UF_CRM_DEAL_YRITECH_CLIENT_STATUS` | Копия статуса кабинета; CRM-стадией управляет Битрикс24. |
 
 Паспортные данные не включены в автоматическую запись. До их передачи нужно подтвердить модель доступа и аудита.
 

@@ -23,12 +23,12 @@ CLIENT_DEAL_STAGE_ID = "C3:NEW"
 CLIENT_UID_FIELD = "UF_CRM_P24_CUID_ITN"
 SELF_ORIGINATOR_ID = "partner_cabinet"
 CLIENT_DEAL_FIELDS = {
-    "region": "UF_CRM_YRITECH_CLIENT_REGION",
-    "arbitrage_court": "UF_CRM_YRITECH_ARBITRAGE_COURT",
-    "case_number": "UF_CRM_YRITECH_CASE_NUMBER",
-    "court_date": "UF_CRM_YRITECH_COURT_DATE",
-    "client_type": "UF_CRM_YRITECH_CLIENT_TYPE",
-    "client_status": "UF_CRM_YRITECH_CLIENT_STATUS",
+    "region": "UF_CRM_DEAL_YRITECH_CLIENT_REGION",
+    "arbitrage_court": "UF_CRM_DEAL_YRITECH_ARBITRAGE_COURT",
+    "case_number": "UF_CRM_DEAL_YRITECH_CASE_NUMBER",
+    "court_date": "UF_CRM_DEAL_YRITECH_COURT_DATE",
+    "client_type": "UF_CRM_DEAL_YRITECH_CLIENT_TYPE",
+    "client_status": "UF_CRM_DEAL_YRITECH_CLIENT_STATUS",
 }
 
 
