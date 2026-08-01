@@ -52,7 +52,7 @@ class Bitrix24Client:
     async def __aexit__(self, *_args: object) -> None:
         await self.close()
 
-    async def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
+    async def _request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         if not method or any(char not in "abcdefghijklmnopqrstuvwxyz0123456789._" for char in method.lower()):
             raise ValueError("Invalid Bitrix24 method name")
 
@@ -83,6 +83,10 @@ class Bitrix24Client:
                 str(data.get("error_description", "Request failed")),
                 status_code=response.status_code,
             )
+        return data
+
+    async def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        data = await self._request(method, params)
         return data.get("result")
 
     async def list_all(
@@ -93,18 +97,28 @@ class Bitrix24Client:
         result_key: str | None = None,
         max_pages: int = 100,
     ) -> list[Any]:
-        """Load a standard 50-item Bitrix24 list without unbounded requests."""
+        """Load every page of a Bitrix24 list without unbounded requests."""
         items: list[Any] = []
         start = 0
+        seen_starts: set[int] = set()
         for _ in range(max_pages):
+            if start in seen_starts:
+                raise Bitrix24Error("INVALID_RESPONSE", f"{method} returned a repeated pagination cursor")
+            seen_starts.add(start)
+
             page_params = dict(params or {})
             page_params["start"] = start
-            result = await self.call(method, page_params)
+            data = await self._request(method, page_params)
+            result = data.get("result")
             page = result.get(result_key, []) if result_key and isinstance(result, dict) else result
             if not isinstance(page, list):
                 raise Bitrix24Error("INVALID_RESPONSE", f"{method} returned an unexpected list shape")
             items.extend(page)
-            if len(page) < 50:
+
+            next_start = data.get("next")
+            if next_start is None:
                 return items
-            start += 50
+            if isinstance(next_start, bool) or not isinstance(next_start, int) or next_start < 0:
+                raise Bitrix24Error("INVALID_RESPONSE", f"{method} returned an invalid pagination cursor")
+            start = next_start
         raise Bitrix24Error("PAGINATION_LIMIT", f"{method} exceeded {max_pages} pages")
