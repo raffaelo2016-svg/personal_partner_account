@@ -38,7 +38,9 @@ services:
       - "127.0.0.1:9000:9000"
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD}
+      # Backend and MinIO must use the same credential pair. A separate
+      # MINIO_PASSWORD silently caused every upload to fail with 403.
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     volumes:
       - miniodata:/data
     networks:
