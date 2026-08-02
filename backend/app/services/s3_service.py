@@ -29,12 +29,19 @@ def _build_client(endpoint_url: str):
 def _get_s3():
     global _s3_client  # noqa: PLW0603
     if _s3_client is None:
-        _s3_client = _build_client(settings.S3_ENDPOINT)
+        client = _build_client(settings.S3_ENDPOINT)
         try:
-            _s3_client.head_bucket(Bucket=settings.S3_BUCKET)
-        except ClientError:
-            _s3_client.create_bucket(Bucket=settings.S3_BUCKET)
+            client.head_bucket(Bucket=settings.S3_BUCKET)
+        except ClientError as exc:
+            error = exc.response.get("Error", {})
+            metadata = exc.response.get("ResponseMetadata", {})
+            code = str(error.get("Code", "")).upper()
+            status = metadata.get("HTTPStatusCode")
+            if status != 404 and code not in {"404", "NOSUCHBUCKET", "NO_SUCH_BUCKET"}:
+                raise
+            client.create_bucket(Bucket=settings.S3_BUCKET)
             logger.info("s3_bucket_created", bucket=settings.S3_BUCKET)
+        _s3_client = client
     return _s3_client
 
 
