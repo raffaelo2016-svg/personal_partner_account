@@ -7,8 +7,9 @@ from app.api.ws_chat import broadcast_messages_read, broadcast_new_message
 from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.user import User
-from app.schemas.chat import ChatMessageCreate, ChatMessageRead, ChatRoomRead
+from app.schemas.chat import ChatMessageCreate, ChatMessageEventRead, ChatMessageRead, ChatRoomRead
 from app.services.chat_service import (
+    get_admin_message_events,
     get_admin_messages,
     get_total_unread_for_admin,
     list_admin_rooms,
@@ -29,6 +30,9 @@ def _message_payload(msg: ChatMessageRead) -> dict:
         "sender_type": msg.sender_type,
         "text": msg.text,
         "delivery_status": msg.delivery_status,
+        "bitrix_sync_status": msg.bitrix_sync_status,
+        "bitrix_sync_error_code": msg.bitrix_sync_error_code,
+        "bitrix_message_id": msg.bitrix_message_id,
         "attachment_url": msg.attachment_url,
         "attachment_filename": msg.attachment_filename,
         "attachment_size": msg.attachment_size,
@@ -71,6 +75,16 @@ async def admin_room_messages(
         await broadcast_messages_read(room_id, exclude_user_id=str(_current_user.id))
     await db.commit()
     return msgs
+
+
+@router.get("/rooms/{room_id}/events", response_model=list[ChatMessageEventRead])
+async def admin_room_message_events(
+    room_id: str,
+    limit: int = Query(100, le=200),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    return await get_admin_message_events(db, room_id, limit=limit)
 
 
 @router.post("/rooms/{room_id}/messages", response_model=ChatMessageRead, status_code=201)

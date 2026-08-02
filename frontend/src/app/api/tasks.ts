@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { BitrixSyncStatus } from './clients';
 
 export interface TaskData {
   id: string;
@@ -14,6 +15,11 @@ export interface TaskData {
   created_at: string;
   updated_at: string;
   client_name?: string | null;
+  bitrix_sync_status: BitrixSyncStatus;
+  bitrix_sync_error_code?: string | null;
+  bitrix_task_id?: string | null;
+  bitrix_sync_requested_at?: string | null;
+  bitrix_synced_at?: string | null;
 }
 
 export interface TaskFilters {
@@ -78,6 +84,11 @@ export async function updateTask(id: string, data: TaskUpdatePayload): Promise<T
 
 export async function deleteTask(id: string): Promise<void> {
   await apiClient.delete(`/tasks/${id}`);
+}
+
+export async function retryTaskBitrix(id: string): Promise<TaskData> {
+  const res = await apiClient.post<TaskData>(`/tasks/${id}/bitrix/retry`);
+  return res.data;
 }
 
 export async function fetchTaskStats(params?: { assigned_to?: string }): Promise<TaskStats> {

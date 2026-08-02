@@ -6,8 +6,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequest, FileTooLarge, Forbidden, NotFound, UnsupportedFileType
-from app.models.chat import ChatMessage, ChatRoom
-from app.schemas.chat import ChatMessageRead, ChatRoomRead
+from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
+from app.schemas.chat import ChatMessageEventRead, ChatMessageRead, ChatRoomRead
 from app.services.s3_service import delete_file_async, get_presigned_url, upload_file_async
 
 logger = structlog.get_logger()
@@ -32,6 +32,9 @@ def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
         sender_type=m.sender_type,
         text=m.text,
         delivery_status=m.delivery_status,
+        bitrix_sync_status=m.bitrix_sync_status,
+        bitrix_sync_error_code=m.bitrix_sync_error_code,
+        bitrix_message_id=m.bitrix_message_id,
         attachment_url=get_presigned_url(m.attachment_s3_key) if m.attachment_s3_key else None,
         attachment_filename=m.attachment_filename,
         attachment_size=m.attachment_size,
@@ -177,6 +180,7 @@ async def send_message(
     attachment_filename: str | None = None,
     attachment_size: int | None = None,
     attachment_mime_type: str | None = None,
+    sync_to_bitrix: bool = True,
 ) -> ChatMessageRead:
     room = await session.get(ChatRoom, room_id)
     if not room:
@@ -196,6 +200,11 @@ async def send_message(
     )
     session.add(msg)
     await session.flush()
+
+    if sync_to_bitrix and room.type == "admin" and sender_type in {"user", "admin"}:
+        from app.integrations.bitrix24.chat import schedule_chat_message
+
+        await schedule_chat_message(session, msg, room=room)
     await session.refresh(msg)
 
     try:
@@ -324,6 +333,40 @@ async def get_admin_messages(
     q = q.order_by(ChatMessage.created_at.desc()).limit(limit)
     rows = (await session.execute(q)).scalars().all()
     return [_msg_to_read(m) for m in reversed(rows)]
+
+
+async def get_admin_message_events(
+    session: AsyncSession,
+    room_id: str,
+    *,
+    limit: int = 100,
+) -> list[ChatMessageEventRead]:
+    room = await session.get(ChatRoom, room_id)
+    if not room or room.type != "admin":
+        raise NotFound("Admin chat room not found")
+    events = list(
+        (
+            await session.scalars(
+                select(ChatMessageEvent)
+                .where(ChatMessageEvent.room_id == room.id)
+                .order_by(ChatMessageEvent.event_at.desc())
+                .limit(limit)
+            )
+        ).all()
+    )
+    return [
+        ChatMessageEventRead(
+            id=str(event.id),
+            room_id=str(event.room_id),
+            chat_message_id=str(event.chat_message_id) if event.chat_message_id else None,
+            bitrix_message_id=event.bitrix_message_id,
+            event_type=event.event_type,
+            actor_id=event.actor_id,
+            event_at=event.event_at,
+            created_at=event.created_at,
+        )
+        for event in events
+    ]
 
 
 async def mark_messages_read(

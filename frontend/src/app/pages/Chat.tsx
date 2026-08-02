@@ -62,6 +62,7 @@ export default function Chat() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => (lastPage.length < PAGE_SIZE ? undefined : lastPage[0]?.id),
     enabled: !!activeRoomId,
+    refetchInterval: 15_000,
   });
 
   const cachedMessages = useMemo(() => (messagesData?.pages ?? []).flat(), [messagesData]);

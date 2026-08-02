@@ -1,13 +1,14 @@
 import { useState, useCallback, useMemo } from 'react';
 import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2 } from 'lucide-react';
 import { Link } from 'react-router';
-import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask } from '../hooks/useTasks';
+import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
 import { useClients } from '../hooks/useClients';
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import { toast } from 'sonner';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import BitrixSyncStatus from '../components/BitrixSyncStatus';
 
 export default function TasksList() {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -32,6 +33,7 @@ export default function TasksList() {
   const createTaskMutation = useCreateTask();
   const updateTaskMutation = useUpdateTask();
   const deleteTaskMutation = useDeleteTask();
+  const retryTaskMutation = useRetryTaskBitrix();
 
   const loadMore = useCallback(() => { if (hasNextPage) fetchNextPage(); }, [hasNextPage, fetchNextPage]);
   const sentinelRef = useIntersectionObserver(loadMore, !!hasNextPage && !isFetchingNextPage);
@@ -151,6 +153,8 @@ export default function TasksList() {
     dueDate: t.due_date,
     createdAt: t.created_at,
     completedAt: t.completed_at ?? undefined,
+    bitrixSyncStatus: t.bitrix_sync_status,
+    bitrixSyncErrorCode: t.bitrix_sync_error_code,
   }));
 
   const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -459,6 +463,18 @@ export default function TasksList() {
                     <span className="text-gray-500">
                       {task.assignedTo === 'partner' ? 'От Юритех' : 'Для ЮРИТЕХ'}
                     </span>
+                  </div>
+                  <div className="mt-3">
+                    <BitrixSyncStatus
+                      compact
+                      status={task.bitrixSyncStatus}
+                      errorCode={task.bitrixSyncErrorCode}
+                      isRetrying={retryTaskMutation.isPending && retryTaskMutation.variables === task.id}
+                      onRetry={() => retryTaskMutation.mutate(task.id, {
+                        onSuccess: () => toast.success('Задача снова поставлена в очередь Битрикс24'),
+                        onError: () => toast.error('Не удалось повторить отправку задачи'),
+                      })}
+                    />
                   </div>
                 </div>
               </div>

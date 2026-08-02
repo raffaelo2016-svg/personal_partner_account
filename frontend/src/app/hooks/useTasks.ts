@@ -9,6 +9,7 @@ import {
   fetchTaskStats,
   fetchUrgentTasks,
   updateTask,
+  retryTaskBitrix,
 } from '../api/tasks';
 
 export function useTasks(filters: TaskFilters = {}) {
@@ -60,6 +61,19 @@ export function useDeleteTask() {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['taskStats'] });
       queryClient.invalidateQueries({ queryKey: ['urgentTasks'] });
+    },
+  });
+}
+
+export function useRetryTaskBitrix() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => retryTaskBitrix(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['urgentTasks'] });
+      queryClient.invalidateQueries({ queryKey: ['bitrixAttention'] });
+      queryClient.invalidateQueries({ queryKey: ['adminBitrixAttentionCount'] });
     },
   });
 }

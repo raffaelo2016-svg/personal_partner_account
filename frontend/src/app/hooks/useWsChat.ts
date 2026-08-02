@@ -6,7 +6,8 @@ import { useAuthStore } from '../store/authStore';
 import { captureError } from '../sentry';
 import type { ChatMessageData } from '../api/chat';
 
-const deliveryStatusSchema = z.enum(['sent', 'delivered', 'read']);
+const deliveryStatusSchema = z.enum(['sent', 'delivered', 'read', 'failed']);
+const bitrixSyncStatusSchema = z.enum(['not_scheduled', 'pending', 'processing', 'synced', 'failed']);
 
 const wsMessagePayloadSchema = z.object({
   id: z.string(),
@@ -15,6 +16,9 @@ const wsMessagePayloadSchema = z.object({
   sender_type: z.string(),
   text: z.string(),
   delivery_status: deliveryStatusSchema.optional(),
+  bitrix_sync_status: bitrixSyncStatusSchema.optional(),
+  bitrix_sync_error_code: z.string().nullable().optional(),
+  bitrix_message_id: z.string().nullable().optional(),
   attachment_url: z.string().nullable().optional(),
   attachment_filename: z.string().nullable().optional(),
   attachment_size: z.number().nullable().optional(),
@@ -101,6 +105,9 @@ export function useWsChat(activeRoomId: string | null, options: UseWsChatOptions
           sender_type: data.message.sender_type,
           text: data.message.text,
           delivery_status: data.message.delivery_status ?? 'sent',
+          bitrix_sync_status: data.message.bitrix_sync_status ?? 'not_scheduled',
+          bitrix_sync_error_code: data.message.bitrix_sync_error_code,
+          bitrix_message_id: data.message.bitrix_message_id,
           attachment_url: data.message.attachment_url,
           attachment_filename: data.message.attachment_filename,
           attachment_size: data.message.attachment_size,

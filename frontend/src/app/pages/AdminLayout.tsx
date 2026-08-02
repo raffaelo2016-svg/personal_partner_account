@@ -1,11 +1,12 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
-import { LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-white.svg';
 import NotificationBell from '../components/NotificationBell';
 import { useAuthStore } from '../store/authStore';
 import { fetchAdminUnreadCount } from '../api/chat';
+import { fetchBitrixAttention } from '../api/bitrixAttention';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -19,6 +20,12 @@ export default function AdminLayout() {
     refetchInterval: 15000,
   });
 
+  const { data: attentionData } = useQuery({
+    queryKey: ['adminBitrixAttentionCount'],
+    queryFn: () => fetchBitrixAttention({ page_size: 1 }),
+    refetchInterval: 30_000,
+  });
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -29,6 +36,7 @@ export default function AdminLayout() {
     { icon: Users, label: 'Партнеры', path: '/admin/partners' },
     { icon: Users, label: 'Все клиенты', path: '/admin/clients' },
     { icon: CheckSquare, label: 'Задачи', path: '/admin/tasks' },
+    { icon: AlertTriangle, label: 'Требует внимания', path: '/admin/bitrix-attention', badge: attentionData?.total ?? 0 },
     { icon: CreditCard, label: 'Транзакции', path: '/admin/transactions' },
     { icon: MessageSquare, label: 'Чат', path: '/admin/chat', badge: unreadCount },
     { icon: Settings, label: 'Настройки', path: '/admin/settings' },

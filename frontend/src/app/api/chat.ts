@@ -16,11 +16,25 @@ export interface ChatMessageData {
   sender_id?: string | null;
   sender_type: string;
   text: string;
-  delivery_status: 'sent' | 'delivered' | 'read';
+  delivery_status: 'sent' | 'delivered' | 'read' | 'failed';
+  bitrix_sync_status: 'not_scheduled' | 'pending' | 'processing' | 'synced' | 'failed';
+  bitrix_sync_error_code?: string | null;
+  bitrix_message_id?: string | null;
   attachment_url?: string | null;
   attachment_filename?: string | null;
   attachment_size?: number | null;
   attachment_mime_type?: string | null;
+  created_at: string;
+}
+
+export interface ChatMessageEventData {
+  id: string;
+  room_id: string;
+  chat_message_id?: string | null;
+  bitrix_message_id: string;
+  event_type: 'updated' | 'deleted';
+  actor_id?: string | null;
+  event_at: string;
   created_at: string;
 }
 
@@ -67,6 +81,11 @@ export async function fetchAdminChatMessages(
   params: { limit?: number; before?: string } = {},
 ): Promise<ChatMessageData[]> {
   const res = await apiClient.get<ChatMessageData[]>(`/admin/chat/rooms/${roomId}/messages`, { params });
+  return res.data;
+}
+
+export async function fetchAdminChatMessageEvents(roomId: string): Promise<ChatMessageEventData[]> {
+  const res = await apiClient.get<ChatMessageEventData[]>(`/admin/chat/rooms/${roomId}/events`);
   return res.data;
 }
 

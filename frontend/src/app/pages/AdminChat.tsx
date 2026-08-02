@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X } from 'lucide-react';
+import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History } from 'lucide-react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminChatRooms,
   fetchAdminChatMessages,
+  fetchAdminChatMessageEvents,
   sendAdminChatAttachment,
   sendAdminChatMessage,
   ChatMessageData,
@@ -24,6 +25,7 @@ export default function AdminChat() {
   const [fileError, setFileError] = useState('');
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [showJournal, setShowJournal] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -60,9 +62,17 @@ export default function AdminChat() {
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => (lastPage.length < PAGE_SIZE ? undefined : lastPage[0]?.id),
     enabled: !!activeRoomId,
+    refetchInterval: 15_000,
   });
 
   const cachedMessages = useMemo(() => (messagesData?.pages ?? []).flat(), [messagesData]);
+
+  const { data: messageEvents = [], isLoading: eventsLoading } = useQuery({
+    queryKey: ['adminChatMessageEvents', activeRoomId],
+    queryFn: () => fetchAdminChatMessageEvents(activeRoomId!),
+    enabled: !!activeRoomId && showJournal,
+    refetchInterval: showJournal ? 15_000 : false,
+  });
 
   const sendMutation = useMutation({
     mutationFn: ({ roomId, text, file }: { roomId: string; text: string; file?: File | null }) =>
@@ -230,7 +240,38 @@ export default function AdminChat() {
                 <h3 className="font-semibold text-gray-900">{activeRoom.partner_name ?? 'Партнёр'}</h3>
                 <p className="text-sm text-gray-500">Чат с партнёром</p>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowJournal((value) => !value)}
+                className="ml-auto inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <History className="h-4 w-4" />
+                История изменений
+              </button>
             </div>
+
+            {showJournal && (
+              <div className="border-b border-gray-200 bg-amber-50 px-6 py-3">
+                <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-900">
+                  Изменения и удаления в Битрикс24
+                </p>
+                {eventsLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin text-amber-700" />
+                ) : messageEvents.length === 0 ? (
+                  <p className="text-sm text-amber-800">Изменений и удалений не зафиксировано.</p>
+                ) : (
+                  <div className="max-h-32 space-y-1 overflow-y-auto">
+                    {messageEvents.map((event) => (
+                      <p key={event.id} className="text-sm text-amber-900">
+                        {event.event_type === 'updated' ? 'Сообщение изменено' : 'Сообщение удалено'} в Битрикс24
+                        {' · '}{formatTime(event.event_at, tz)}
+                        {' · '}ID {event.bitrix_message_id}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div ref={scrollContainerRef} onScroll={handleScroll} className="flex-1 overflow-y-auto p-6 space-y-4">
               {isFetchingNextPage && <div className="flex justify-center py-2"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>}

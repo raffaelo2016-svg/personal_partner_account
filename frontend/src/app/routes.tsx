@@ -64,6 +64,7 @@ export const router = createBrowserRouter([
           { path: 'clients/:id', lazy: lazyPage(() => import('./pages/AdminDebtorDetails')) },
           { path: 'debtors/:id', lazy: lazyPage(() => import('./pages/AdminDebtorDetails')) },
           { path: 'tasks', lazy: lazyPage(() => import('./pages/AdminTasks')) },
+          { path: 'bitrix-attention', lazy: lazyPage(() => import('./pages/AdminBitrixAttention')) },
           { path: 'transactions', lazy: lazyPage(() => import('./pages/AdminTransactions')) },
           { path: 'chat', lazy: lazyPage(() => import('./pages/AdminChat')) },
           { path: 'settings', lazy: lazyPage(() => import('./pages/AdminSettings')) },
