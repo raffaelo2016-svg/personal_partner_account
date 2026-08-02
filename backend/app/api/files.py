@@ -1,3 +1,4 @@
+import hashlib
 import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
@@ -7,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.database import get_db
+from app.integrations.bitrix24.documents import schedule_file_creation
 from app.models.client import Client
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
@@ -47,6 +49,33 @@ ALLOWED_MIME_TYPES = {
 }
 
 
+def _has_valid_signature(data: bytes, extension: str) -> bool:
+    signatures = {
+        ".pdf": (b"%PDF-",),
+        ".jpg": (b"\xff\xd8\xff",),
+        ".jpeg": (b"\xff\xd8\xff",),
+        ".png": (b"\x89PNG\r\n\x1a\n",),
+        ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        ".docx": (b"PK\x03\x04",),
+    }
+    return any(data.startswith(signature) for signature in signatures.get(extension, ()))
+
+
+def _read_response(record: FileUpload, url: str) -> FileUploadRead:
+    return FileUploadRead(
+        file_id=str(record.id),
+        url=url,
+        filename=record.original_name,
+        size=record.size,
+        mime_type=record.mime_type,
+        document_type=record.document_type,
+        created_at=record.created_at,
+        bitrix_sync_status=record.bitrix_sync_status,
+        bitrix_sync_error_code=record.bitrix_sync_error_code,
+        bitrix_disk_file_id=record.bitrix_disk_file_id,
+    )
+
+
 @router.get("/files", response_model=list[FileUploadRead])
 async def list_client_files(
     client_id: str = Query(...),  # noqa: B008
@@ -61,15 +90,7 @@ async def list_client_files(
     # Presign — чисто CPU (HMAC), без сетевых вызовов. Вызываем синхронно,
     # чтобы не плодить task-switch'ы через asyncio.to_thread в цикле.
     return [
-        FileUploadRead(
-            file_id=str(r.id),
-            url=get_presigned_url(r.s3_key),
-            filename=r.original_name,
-            size=r.size,
-            mime_type=r.mime_type,
-            document_type=r.document_type,
-            created_at=r.created_at,
-        )
+        _read_response(r, get_presigned_url(r.s3_key))
         for r in records
     ]
 
@@ -108,6 +129,21 @@ async def upload_endpoint(
             status_code=413,
             detail={"code": "FILE_TOO_LARGE", "message": f"Max size is {UPLOAD_MAX_SIZE_MB} MB"},
         )
+    if not _has_valid_signature(data, ext):
+        raise HTTPException(
+            status_code=415,
+            detail={"code": "INVALID_FILE_CONTENT", "message": "File content does not match its extension"},
+        )
+
+    content_sha256 = hashlib.sha256(data).hexdigest()
+    duplicate = await db.scalar(
+        select(FileUpload).where(
+            FileUpload.client_id == client_id,
+            FileUpload.content_sha256 == content_sha256,
+        )
+    )
+    if duplicate is not None:
+        return _read_response(duplicate, await get_presigned_url_async(duplicate.s3_key))
 
     s3_key = await upload_file_async(data, file.filename, content_type)
 
@@ -120,9 +156,11 @@ async def upload_endpoint(
             s3_key=s3_key,
             size=len(data),
             mime_type=content_type,
+            content_sha256=content_sha256,
         )
         db.add(record)
         await db.flush()
+        await schedule_file_creation(db, record)
         await db.commit()
     except Exception:
         await db.rollback()
@@ -133,15 +171,7 @@ async def upload_endpoint(
 
     audit_log(action="upload_file", target_id=str(record.id), target_type="file")
 
-    return FileUploadRead(
-        file_id=str(record.id),
-        url=url,
-        filename=record.original_name,
-        size=record.size,
-        mime_type=record.mime_type,
-        document_type=record.document_type,
-        created_at=record.created_at,
-    )
+    return _read_response(record, url)
 
 
 @router.get("/files/{file_id}", response_model=FilePresignedURL)
@@ -168,6 +198,11 @@ async def delete_file_endpoint(
     if not record:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "File not found"})
     await _check_client_access(db, str(record.client_id), current_user)
+    if record.bitrix_sync_status in {"pending", "processing"}:
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "BITRIX_SYNC_IN_PROGRESS", "message": "Document synchronization is in progress"},
+        )
     # Delete DB row first; if that succeeds, remove S3 object. If S3 delete fails,
     # we keep the DB row deleted and rely on a periodic sweep to clean orphans.
     s3_key = record.s3_key
