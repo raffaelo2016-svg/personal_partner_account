@@ -14,6 +14,7 @@ import {
   fetchAdminClients,
   fetchAdminClient,
   updateAdminClient,
+  retryAdminClientBitrix,
   updateClient,
 } from '../api/clients';
 
@@ -114,6 +115,19 @@ export function useUpdateAdminClient() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminClients'] });
       queryClient.invalidateQueries({ queryKey: ['adminClient'] });
+    },
+  });
+}
+
+export function useRetryAdminClientBitrix() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => retryAdminClientBitrix(id),
+    onSuccess: (_data, id) => {
+      queryClient.invalidateQueries({ queryKey: ['adminClients'] });
+      queryClient.invalidateQueries({ queryKey: ['adminClient', id] });
+      queryClient.invalidateQueries({ queryKey: ['bitrixAttention'] });
+      queryClient.invalidateQueries({ queryKey: ['adminBitrixAttentionCount'] });
     },
   });
 }

@@ -12,6 +12,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.integrations.bitrix24.chat import CHAT_MESSAGE_ENTITY_TYPE, execute_chat_message
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
@@ -25,6 +26,7 @@ from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
+from app.models.chat import ChatMessage
 from app.models.client import Client
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
@@ -157,7 +159,7 @@ def is_transient_error(exc: Bitrix24Error) -> bool:
 def _safe_result_reference(result: Any) -> str | None:
     candidate: Any = result
     if isinstance(result, dict):
-        candidate = result.get("id") or result.get("ID")
+        candidate = result.get("id") or result.get("ID") or result.get("messageId")
         if candidate is None and isinstance(result.get("task"), dict):
             candidate = result["task"].get("id") or result["task"].get("ID")
         if candidate is None and isinstance(result.get("item"), dict):
@@ -214,6 +216,10 @@ async def claim_outbox_batch(db: AsyncSession, *, limit: int | None = None) -> l
             record = await db.get(FileUpload, operation.local_entity_id)
             if record is not None:
                 record.bitrix_sync_status = "processing"
+        elif operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
+            message = await db.get(ChatMessage, operation.local_entity_id)
+            if message is not None:
+                message.bitrix_sync_status = "processing"
     await db.commit()
     return operations
 
@@ -270,6 +276,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     await _complete_client_projection(db, operation)
     await _complete_task_projection(db, operation)
     await _complete_file_projection(db, operation)
+    await _complete_chat_message_projection(db, operation)
     await db.commit()
     logger.info(
         "bitrix_outbox_operation_completed",
@@ -283,6 +290,8 @@ async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOper
     """Use CRM origin keys to make create operations safe after an uncertain response."""
     if operation.local_entity_type == FILE_ENTITY_TYPE:
         return await execute_file_creation(client, operation)
+    if operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
+        return await execute_chat_message(client, operation)
     list_method = None
     if operation.local_entity_type == CLIENT_CONTACT_ENTITY_TYPE:
         list_method = "crm.contact.list"
@@ -333,11 +342,15 @@ async def _update_projection_failure(
         entity = await db.get(Task, operation.local_entity_id)
     elif operation.local_entity_type == FILE_ENTITY_TYPE:
         entity = await db.get(FileUpload, operation.local_entity_id)
+    elif operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
+        entity = await db.get(ChatMessage, operation.local_entity_id)
     else:
         return
     if entity is not None:
         entity.bitrix_sync_status = "pending" if retrying else "failed"
         entity.bitrix_sync_error_code = operation.error_code
+        if operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE and not retrying:
+            entity.delivery_status = "failed"
 
 
 async def _complete_partner_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
@@ -573,6 +586,28 @@ async def _complete_file_projection(db: AsyncSession, operation: BitrixOutboxOpe
     record.bitrix_sync_status = "synced"
     record.bitrix_sync_error_code = None
     record.bitrix_synced_at = now
+
+
+async def _complete_chat_message_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
+    if operation.local_entity_type != CHAT_MESSAGE_ENTITY_TYPE:
+        return
+    message = await db.get(ChatMessage, operation.local_entity_id)
+    remote_id = operation.result_reference
+    if message is None or not remote_id:
+        if message is not None:
+            message.bitrix_sync_status = "failed"
+            message.bitrix_sync_error_code = "REMOTE_ID_MISSING"
+            message.delivery_status = "failed"
+        operation.status = "failed"
+        operation.error_code = "REMOTE_ID_MISSING"
+        operation.completed_at = None
+        return
+
+    message.bitrix_message_id = remote_id
+    message.bitrix_sync_status = "synced"
+    message.bitrix_sync_error_code = None
+    message.bitrix_synced_at = datetime.now(UTC)
+    message.delivery_status = "delivered"
 
 
 async def release_stale_operations(db: AsyncSession) -> int:

@@ -32,9 +32,17 @@ export interface ClientData {
   case_number?: string | null;
   court_procedure_date?: string | null;
   court_fee_per_client?: number | null;
+  bitrix_sync_status: BitrixSyncStatus;
+  bitrix_sync_error_code?: string | null;
+  bitrix_contact_id?: string | null;
+  bitrix_deal_id?: string | null;
+  bitrix_sync_requested_at?: string | null;
+  bitrix_synced_at?: string | null;
   created_at: string;
   updated_at: string;
 }
+
+export type BitrixSyncStatus = 'not_scheduled' | 'pending' | 'processing' | 'synced' | 'failed' | 'conflict';
 
 export interface ClientStats {
   total: number;
@@ -147,6 +155,11 @@ export async function fetchAdminClient(id: string): Promise<ClientData> {
 
 export async function updateAdminClient(id: string, data: ClientUpdatePayload): Promise<ClientData> {
   const res = await apiClient.put<ClientData>(`/admin/clients/${id}`, data);
+  return res.data;
+}
+
+export async function retryAdminClientBitrix(id: string): Promise<ClientData> {
+  const res = await apiClient.post<ClientData>(`/admin/clients/${id}/bitrix/retry`);
   return res.data;
 }
 

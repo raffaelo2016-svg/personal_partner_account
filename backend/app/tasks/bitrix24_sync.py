@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery
 from app.config import settings
 from app.database import async_session
+from app.integrations.bitrix24.chat import poll_chat_events
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
 from app.integrations.bitrix24.tasks import retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
@@ -34,6 +35,22 @@ async def _process_ready_operations() -> dict[str, int]:
 def process_bitrix_outbox() -> dict[str, int]:
     result = asyncio.run(_process_ready_operations())
     logger.info("bitrix_outbox_batch_processed", **result)
+    return result
+
+
+async def _poll_chat_events() -> dict[str, int]:
+    async with async_session() as db:
+        return await poll_chat_events(db)
+
+
+@celery.task(name="app.tasks.bitrix24_sync.poll_bitrix_chat_events")
+def poll_bitrix_chat_events() -> dict[str, int]:
+    try:
+        result = asyncio.run(_poll_chat_events())
+    except Exception as exc:
+        logger.warning("bitrix_chat_poll_failed", error_type=type(exc).__name__)
+        return {"received": 0, "imported": 0, "journaled": 0, "failed": 1}
+    logger.info("bitrix_chat_events_polled", **result)
     return result
 
 

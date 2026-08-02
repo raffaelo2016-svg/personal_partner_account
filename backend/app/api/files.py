@@ -185,6 +185,25 @@ async def get_file_url(
     return FilePresignedURL(file_id=str(record.id), url=url, filename=record.original_name)
 
 
+@router.post("/files/{file_id}/bitrix/retry", response_model=FileUploadRead)
+async def retry_file_bitrix_endpoint(
+    file_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    record = await db.get(FileUpload, file_id)
+    if not record:
+        raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "File not found"})
+    await _check_client_access(db, str(record.client_id), current_user)
+
+    await schedule_file_creation(db, record, retry=True)
+    await db.commit()
+    url = await get_presigned_url_async(record.s3_key)
+
+    audit_log(action="retry_file_bitrix_sync", target_id=str(record.id), target_type="file")
+    return _read_response(record, url)
+
+
 @router.delete("/files/{file_id}", status_code=204)
 async def delete_file_endpoint(
     file_id: str,

@@ -26,17 +26,18 @@ import {
   Image,
   File,
 } from 'lucide-react';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ClientProgressBar from '../components/ClientProgressBar';
 import { useState, useRef } from 'react';
 import { useClient } from '../hooks/useClients';
-import { useTasks } from '../hooks/useTasks';
-import { fetchClientFiles, uploadFile, type UploadedFileResponse } from '../api/upload';
+import { useRetryTaskBitrix, useTasks } from '../hooks/useTasks';
+import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import { captureError } from '@/app/sentry';
 import { uploadAllSettled } from '@/app/utils/files';
 import { formatDateShort, formatDateTime as fmtDateTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import BitrixSyncStatus from '../components/BitrixSyncStatus';
 
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return Image;
@@ -86,6 +87,17 @@ export default function ClientDetails() {
   const clientTasks = tasksData?.items ?? [];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const retryTaskMutation = useRetryTaskBitrix();
+  const retryFileMutation = useMutation({
+    mutationFn: retryFileBitrix,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['clientFiles', id] });
+      queryClient.invalidateQueries({ queryKey: ['bitrixAttention'] });
+      queryClient.invalidateQueries({ queryKey: ['adminBitrixAttentionCount'] });
+      toast.success('Документ снова поставлен в очередь Битрикс24');
+    },
+    onError: () => toast.error('Не удалось повторить отправку документа'),
+  });
 
   const handleDirectUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -523,6 +535,15 @@ export default function ClientDetails() {
                           {' · '}
                           {formatFileSize(file.size)}
                         </p>
+                        <div className="mt-2">
+                          <BitrixSyncStatus
+                            compact
+                            status={file.bitrix_sync_status}
+                            errorCode={file.bitrix_sync_error_code}
+                            isRetrying={retryFileMutation.isPending && retryFileMutation.variables === file.file_id}
+                            onRetry={() => retryFileMutation.mutate(file.file_id)}
+                          />
+                        </div>
                       </div>
                       <a
                         href={file.url}
@@ -586,6 +607,18 @@ export default function ClientDetails() {
                         <div className="flex-1 min-w-0">
                           <p className="text-sm font-medium text-gray-900">{task.title}</p>
                           <p className="text-xs text-gray-500 mt-1">{statusLabel}</p>
+                          <div className="mt-2">
+                            <BitrixSyncStatus
+                              compact
+                              status={task.bitrix_sync_status}
+                              errorCode={task.bitrix_sync_error_code}
+                              isRetrying={retryTaskMutation.isPending && retryTaskMutation.variables === task.id}
+                              onRetry={() => retryTaskMutation.mutate(task.id, {
+                                onSuccess: () => toast.success('Задача снова поставлена в очередь Битрикс24'),
+                                onError: () => toast.error('Не удалось повторить отправку задачи'),
+                              })}
+                            />
+                          </div>
                         </div>
                       </div>
                     </div>

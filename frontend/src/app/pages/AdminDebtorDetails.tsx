@@ -19,16 +19,17 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { useAdminClient, useUpdateAdminClient } from '@/app/hooks/useClients';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAdminClient, useRetryAdminClientBitrix, useUpdateAdminClient } from '@/app/hooks/useClients';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { formatFileSize } from '@/app/utils/files';
-import { fetchClientFiles, type UploadedFileResponse } from '../api/upload';
+import { fetchClientFiles, retryFileBitrix, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
+import BitrixSyncStatus from '../components/BitrixSyncStatus';
 import {
   CLIENT_STATUSES,
   STATUS_LABELS,
@@ -79,6 +80,18 @@ export default function AdminDebtorDetails() {
   const { id } = useParams();
   const { data: client, isLoading } = useAdminClient(id!);
   const updateClient = useUpdateAdminClient();
+  const retryClientBitrix = useRetryAdminClientBitrix();
+  const queryClient = useQueryClient();
+  const retryFileMutation = useMutation({
+    mutationFn: retryFileBitrix,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
+      queryClient.invalidateQueries({ queryKey: ['bitrixAttention'] });
+      queryClient.invalidateQueries({ queryKey: ['adminBitrixAttentionCount'] });
+      toast.success('Документ снова поставлен в очередь Битрикс24');
+    },
+    onError: () => toast.error('Не удалось повторить отправку документа'),
+  });
 
   const [showStatusChange, setShowStatusChange] = useState(false);
   const [newStatus, setNewStatus] = useState('');
@@ -264,6 +277,23 @@ export default function AdminDebtorDetails() {
                 <p className="text-gray-900">{client.type === 'before_court' ? 'До суда' : 'В суде'}</p>
               </div>
             </div>
+          </div>
+
+          {/* Обмен с Битрикс24 */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <h3 className="font-semibold text-gray-900 mb-3">Обмен с Битрикс24</h3>
+            <BitrixSyncStatus
+              status={client.bitrix_sync_status}
+              errorCode={client.bitrix_sync_error_code}
+              isRetrying={retryClientBitrix.isPending}
+              onRetry={() => retryClientBitrix.mutate(client.id, {
+                onSuccess: () => toast.success('Клиент снова поставлен в очередь Битрикс24'),
+                onError: () => toast.error('Не удалось повторить отправку клиента'),
+              })}
+            />
+            {client.bitrix_deal_id && (
+              <p className="mt-2 text-xs text-gray-500">Карточка сделки: {client.bitrix_deal_id}</p>
+            )}
           </div>
 
           {/* Паспортные данные */}
@@ -585,6 +615,15 @@ export default function AdminDebtorDetails() {
                           {' · '}
                           {formatDateShort(file.created_at, tz)}
                         </p>
+                        <div className="mt-2">
+                          <BitrixSyncStatus
+                            compact
+                            status={file.bitrix_sync_status}
+                            errorCode={file.bitrix_sync_error_code}
+                            isRetrying={retryFileMutation.isPending && retryFileMutation.variables === file.file_id}
+                            onRetry={() => retryFileMutation.mutate(file.file_id)}
+                          />
+                        </div>
                       </div>
                       <a
                         href={file.url}

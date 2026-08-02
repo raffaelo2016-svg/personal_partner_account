@@ -81,7 +81,11 @@ export function useRetryPartnerBitrixSync() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (id: string) => retryPartnerBitrixSync(id),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin', 'partners'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'partners'] });
+      queryClient.invalidateQueries({ queryKey: ['bitrixAttention'] });
+      queryClient.invalidateQueries({ queryKey: ['adminBitrixAttentionCount'] });
+    },
   });
 }
 

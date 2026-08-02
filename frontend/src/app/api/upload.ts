@@ -1,4 +1,5 @@
 import apiClient from './client';
+import type { BitrixSyncStatus } from './clients';
 
 export interface UploadedFileResponse {
   file_id: string;
@@ -8,6 +9,9 @@ export interface UploadedFileResponse {
   mime_type: string;
   document_type: string;
   created_at: string;
+  bitrix_sync_status: BitrixSyncStatus;
+  bitrix_sync_error_code?: string | null;
+  bitrix_disk_file_id?: string | null;
 }
 
 export async function uploadFile(
@@ -46,4 +50,9 @@ export async function getFileUrl(fileId: string): Promise<{ file_id: string; url
 
 export async function deleteFile(fileId: string): Promise<void> {
   await apiClient.delete(`/files/${fileId}`);
+}
+
+export async function retryFileBitrix(fileId: string): Promise<UploadedFileResponse> {
+  const res = await apiClient.post<UploadedFileResponse>(`/files/${fileId}/bitrix/retry`);
+  return res.data;
 }

@@ -131,3 +131,26 @@ class TestFileUpload:
         resp = await client.delete(f"/api/v1/files/{file_id}", headers=auth(token))
         assert resp.status_code == 204
         mock_del.assert_called_once()
+
+    @patch("app.api.files.upload_file_async", new_callable=AsyncMock)
+    @patch("app.api.files.get_presigned_url_async", new_callable=AsyncMock)
+    async def test_retry_bitrix_sync(self, mock_url, mock_upload, client: AsyncClient, setup_db):
+        mock_upload.return_value = "uploads/retry.pdf"
+        mock_url.return_value = "https://s3.example.com/uploads/retry.pdf"
+
+        token, client_id = await _create_partner_and_client(client, setup_db)
+        upload_resp = await client.post(
+            "/api/v1/upload",
+            params={"client_id": client_id},
+            files={"file": ("retry.pdf", BytesIO(b"%PDF-1.4"), "application/pdf")},
+            headers=auth(token),
+        )
+        file_id = upload_resp.json()["file_id"]
+
+        with patch("app.api.files.schedule_file_creation", new_callable=AsyncMock) as mock_schedule:
+            resp = await client.post(f"/api/v1/files/{file_id}/bitrix/retry", headers=auth(token))
+
+        assert resp.status_code == 200
+        assert resp.json()["file_id"] == file_id
+        mock_schedule.assert_awaited_once()
+        assert mock_schedule.await_args.kwargs == {"retry": True}
