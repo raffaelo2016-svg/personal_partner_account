@@ -103,7 +103,7 @@ class TestFileUpload:
         upload_resp = await client.post(
             "/api/v1/upload",
             params={"client_id": client_id},
-            files={"file": ("test.pdf", BytesIO(b"%PDF"), "application/pdf")},
+            files={"file": ("test.pdf", BytesIO(b"%PDF-1.4"), "application/pdf")},
             headers=auth(token),
         )
         file_id = upload_resp.json()["file_id"]
@@ -123,7 +123,7 @@ class TestFileUpload:
         upload_resp = await client.post(
             "/api/v1/upload",
             params={"client_id": client_id},
-            files={"file": ("test.pdf", BytesIO(b"%PDF"), "application/pdf")},
+            files={"file": ("test.pdf", BytesIO(b"%PDF-1.4"), "application/pdf")},
             headers=auth(token),
         )
         file_id = upload_resp.json()["file_id"]

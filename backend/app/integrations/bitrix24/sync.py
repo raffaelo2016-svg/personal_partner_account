@@ -18,6 +18,7 @@ from app.integrations.bitrix24.clients import (
     CLIENT_DEAL_ENTITY_TYPE,
     enqueue_client_deal,
 )
+from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, execute_file_creation, schedule_file_creation
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE
 from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event_reference, schedule_task_creation
@@ -25,6 +26,7 @@ from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
+from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.models.task import Task
 
@@ -208,6 +210,10 @@ async def claim_outbox_batch(db: AsyncSession, *, limit: int | None = None) -> l
             task = await db.get(Task, operation.local_entity_id)
             if task is not None:
                 task.bitrix_sync_status = "processing"
+        elif operation.local_entity_type == FILE_ENTITY_TYPE:
+            record = await db.get(FileUpload, operation.local_entity_id)
+            if record is not None:
+                record.bitrix_sync_status = "processing"
     await db.commit()
     return operations
 
@@ -263,6 +269,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     await _complete_partner_projection(db, operation)
     await _complete_client_projection(db, operation)
     await _complete_task_projection(db, operation)
+    await _complete_file_projection(db, operation)
     await db.commit()
     logger.info(
         "bitrix_outbox_operation_completed",
@@ -274,6 +281,8 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
 
 async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOperation) -> Any:
     """Use CRM origin keys to make create operations safe after an uncertain response."""
+    if operation.local_entity_type == FILE_ENTITY_TYPE:
+        return await execute_file_creation(client, operation)
     list_method = None
     if operation.local_entity_type == CLIENT_CONTACT_ENTITY_TYPE:
         list_method = "crm.contact.list"
@@ -322,6 +331,8 @@ async def _update_projection_failure(
         entity = await db.get(Client, operation.local_entity_id)
     elif operation.local_entity_type == TASK_ENTITY_TYPE:
         entity = await db.get(Task, operation.local_entity_id)
+    elif operation.local_entity_type == FILE_ENTITY_TYPE:
+        entity = await db.get(FileUpload, operation.local_entity_id)
     else:
         return
     if entity is not None:
@@ -469,6 +480,19 @@ async def _complete_client_projection(db: AsyncSession, operation: BitrixOutboxO
     )
     for task in pending_tasks:
         await schedule_task_creation(db, task)
+    pending_files = list(
+        (
+            await db.scalars(
+                select(FileUpload).where(
+                    FileUpload.client_id == client.id,
+                    FileUpload.bitrix_sync_status == "pending",
+                    FileUpload.bitrix_sync_error_code == "CLIENT_NOT_SYNCED",
+                )
+            )
+        ).all()
+    )
+    for record in pending_files:
+        await schedule_file_creation(db, record)
 
 
 async def _complete_task_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
@@ -508,6 +532,47 @@ async def _complete_task_projection(db: AsyncSession, operation: BitrixOutboxOpe
     task.bitrix_sync_status = "synced"
     task.bitrix_sync_error_code = None
     task.bitrix_synced_at = now
+
+
+async def _complete_file_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
+    if operation.local_entity_type != FILE_ENTITY_TYPE:
+        return
+    record = await db.get(FileUpload, operation.local_entity_id)
+    reference = operation.result_reference or ""
+    comment_id, separator, disk_file_id = reference.partition(":")
+    if record is None or not separator or not comment_id or not disk_file_id:
+        if record is not None:
+            record.bitrix_sync_status = "failed"
+            record.bitrix_sync_error_code = "REMOTE_ID_MISSING"
+        operation.status = "failed"
+        operation.error_code = "REMOTE_ID_MISSING"
+        operation.completed_at = None
+        return
+
+    now = datetime.now(UTC)
+    await db.execute(
+        insert(BitrixEntityMap)
+        .values(
+            id=uuid.uuid4(),
+            member_id=operation.member_id,
+            local_entity_type=FILE_ENTITY_TYPE,
+            local_entity_id=record.id,
+            bitrix_entity_type="crm_timeline_comment",
+            bitrix_entity_id=comment_id,
+            sync_version=1,
+            last_synced_at=now,
+            last_verified_at=now,
+        )
+        .on_conflict_do_update(
+            constraint="uq_bitrix_entity_maps_local",
+            set_={"bitrix_entity_id": comment_id, "last_synced_at": now, "last_verified_at": now},
+        )
+    )
+    record.bitrix_timeline_comment_id = comment_id
+    record.bitrix_disk_file_id = disk_file_id
+    record.bitrix_sync_status = "synced"
+    record.bitrix_sync_error_code = None
+    record.bitrix_synced_at = now
 
 
 async def release_stale_operations(db: AsyncSession) -> int:
