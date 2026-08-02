@@ -25,6 +25,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--partner-responsible-id", type=int)
     parser.add_argument("--admin-responsible-id", type=int)
     parser.add_argument("--creator-id", type=int)
+    parser.add_argument(
+        "--fill-missing-with-installer",
+        action="store_true",
+        help="Use the active integration installer only for roles that are not configured yet",
+    )
     return parser.parse_args()
 
 
@@ -85,16 +90,49 @@ async def _save_ids(values: dict[str, int]) -> None:
         await db.commit()
 
 
-async def run(*, apply: bool, supplied: dict[str, int | None]) -> None:
+def _values_to_apply(
+    supplied: dict[str, int | None],
+    configured: dict[str, int],
+    *,
+    fill_missing_with_installer: bool,
+    installer_id: int | None,
+) -> dict[str, int]:
+    values = {role: value for role, value in supplied.items() if value is not None}
+    if not fill_missing_with_installer or installer_id is None:
+        return values
+    for role in ("partner", "admin", "creator"):
+        if role not in configured:
+            values.setdefault(role, installer_id)
+    return values
+
+
+async def run(
+    *,
+    apply: bool,
+    supplied: dict[str, int | None],
+    fill_missing_with_installer: bool = False,
+) -> None:
     async with async_session() as db:
         installation = await active_installation(db)
         if installation is None:
             raise SystemExit("Active Bitrix24 installation not found")
+        installer_id = installation.installed_by_user_id
         endpoint, token, _ = await _stored_credentials(db, settings.BITRIX_ALLOWED_DOMAIN)
 
+    configured = await _configured_ids()
     async with Bitrix24Client(endpoint, token) as client:
         active_ids = await _active_user_ids(client)
-        requested = {role: value for role, value in supplied.items() if value is not None}
+        fallback_needed = fill_missing_with_installer and any(
+            role not in configured for role in ("partner", "admin", "creator")
+        )
+        requested = _values_to_apply(
+            supplied,
+            configured,
+            fill_missing_with_installer=fill_missing_with_installer,
+            installer_id=installer_id,
+        )
+        if fallback_needed and installer_id not in active_ids:
+            raise SystemExit("The Bitrix24 integration installer is not an active user")
         invalid = [role for role, value in requested.items() if value not in active_ids]
         if invalid:
             raise SystemExit("Configured Bitrix24 user IDs must belong to active users")
@@ -121,6 +159,7 @@ def main() -> None:
                 "admin": args.admin_responsible_id,
                 "creator": args.creator_id,
             },
+            fill_missing_with_installer=args.fill_missing_with_installer,
         )
     )
 

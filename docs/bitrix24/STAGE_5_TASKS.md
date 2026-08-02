@@ -39,6 +39,16 @@ python -m app.integrations.bitrix24.task_setup_cli --apply \
   --partner-responsible-id 123 --admin-responsible-id 456 --creator-id 456
 ```
 
+При первой производственной выкладке незаполненные роли безопасно направляются
+пользователю, который установил интеграцию. Уже настроенные роли при следующих
+выкладках не перезаписываются. Одновременно обеспечивается подписка на
+`OnTaskUpdate`:
+
+```bash
+python -m app.integrations.bitrix24.task_setup_cli --apply \
+  --fill-missing-with-installer
+```
+
 ## Статус задачи
 
 Статусом управляет Битрикс24. Событие `OnTaskUpdate` содержит только ID задачи, поэтому кабинет запрашивает актуальную карточку через REST и применяет безопасное соответствие:
