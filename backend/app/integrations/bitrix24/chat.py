@@ -266,9 +266,7 @@ async def import_message_event(
     partner = await _partner_for_dialog(db, str(chat_data.get("dialogId") or message_data.get("chatId")))
     if partner is None:
         return None
-    room = await db.scalar(
-        select(ChatRoom).where(ChatRoom.partner_id == partner.id, ChatRoom.type == "admin")
-    )
+    room = await db.scalar(select(ChatRoom).where(ChatRoom.partner_id == partner.id, ChatRoom.type == "admin"))
     if room is None:
         room = ChatRoom(partner_id=partner.id, type="admin")
         db.add(room)

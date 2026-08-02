@@ -61,14 +61,18 @@ async def list_bitrix_attention(
 
     total = int(await db.scalar(select(func.count()).select_from(attention).where(*filters)) or 0)
     rows = (
-        await db.execute(
-            select(attention)
-            .where(*filters)
-            .order_by(attention.c.occurred_at.desc(), attention.c.entity_type, attention.c.entity_id)
-            .offset((page - 1) * page_size)
-            .limit(page_size)
+        (
+            await db.execute(
+                select(attention)
+                .where(*filters)
+                .order_by(attention.c.occurred_at.desc(), attention.c.entity_type, attention.c.entity_id)
+                .offset((page - 1) * page_size)
+                .limit(page_size)
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     all_attention = union_all(*queries.values()).subquery("all_bitrix_attention")
     count_rows = (

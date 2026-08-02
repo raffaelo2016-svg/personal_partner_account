@@ -117,9 +117,7 @@ def _message_event(remote_id: int = 5012) -> dict:
 def _file_event(remote_id: int = 5014) -> dict:
     event = _message_event(remote_id)
     event["data"]["message"]["text"] = "Документ"
-    event["data"]["message"]["params"] = {
-        "files": [{"id": 138, "name": "report.pdf", "size": 9}]
-    }
+    event["data"]["message"]["params"] = {"files": [{"id": 138, "name": "report.pdf", "size": 9}]}
     return event
 
 
