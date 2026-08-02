@@ -89,10 +89,7 @@ async def list_client_files(
     records = result.scalars().all()
     # Presign — чисто CPU (HMAC), без сетевых вызовов. Вызываем синхронно,
     # чтобы не плодить task-switch'ы через asyncio.to_thread в цикле.
-    return [
-        _read_response(r, get_presigned_url(r.s3_key))
-        for r in records
-    ]
+    return [_read_response(r, get_presigned_url(r.s3_key)) for r in records]
 
 
 @router.post("/upload", response_model=FileUploadRead, status_code=201)
