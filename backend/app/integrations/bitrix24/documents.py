@@ -113,8 +113,14 @@ async def schedule_file_creation(db: AsyncSession, record: FileUpload, *, retry:
 
 def _comment_reference(comment: dict[str, Any]) -> str | None:
     comment_id = comment.get("ID") or comment.get("id")
-    files = comment.get("FILES") or comment.get("files") or []
-    if not comment_id or not isinstance(files, list) or not files:
+    raw_files = comment.get("FILES") or comment.get("files") or []
+    if isinstance(raw_files, dict):
+        files = list(raw_files.values())
+    elif isinstance(raw_files, list):
+        files = raw_files
+    else:
+        files = []
+    if not comment_id or not files:
         return None
     first = files[0]
     file_id = (first.get("ID") or first.get("id")) if isinstance(first, dict) else None

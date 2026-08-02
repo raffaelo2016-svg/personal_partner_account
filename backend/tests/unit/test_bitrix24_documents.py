@@ -67,7 +67,7 @@ async def test_existing_timeline_marker_prevents_duplicate_upload():
         payload={"deal_id": "456", "s3_key": record.s3_key, "remote_name": "document.pdf", "marker": marker},
     )
     remote = AsyncMock()
-    remote.list_all.return_value = [{"ID": "90", "COMMENT": marker, "FILES": [{"id": "700"}]}]
+    remote.list_all.return_value = [{"ID": "90", "COMMENT": marker, "FILES": {"1": {"id": "700"}}}]
 
     result = await execute_file_creation(remote, operation)
 
