@@ -130,4 +130,4 @@ class TestFileUpload:
 
         resp = await client.delete(f"/api/v1/files/{file_id}", headers=auth(token))
         assert resp.status_code == 204
-        mock_del.assert_called
+        mock_del.assert_called_once()
