@@ -70,6 +70,12 @@ if [ "$ok" != "1" ]; then
   exit 1
 fi
 
+echo "[bitrix] Ensure task event and safe initial responsible mappings"
+if ! $COMPOSE exec -T backend python -m app.integrations.bitrix24.task_setup_cli \
+  --apply --fill-missing-with-installer; then
+  echo "  warning: Bitrix24 task activation was deferred; background sync remains safe" >&2
+fi
+
 echo "[6/6] Build frontend"
 cd frontend
 npm ci

@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.bitrix24.sync import _execute_operation
-from app.integrations.bitrix24.task_setup_cli import _active_user_ids
+from app.integrations.bitrix24.task_setup_cli import _active_user_ids, _values_to_apply
 from app.integrations.bitrix24.tasks import (
     TASK_ENTITY_TYPE,
     TASK_RESPONSIBLE_SETTING_PREFIX,
@@ -75,6 +75,28 @@ async def test_active_user_ids_do_not_expose_user_profiles():
     result = await _active_user_ids(remote)
 
     assert result == {10, 11}
+
+
+def test_installer_fallback_fills_only_missing_roles():
+    result = _values_to_apply(
+        {"partner": None, "admin": None, "creator": None},
+        {"partner": 20},
+        fill_missing_with_installer=True,
+        installer_id=10,
+    )
+
+    assert result == {"admin": 10, "creator": 10}
+
+
+def test_explicit_responsible_has_priority_over_installer_fallback():
+    result = _values_to_apply(
+        {"partner": 30, "admin": None, "creator": None},
+        {},
+        fill_missing_with_installer=True,
+        installer_id=10,
+    )
+
+    assert result == {"partner": 30, "admin": 10, "creator": 10}
 
 
 async def _saved_entities(
