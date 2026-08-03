@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
@@ -22,6 +22,18 @@ class Client(Base, TimestampMixin, SoftDeleteMixin):
             name="ck_clients_bitrix_sync_status",
         ),
         Index("ix_clients_bitrix_sync_status", "bitrix_sync_status"),
+        Index(
+            "uq_clients_bitrix_contact_id",
+            "bitrix_contact_id",
+            unique=True,
+            postgresql_where=text("bitrix_contact_id IS NOT NULL"),
+        ),
+        Index(
+            "uq_clients_bitrix_deal_id",
+            "bitrix_deal_id",
+            unique=True,
+            postgresql_where=text("bitrix_deal_id IS NOT NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
