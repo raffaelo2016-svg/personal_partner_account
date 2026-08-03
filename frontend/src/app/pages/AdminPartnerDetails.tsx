@@ -515,7 +515,9 @@ export default function AdminPartnerDetails() {
             </div>
             <div className="space-y-2 text-sm">
               <p className="text-gray-600">Карточка партнёра: <span className="text-gray-900">{partner.bitrix_partner_item_id ?? 'ещё не создана'}</span></p>
-              <p className="text-gray-600">Коллаба: <span className="text-gray-900">{partner.bitrix_collab_status === 'linked' ? 'привязана' : 'нужна привязка'}</span></p>
+              <p className="text-gray-600">Чат: <span className="text-gray-900">{partner.bitrix_chat_id ? `привязан (${partner.bitrix_chat_id})` : 'не привязан'}</span></p>
+              <p className="text-gray-600">Коллаба: <span className="text-gray-900">{partner.bitrix_collab_id ? 'привязана' : 'не привязана'}</span></p>
+              <p className="text-gray-600">Корневая папка: <span className="text-gray-900">{partner.bitrix_root_folder_id ? 'привязана' : 'не привязана'}</span></p>
               {partner.bitrix_sync_error_code && (
                 <p className="text-red-600">Код состояния: {partner.bitrix_sync_error_code}</p>
               )}
@@ -543,19 +545,24 @@ export default function AdminPartnerDetails() {
 
             {partner.bitrix_collab_status !== 'linked' && (
               <div className="mt-5 pt-4 border-t border-gray-200 space-y-2">
-                <p className="text-sm font-medium text-gray-900">Привязать готовую коллабу</p>
+                <p className="text-sm font-medium text-gray-900">Привязать чат или готовую коллабу</p>
+                <p className="text-xs text-gray-500">Чат можно подключить отдельно. ID коллабы и папки добавляются позднее.</p>
                 <input value={collabId} onChange={(e) => setCollabId(e.target.value)} placeholder="ID коллабы" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
-                <input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="ID чата" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
+                <input value={chatId} onChange={(e) => setChatId(e.target.value)} placeholder="ID чата (можно отдельно)" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
                 <input value={rootFolderId} onChange={(e) => setRootFolderId(e.target.value)} placeholder="ID корневой папки" className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg" />
                 <button
                   onClick={() => bindBitrixCollab.mutate({
                     id: partner.id,
-                    data: { collab_id: collabId, chat_id: chatId, root_folder_id: rootFolderId },
+                    data: {
+                      ...(collabId.trim() ? { collab_id: collabId.trim() } : {}),
+                      ...(chatId.trim() ? { chat_id: chatId.trim() } : {}),
+                      ...(rootFolderId.trim() ? { root_folder_id: rootFolderId.trim() } : {}),
+                    },
                   }, {
-                    onSuccess: () => toast.success('Коллаба привязана'),
+                    onSuccess: () => toast.success('Привязка сохранена'),
                     onError: () => toast.error('Не удалось сохранить привязку'),
                   })}
-                  disabled={!collabId || !chatId || !rootFolderId || bindBitrixCollab.isPending}
+                  disabled={!(collabId.trim() || chatId.trim() || rootFolderId.trim()) || bindBitrixCollab.isPending}
                   className="w-full flex items-center justify-center gap-2 px-3 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
                 >
                   <Link2 className="w-4 h-4" />

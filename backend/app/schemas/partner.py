@@ -96,6 +96,12 @@ class PartnerStats(BaseModel):
 
 
 class PartnerBitrixCollabBinding(BaseModel):
-    collab_id: str = Field(min_length=1, max_length=100)
-    chat_id: str = Field(min_length=1, max_length=100)
-    root_folder_id: str = Field(min_length=1, max_length=100)
+    collab_id: str | None = Field(default=None, min_length=1, max_length=100)
+    chat_id: str | None = Field(default=None, min_length=1, max_length=100)
+    root_folder_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> Self:
+        if not any((self.collab_id, self.chat_id, self.root_folder_id)):
+            raise ValueError("Укажите хотя бы один идентификатор Битрикс24")
+        return self

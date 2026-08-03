@@ -376,10 +376,17 @@ async def bind_partner_bitrix_collab(
     partner = await session.get(Partner, partner_id)
     if not partner or partner.deleted_at is not None:
         raise NotFound("Partner not found")
-    partner.bitrix_collab_id = data.collab_id
-    partner.bitrix_chat_id = data.chat_id
-    partner.bitrix_root_folder_id = data.root_folder_id
-    partner.bitrix_collab_status = "linked"
+    if data.collab_id is not None:
+        partner.bitrix_collab_id = data.collab_id
+    if data.chat_id is not None:
+        partner.bitrix_chat_id = data.chat_id
+    if data.root_folder_id is not None:
+        partner.bitrix_root_folder_id = data.root_folder_id
+    partner.bitrix_collab_status = (
+        "linked"
+        if partner.bitrix_collab_id and partner.bitrix_chat_id and partner.bitrix_root_folder_id
+        else "binding_required"
+    )
     await session.flush()
     audit_log(action="bind_partner_bitrix_collab", target_id=str(partner.id), target_type="partner")
     return await get_partner(session, partner_id)
