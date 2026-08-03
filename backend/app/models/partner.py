@@ -55,6 +55,7 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
     bitrix_collab_status: Mapped[str] = mapped_column(String(20), default="not_linked")
     bitrix_collab_id: Mapped[str | None] = mapped_column(String(100), default=None)
     bitrix_chat_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_chat_bot_joined_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     bitrix_root_folder_id: Mapped[str | None] = mapped_column(String(100), default=None)
     bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)

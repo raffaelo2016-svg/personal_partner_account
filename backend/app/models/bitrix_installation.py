@@ -25,3 +25,5 @@ class BitrixInstallation(Base, TimestampMixin):
     token_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     im_event_offset: Mapped[int | None] = mapped_column(BigInteger, default=None)
     im_event_subscribed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    im_bot_id: Mapped[int | None] = mapped_column(BigInteger, default=None)
+    im_bot_event_offset: Mapped[int | None] = mapped_column(BigInteger, default=None)

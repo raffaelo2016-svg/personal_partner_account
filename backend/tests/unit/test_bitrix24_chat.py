@@ -8,6 +8,8 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.bitrix24.chat import (
+    BOT_FILE_METHOD,
+    BOT_MESSAGE_METHOD,
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
     execute_chat_message,
@@ -50,6 +52,29 @@ async def test_outgoing_message_uses_linked_dialog():
 
 
 @pytest.mark.asyncio
+async def test_outgoing_message_can_be_sent_as_service_bot():
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"chat:message:{uuid4()}:v1",
+        local_entity_type=CHAT_MESSAGE_ENTITY_TYPE,
+        local_entity_id=uuid4(),
+        bitrix_method=BOT_MESSAGE_METHOD,
+        payload={
+            "botId": 456,
+            "dialogId": "chat123",
+            "fields": {"message": "Hello", "urlPreview": "Y"},
+        },
+    )
+    remote = AsyncMock()
+    remote.call.return_value = {"messageId": 5012}
+
+    result = await execute_chat_message(remote, operation)
+
+    assert result == {"messageId": 5012}
+    remote.call.assert_awaited_once_with(BOT_MESSAGE_METHOD, operation.payload)
+
+
+@pytest.mark.asyncio
 async def test_outgoing_attachment_is_loaded_only_when_queue_runs():
     operation = BitrixOutboxOperation(
         member_id="member",
@@ -74,6 +99,38 @@ async def test_outgoing_attachment_is_loaded_only_when_queue_runs():
     assert payload["dialogId"] == "chat123"
     assert payload["fields"]["name"] == "report.pdf"
     assert payload["fields"]["content"] == "JVBERi0xLjc="
+
+
+@pytest.mark.asyncio
+async def test_outgoing_attachment_can_be_sent_as_service_bot():
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"chat:message:{uuid4()}:v1",
+        local_entity_type=CHAT_MESSAGE_ENTITY_TYPE,
+        local_entity_id=uuid4(),
+        bitrix_method=BOT_FILE_METHOD,
+        payload={
+            "bot_id": 456,
+            "dialog_id": "chat123",
+            "s3_key": "uploads/file.pdf",
+            "name": "report.pdf",
+            "message": "",
+        },
+    )
+    remote = AsyncMock()
+    remote.call.return_value = {"messageId": 5013, "file": {"id": 138}}
+
+    with patch(
+        "app.integrations.bitrix24.chat.download_file_async",
+        new=AsyncMock(return_value=b"%PDF-1.7"),
+    ):
+        result = await execute_chat_message(remote, operation)
+
+    assert result["messageId"] == 5013
+    method, payload = remote.call.await_args.args
+    assert method == BOT_FILE_METHOD
+    assert payload["botId"] == 456
+    assert payload["dialogId"] == "chat123"
 
 
 async def _partner_room(db_session: AsyncSession) -> ChatRoom:
@@ -114,6 +171,12 @@ def _message_event(remote_id: int = 5012) -> dict:
     }
 
 
+def _bot_message_event(remote_id: int = 5012) -> dict:
+    event = _message_event(remote_id)
+    event["type"] = "ONIMBOTV2MESSAGEADD"
+    return event
+
+
 def _file_event(remote_id: int = 5014) -> dict:
     event = _message_event(remote_id)
     event["data"]["message"]["text"] = "Документ"
@@ -138,6 +201,30 @@ async def test_incoming_message_is_imported_once_and_escaped(db_session: AsyncSe
     assert first.text == "Ответ &lt;сотрудника&gt;"
     assert second is None
     assert count == 1
+
+
+@pytest.mark.asyncio
+async def test_incoming_bot_event_is_imported_but_own_bot_message_is_ignored(db_session: AsyncSession):
+    await _partner_room(db_session)
+    installation = BitrixInstallation(
+        member_id="member-bot",
+        portal_domain="example.bitrix24.ru",
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    db_session.add(installation)
+    await db_session.flush()
+
+    incoming = await import_message_event(db_session, _bot_message_event(5015), installation=installation)
+    own_event = _bot_message_event(5016)
+    own_event["data"]["message"]["authorId"] = 456
+    own = await import_message_event(db_session, own_event, installation=installation)
+
+    assert incoming is not None
+    assert own is None
 
 
 @pytest.mark.asyncio
