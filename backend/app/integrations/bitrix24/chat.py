@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import base64
 import html
 import mimetypes
@@ -254,6 +255,21 @@ def _event_file(data: dict[str, Any]) -> dict[str, Any] | None:
     return first if isinstance(first, dict) else {"id": first}
 
 
+def _history_files(value: Any) -> list[dict[str, Any]]:
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, dict)]
+    if not isinstance(value, dict):
+        return []
+    files: list[dict[str, Any]] = []
+    for key, value_item in value.items():
+        if not isinstance(value_item, dict):
+            continue
+        item = dict(value_item)
+        item.setdefault("id", key)
+        files.append(item)
+    return files
+
+
 async def _event_file_from_history(
     client: Bitrix24Client,
     *,
@@ -273,8 +289,8 @@ async def _event_file_from_history(
     if not isinstance(result, dict):
         return event_file
     messages = result.get("messages")
-    files = result.get("files")
-    if not isinstance(messages, list) or not isinstance(files, list):
+    files = _history_files(result.get("files"))
+    if not isinstance(messages, list) or not files:
         return event_file
     target = next(
         (message for message in messages if isinstance(message, dict) and str(message.get("id") or "") == remote_id),
@@ -295,6 +311,95 @@ async def _event_file_from_history(
     hydrated = dict(event_file or {})
     hydrated.update(matching[0])
     return hydrated
+
+
+async def _reconcile_chat_file_history(
+    db: AsyncSession,
+    client: Bitrix24Client,
+    installation: BitrixInstallation,
+    *,
+    partner_limit: int = 25,
+    message_limit: int = 20,
+) -> dict[str, int]:
+    """Recover file messages that the bot event queue did not deliver."""
+    partners = list(
+        (
+            await db.scalars(
+                select(Partner)
+                .where(
+                    Partner.bitrix_chat_id.is_not(None),
+                    Partner.bitrix_chat_bot_joined_at.is_not(None),
+                )
+                .order_by(Partner.bitrix_chat_bot_joined_at.desc())
+                .limit(partner_limit)
+            )
+        ).all()
+    )
+    imported = 0
+    scanned = 0
+    for index, partner in enumerate(partners):
+        dialog_id = normalize_dialog_id(partner.bitrix_chat_id or "")
+        result = await client.call(
+            "im.dialog.messages.get",
+            {"DIALOG_ID": dialog_id, "LIMIT": message_limit},
+        )
+        if not isinstance(result, dict) or not isinstance(result.get("messages"), list):
+            continue
+        files = _history_files(result.get("files"))
+        files_by_id = {str(item.get("id")): item for item in files if item.get("id") is not None}
+        joined_at = partner.bitrix_chat_bot_joined_at
+        if joined_at is not None and joined_at.tzinfo is None:
+            joined_at = joined_at.replace(tzinfo=UTC)
+
+        for item in reversed(result["messages"]):
+            if not isinstance(item, dict):
+                continue
+            file_reference = _event_file({"message": item})
+            file_id = (file_reference or {}).get("id") or (file_reference or {}).get("fileId")
+            file_data = files_by_id.get(str(file_id))
+            if file_data is None:
+                continue
+            raw_date = item.get("date")
+            message_at: datetime | None = None
+            if isinstance(raw_date, str):
+                with suppress(ValueError):
+                    message_at = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
+            if message_at is not None and message_at.tzinfo is None:
+                message_at = message_at.replace(tzinfo=UTC)
+            if joined_at is not None and message_at is not None and message_at < joined_at:
+                continue
+            scanned += 1
+            event = {
+                "type": "ONIMBOTV2MESSAGEADD",
+                "date": raw_date,
+                "data": {
+                    "message": {
+                        "id": item.get("id"),
+                        "chatId": item.get("chatId") or item.get("chat_id"),
+                        "authorId": item.get("authorId") or item.get("author_id"),
+                        "date": raw_date,
+                        "text": item.get("text") or "",
+                        "params": item.get("params") or {},
+                    },
+                    "chat": {"dialogId": dialog_id},
+                    "files": [file_data],
+                },
+            }
+            if await import_message_event(db, event, client=client, installation=installation) is not None:
+                imported += 1
+        if index + 1 < len(partners):
+            await asyncio.sleep(0.55)
+    await db.commit()
+    return {"partners": len(partners), "scanned": scanned, "imported": imported}
+
+
+async def reconcile_chat_file_history(db: AsyncSession) -> dict[str, int]:
+    installation = await active_installation(db)
+    if installation is None or installation.im_bot_id is None:
+        return {"partners": 0, "scanned": 0, "imported": 0}
+    token = await _installation_token(db, installation)
+    async with Bitrix24Client(installation.client_endpoint, token) as client:
+        return await _reconcile_chat_file_history(db, client, installation)
 
 
 async def _import_attachment(

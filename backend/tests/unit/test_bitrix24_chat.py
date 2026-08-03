@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
@@ -12,6 +13,7 @@ from app.integrations.bitrix24.chat import (
     BOT_MESSAGE_METHOD,
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
+    _reconcile_chat_file_history,
     execute_chat_message,
     import_message_event,
     normalize_dialog_id,
@@ -322,6 +324,90 @@ async def test_incoming_empty_file_event_hydrates_metadata_from_history(db_sessi
         {"DIALOG_ID": "chat123", "FIRST_ID": 5017, "LIMIT": 5},
     )
     assert import_attachment.await_args.kwargs["file_data"]["name"] == "report.pdf"
+
+
+@pytest.mark.asyncio
+async def test_incoming_empty_file_event_hydrates_metadata_from_keyed_history(db_session: AsyncSession):
+    await _partner_room(db_session)
+    installation = AsyncMock()
+    remote = AsyncMock()
+    event = _message_event(5019)
+    event["data"]["message"]["text"] = ""
+    remote.call.return_value = {
+        "messages": [{"id": 5019, "text": "", "params": {"FILE_ID": [138]}}],
+        "files": {"138": {"name": "report.pdf", "size": 9}},
+    }
+
+    with patch(
+        "app.integrations.bitrix24.chat._import_attachment",
+        new=AsyncMock(return_value=("uploads/imported.pdf", "report.pdf", 9, "application/pdf")),
+    ) as import_attachment:
+        message = await import_message_event(
+            db_session,
+            event,
+            client=remote,
+            installation=installation,
+        )
+
+    assert message is not None
+    assert import_attachment.await_args.kwargs["file_data"]["id"] == "138"
+
+
+@pytest.mark.asyncio
+async def test_file_history_reconciliation_recovers_missed_file_event(db_session: AsyncSession):
+    room = await _partner_room(db_session)
+    partner = await db_session.get(Partner, room.partner_id)
+    assert partner is not None
+    partner.bitrix_chat_bot_joined_at = datetime(2026, 8, 3, 19, 0, tzinfo=UTC)
+    await db_session.commit()
+
+    installation = BitrixInstallation(
+        member_id="member-history",
+        portal_domain="example.bitrix24.ru",
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "messages": [
+            {
+                "id": 1886908,
+                "chat_id": 123,
+                "author_id": 7,
+                "date": "2026-08-03T20:30:00+00:00",
+                "text": "",
+                "params": {"FILE_ID": [376316]},
+            }
+        ],
+        "files": [
+            {
+                "id": 376316,
+                "name": "Test_LKP_reverse_fixed_03-08-2026.pdf",
+                "size": 625,
+            }
+        ],
+    }
+
+    with patch(
+        "app.integrations.bitrix24.chat._import_attachment",
+        new=AsyncMock(
+            return_value=(
+                "uploads/recovered.pdf",
+                "Test_LKP_reverse_fixed_03-08-2026.pdf",
+                625,
+                "application/pdf",
+            )
+        ),
+    ):
+        result = await _reconcile_chat_file_history(db_session, remote, installation)
+
+    message = await db_session.scalar(select(ChatMessage).where(ChatMessage.bitrix_message_id == "1886908"))
+    assert result == {"partners": 1, "scanned": 1, "imported": 1}
+    assert message is not None
+    assert message.attachment_filename == "Test_LKP_reverse_fixed_03-08-2026.pdf"
 
 
 @pytest.mark.asyncio
