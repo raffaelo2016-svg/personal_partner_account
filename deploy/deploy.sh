@@ -76,6 +76,11 @@ if ! $COMPOSE exec -T backend python -m app.integrations.bitrix24.task_setup_cli
   echo "  warning: Bitrix24 task activation was deferred; background sync remains safe" >&2
 fi
 
+echo "[bitrix] Ensure client deal fields and inbound event"
+if ! $COMPOSE exec -T backend python -m app.integrations.bitrix24.client_setup_cli --apply; then
+  echo "  warning: Bitrix24 client import activation was deferred; existing sync remains safe" >&2
+fi
+
 echo "[6/6] Build frontend"
 cd frontend
 npm ci
