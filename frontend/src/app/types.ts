@@ -54,9 +54,9 @@ export interface Partner {
 }
 
 export interface PartnerBitrixCollabBinding {
-  collab_id: string;
-  chat_id: string;
-  root_folder_id: string;
+  collab_id?: string;
+  chat_id?: string;
+  root_folder_id?: string;
 }
 
 export interface PartnerCreate {

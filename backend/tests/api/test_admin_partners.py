@@ -187,6 +187,47 @@ class TestPartnerBitrix24:
         assert data["bitrix_chat_id"] == "chat-202"
         assert data["bitrix_root_folder_id"] == "folder-303"
 
+    async def test_admin_can_bind_chat_before_collab_identifiers(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+    ):
+        partner = await self._create_partner(client, admin_token)
+        chat_response = await client.put(
+            f"/api/v1/admin/partners/{partner['id']}/bitrix24/collab",
+            json={"chat_id": "chat24522"},
+            headers=auth_headers(admin_token),
+        )
+        assert chat_response.status_code == 200
+        chat_data = chat_response.json()
+        assert chat_data["bitrix_collab_status"] == "binding_required"
+        assert chat_data["bitrix_chat_id"] == "chat24522"
+        assert chat_data["bitrix_collab_id"] is None
+        assert chat_data["bitrix_root_folder_id"] is None
+
+        collab_response = await client.put(
+            f"/api/v1/admin/partners/{partner['id']}/bitrix24/collab",
+            json={"collab_id": "collab-101", "root_folder_id": "folder-303"},
+            headers=auth_headers(admin_token),
+        )
+        assert collab_response.status_code == 200
+        collab_data = collab_response.json()
+        assert collab_data["bitrix_collab_status"] == "linked"
+        assert collab_data["bitrix_chat_id"] == "chat24522"
+
+    async def test_admin_binding_requires_an_identifier(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+    ):
+        partner = await self._create_partner(client, admin_token)
+        response = await client.put(
+            f"/api/v1/admin/partners/{partner['id']}/bitrix24/collab",
+            json={},
+            headers=auth_headers(admin_token),
+        )
+        assert response.status_code == 422
+
 
 class TestPartnerStats:
     async def test_stats_as_admin(self, client: AsyncClient, admin_token: str):
