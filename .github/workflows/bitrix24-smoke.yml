@@ -22,5 +22,6 @@ jobs:
           script: |
             set -e
             cd /srv/personal_partner_account
-            docker compose -f docker-compose.prod.yml exec -T backend \
-              python -m app.integrations.bitrix24.chat_debug_cli
+            git fetch origin codex/add-bitrix-service-bot
+            git show origin/codex/add-bitrix-service-bot:backend/app/integrations/bitrix24/chat_debug_cli.py | \
+              docker compose -f docker-compose.prod.yml exec -T backend python -
