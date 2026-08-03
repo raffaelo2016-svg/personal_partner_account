@@ -224,9 +224,24 @@ async def _partner_for_dialog(db: AsyncSession, dialog_id: str) -> Partner | Non
 def _event_file(data: dict[str, Any]) -> dict[str, Any] | None:
     message = data.get("message")
     params = message.get("params") if isinstance(message, dict) else None
-    raw = data.get("files") or (params.get("files") if isinstance(params, dict) else None)
+    candidates = [data.get("files"), data.get("file")]
+    if isinstance(message, dict):
+        candidates.extend([message.get("files"), message.get("file")])
+    if isinstance(params, dict):
+        candidates.extend(params.get(key) for key in ("files", "FILES", "file", "FILE", "fileId", "FILE_ID"))
+    raw = next((value for value in candidates if value), None)
     if isinstance(raw, dict):
-        values = list(raw.values())
+        if any(key in raw for key in ("id", "fileId", "name", "extension", "size")):
+            values = [raw]
+        else:
+            values = []
+            for key, value in raw.items():
+                if isinstance(value, dict):
+                    item = dict(value)
+                    item.setdefault("id", key)
+                else:
+                    item = {"id": value or key}
+                values.append(item)
     elif isinstance(raw, list):
         values = raw
     elif raw:
@@ -237,6 +252,49 @@ def _event_file(data: dict[str, Any]) -> dict[str, Any] | None:
         return None
     first = values[0]
     return first if isinstance(first, dict) else {"id": first}
+
+
+async def _event_file_from_history(
+    client: Bitrix24Client,
+    *,
+    dialog_id: str,
+    remote_id: str,
+    event_file: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Hydrate file metadata omitted from compact messenger events."""
+    try:
+        first_id = max(int(remote_id) - 1, 0)
+    except ValueError:
+        return event_file
+    result = await client.call(
+        "im.dialog.messages.get",
+        {"DIALOG_ID": dialog_id, "FIRST_ID": first_id, "LIMIT": 5},
+    )
+    if not isinstance(result, dict):
+        return event_file
+    messages = result.get("messages")
+    files = result.get("files")
+    if not isinstance(messages, list) or not isinstance(files, list):
+        return event_file
+    target = next(
+        (message for message in messages if isinstance(message, dict) and str(message.get("id") or "") == remote_id),
+        None,
+    )
+    if target is None:
+        return event_file
+
+    target_file = _event_file({"message": target})
+    wanted_id = str(
+        (target_file or event_file or {}).get("id") or (target_file or event_file or {}).get("fileId") or ""
+    )
+    matching = [
+        file for file in files if isinstance(file, dict) and (not wanted_id or str(file.get("id") or "") == wanted_id)
+    ]
+    if len(matching) != 1:
+        return event_file
+    hydrated = dict(event_file or {})
+    hydrated.update(matching[0])
+    return hydrated
 
 
 async def _import_attachment(
@@ -317,7 +375,14 @@ async def import_message_event(
     attachment = None
     file_data = _event_file(data)
     dialog_id = str(chat_data.get("dialogId") or message_data.get("chatId"))
-    if file_data and client is not None and installation is not None:
+    if client is not None and installation is not None and (file_data is not None or not text):
+        file_data = await _event_file_from_history(
+            client,
+            dialog_id=dialog_id,
+            remote_id=remote_id,
+            event_file=file_data,
+        )
+    if file_data is not None and client is not None and installation is not None:
         attachment = await _import_attachment(
             client,
             installation,

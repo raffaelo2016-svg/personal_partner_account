@@ -263,6 +263,68 @@ async def test_incoming_attachment_metadata_is_saved(db_session: AsyncSession):
 
 
 @pytest.mark.asyncio
+async def test_incoming_attachment_accepts_file_map_key_as_id(db_session: AsyncSession):
+    await _partner_room(db_session)
+    installation = AsyncMock()
+    remote = AsyncMock()
+    event = _file_event(5017)
+    event["data"]["message"]["params"] = {"files": {"138": {"name": "report.pdf", "size": 9}}}
+    imported_attachment = ("uploads/imported.pdf", "report.pdf", 9, "application/pdf")
+
+    with patch(
+        "app.integrations.bitrix24.chat._import_attachment",
+        new=AsyncMock(return_value=imported_attachment),
+    ) as import_attachment:
+        message = await import_message_event(
+            db_session,
+            event,
+            client=remote,
+            installation=installation,
+        )
+
+    assert message is not None
+    assert import_attachment.await_args.kwargs["file_data"]["id"] == "138"
+
+
+@pytest.mark.asyncio
+async def test_incoming_empty_file_event_hydrates_metadata_from_history(db_session: AsyncSession):
+    await _partner_room(db_session)
+    installation = AsyncMock()
+    remote = AsyncMock()
+    event = _message_event(5018)
+    event["data"]["message"]["text"] = ""
+    remote.call.return_value = {
+        "messages": [
+            {
+                "id": 5018,
+                "text": "",
+                "params": {"FILE_ID": [138]},
+            }
+        ],
+        "files": [{"id": 138, "name": "report.pdf", "size": 9}],
+    }
+    imported_attachment = ("uploads/imported.pdf", "report.pdf", 9, "application/pdf")
+
+    with patch(
+        "app.integrations.bitrix24.chat._import_attachment",
+        new=AsyncMock(return_value=imported_attachment),
+    ) as import_attachment:
+        message = await import_message_event(
+            db_session,
+            event,
+            client=remote,
+            installation=installation,
+        )
+
+    assert message is not None
+    remote.call.assert_awaited_once_with(
+        "im.dialog.messages.get",
+        {"DIALOG_ID": "chat123", "FIRST_ID": 5017, "LIMIT": 5},
+    )
+    assert import_attachment.await_args.kwargs["file_data"]["name"] == "report.pdf"
+
+
+@pytest.mark.asyncio
 async def test_message_update_is_journaled_once_without_changing_local_text(db_session: AsyncSession):
     await _partner_room(db_session)
     db_session.add(
