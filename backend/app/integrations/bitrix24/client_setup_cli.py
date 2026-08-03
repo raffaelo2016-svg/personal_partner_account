@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from app.config import settings
 from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client
-from app.integrations.bitrix24.clients import CLIENT_DEAL_FIELDS
+from app.integrations.bitrix24.clients import CLIENT_DEAL_ADD_EVENT, CLIENT_DEAL_FIELDS, CLIENT_EVENT_HANDLER
 from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 
@@ -65,6 +65,17 @@ async def _provision_field(client: Bitrix24Client, definition: FieldDefinition) 
     )
 
 
+async def _deal_add_event_is_bound(client: Bitrix24Client) -> bool:
+    result = await client.call("event.get")
+    events = result if isinstance(result, list) else []
+    return any(
+        isinstance(item, dict)
+        and str(item.get("event") or item.get("EVENT") or "").upper() == CLIENT_DEAL_ADD_EVENT
+        and str(item.get("handler") or item.get("HANDLER") or "").rstrip("/") == CLIENT_EVENT_HANDLER.rstrip("/")
+        for item in events
+    )
+
+
 async def run(*, apply: bool) -> None:
     async with async_session() as db:
         installation = await active_installation(db)
@@ -77,11 +88,15 @@ async def run(*, apply: bool) -> None:
     async with Bitrix24Client(endpoint, token, timeout=60.0) as client:
         existing = await _existing_field_names(client)
         missing = [item for item in FIELD_DEFINITIONS if CLIENT_DEAL_FIELDS[item.key] not in existing]
+        event_bound = await _deal_add_event_is_bound(client)
         if apply:
             for definition in missing:
                 await _provision_field(client, definition)
+            if not event_bound:
+                await client.call("event.bind", {"event": CLIENT_DEAL_ADD_EVENT, "handler": CLIENT_EVENT_HANDLER})
 
     print(f"client_deal_fields_{'created' if apply else 'missing'}={len(missing)}")
+    print(f"client_deal_add_event_{'bound' if event_bound or apply else 'missing'}={int(event_bound or apply)}")
 
 
 def main() -> None:

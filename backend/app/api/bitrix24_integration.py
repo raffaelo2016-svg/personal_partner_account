@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.database import get_db
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
+from app.integrations.bitrix24.clients import CLIENT_DEAL_ENTITY_TYPE, process_client_deal_add_event
 from app.integrations.bitrix24.partners import mark_remote_partner_conflict
 from app.integrations.bitrix24.sync import register_inbound_event
 from app.integrations.bitrix24.tasks import process_task_status_event
@@ -157,6 +158,7 @@ async def bitrix24_handler(
     event_id, created = await register_inbound_event(db, member_id=member_id, payload=payload)
     conflict = False
     task_status_synced = False
+    client_imported = False
     if created:
         conflict = await mark_remote_partner_conflict(
             db,
@@ -168,8 +170,11 @@ async def bitrix24_handler(
             await db.commit()
         if event_id:
             receipt = await db.get(BitrixInboundEvent, event_id)
-            if receipt is not None and receipt.remote_entity_type == "task":
-                task_status_synced = await process_task_status_event(db, receipt)
+            if receipt is not None:
+                if receipt.remote_entity_type == "task":
+                    task_status_synced = await process_task_status_event(db, receipt)
+                elif receipt.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE:
+                    client_imported = await process_client_deal_add_event(db, receipt)
                 await db.commit()
     logger.info(
         "bitrix_event_received",
@@ -183,4 +188,5 @@ async def bitrix24_handler(
         "duplicate": not created,
         "conflict": conflict,
         "task_status_synced": task_status_synced,
+        "client_imported": client_imported,
     }
