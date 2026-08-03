@@ -182,7 +182,7 @@ async def execute_chat_message(client: Bitrix24Client, operation: BitrixOutboxOp
                 },
             },
         )
-    return await client.call(CHAT_MESSAGE_METHOD, operation.payload)
+    return await client.call(operation.bitrix_method, operation.payload)
 
 
 async def _installation_token(db: AsyncSession, installation: BitrixInstallation) -> str:
