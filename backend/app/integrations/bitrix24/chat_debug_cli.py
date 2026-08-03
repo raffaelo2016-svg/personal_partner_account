@@ -14,19 +14,16 @@ def _file_summary(value: Any) -> Any:
     if isinstance(value, list):
         return [_file_summary(item) for item in value]
     if isinstance(value, dict):
+        fields = ("id", "fileId", "name", "size", "type", "extension", "mimeType")
+        if any(field in value for field in fields):
+            return {field: value.get(field) for field in fields if value.get(field) is not None}
         return {
-            str(key): (
-                {
-                    field: item.get(field)
-                    for field in ("id", "fileId", "name", "size", "type", "extension", "mimeType")
-                    if item.get(field) is not None
-                }
-                if isinstance(item, dict)
-                else type(item).__name__
-            )
+            str(key): _file_summary(item)
             for key, item in value.items()
         }
-    return type(value).__name__ if value is not None else None
+    if isinstance(value, int | float | bool) or value is None:
+        return value
+    return type(value).__name__
 
 
 def _event_summary(event: Any) -> dict[str, Any]:
@@ -92,7 +89,7 @@ async def main() -> None:
                 ]
                 report["history_files"] = _file_summary(history.get("files"))
 
-            file_data = next(
+            event_file_data = next(
                 (
                     _event_file(event.get("data"))
                     for event in reversed(events)
@@ -100,6 +97,9 @@ async def main() -> None:
                 ),
                 None,
             )
+            history_files = history.get("files") if isinstance(history, dict) else None
+            latest_history_file = history_files[0] if isinstance(history_files, list) and history_files else None
+            file_data = event_file_data or latest_history_file
             if isinstance(file_data, dict):
                 file_id = file_data.get("id") or file_data.get("fileId")
                 try:
