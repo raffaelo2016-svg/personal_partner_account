@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery
 from app.config import settings
 from app.database import async_session
-from app.integrations.bitrix24.chat import poll_chat_events
+from app.integrations.bitrix24.chat import poll_chat_events, reconcile_chat_file_history
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
 from app.integrations.bitrix24.tasks import retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
@@ -51,6 +51,22 @@ def poll_bitrix_chat_events() -> dict[str, int]:
         logger.warning("bitrix_chat_poll_failed", error_type=type(exc).__name__)
         return {"received": 0, "imported": 0, "journaled": 0, "failed": 1}
     logger.info("bitrix_chat_events_polled", **result)
+    return result
+
+
+async def _reconcile_chat_files() -> dict[str, int]:
+    async with async_session() as db:
+        return await reconcile_chat_file_history(db)
+
+
+@celery.task(name="app.tasks.bitrix24_sync.reconcile_bitrix_chat_files")
+def reconcile_bitrix_chat_files() -> dict[str, int]:
+    try:
+        result = asyncio.run(_reconcile_chat_files())
+    except Exception as exc:
+        logger.warning("bitrix_chat_file_reconcile_failed", error_type=type(exc).__name__)
+        return {"partners": 0, "scanned": 0, "imported": 0, "failed": 1}
+    logger.info("bitrix_chat_files_reconciled", **result)
     return result
 
 

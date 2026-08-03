@@ -11,7 +11,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect recent Bitrix chat file event
+      - name: Run synthetic task and document smoke
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.SSH_HOST }}
@@ -22,6 +22,5 @@ jobs:
           script: |
             set -e
             cd /srv/personal_partner_account
-            git fetch origin codex/add-bitrix-service-bot
-            git show origin/codex/add-bitrix-service-bot:backend/app/integrations/bitrix24/chat_debug_cli.py | \
-              docker compose -f docker-compose.prod.yml exec -T backend python -
+            docker compose -f docker-compose.prod.yml exec -T backend \
+              python -m app.integrations.bitrix24.smoke_cli
