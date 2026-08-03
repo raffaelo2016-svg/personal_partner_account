@@ -379,6 +379,8 @@ async def bind_partner_bitrix_collab(
     if data.collab_id is not None:
         partner.bitrix_collab_id = data.collab_id
     if data.chat_id is not None:
+        if data.chat_id != partner.bitrix_chat_id:
+            partner.bitrix_chat_bot_joined_at = None
         partner.bitrix_chat_id = data.chat_id
     if data.root_folder_id is not None:
         partner.bitrix_root_folder_id = data.root_folder_id

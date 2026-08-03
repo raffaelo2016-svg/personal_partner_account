@@ -32,6 +32,9 @@ logger = structlog.get_logger()
 CHAT_MESSAGE_ENTITY_TYPE = "chat_message"
 CHAT_MESSAGE_METHOD = "im.message.add"
 CHAT_FILE_METHOD = "im.v2.File.upload"
+BOT_MESSAGE_METHOD = "imbot.v2.Chat.Message.send"
+BOT_FILE_METHOD = "imbot.v2.File.upload"
+BOT_CODE = "uritech_partner_cabinet"
 CHAT_EVENT_SUBSCRIPTION_MAX_AGE = timedelta(hours=24)
 CHAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024
 CHAT_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
@@ -103,21 +106,31 @@ async def schedule_chat_message(
             return False
     else:
         if message.attachment_s3_key:
-            method = CHAT_FILE_METHOD
+            method = BOT_FILE_METHOD if installation.im_bot_id else CHAT_FILE_METHOD
             payload = {
                 "dialog_id": normalize_dialog_id(partner.bitrix_chat_id),
                 "s3_key": message.attachment_s3_key,
                 "name": message.attachment_filename or f"file-{message.id}",
                 "message": message.text,
             }
+            if installation.im_bot_id:
+                payload["bot_id"] = installation.im_bot_id
         else:
-            method = CHAT_MESSAGE_METHOD
-            payload = {
-                "DIALOG_ID": normalize_dialog_id(partner.bitrix_chat_id),
-                "MESSAGE": message.text,
-                "SYSTEM": "N",
-                "URL_PREVIEW": "Y",
-            }
+            if installation.im_bot_id:
+                method = BOT_MESSAGE_METHOD
+                payload = {
+                    "botId": installation.im_bot_id,
+                    "dialogId": normalize_dialog_id(partner.bitrix_chat_id),
+                    "fields": {"message": message.text, "urlPreview": "Y"},
+                }
+            else:
+                method = CHAT_MESSAGE_METHOD
+                payload = {
+                    "DIALOG_ID": normalize_dialog_id(partner.bitrix_chat_id),
+                    "MESSAGE": message.text,
+                    "SYSTEM": "N",
+                    "URL_PREVIEW": "Y",
+                }
         await db.execute(
             insert(BitrixOutboxOperation)
             .values(
@@ -143,8 +156,21 @@ async def schedule_chat_message(
 
 
 async def execute_chat_message(client: Bitrix24Client, operation: BitrixOutboxOperation) -> Any:
-    if operation.bitrix_method == CHAT_FILE_METHOD:
+    if operation.bitrix_method in {CHAT_FILE_METHOD, BOT_FILE_METHOD}:
         content = await download_file_async(str(operation.payload["s3_key"]))
+        if operation.bitrix_method == BOT_FILE_METHOD:
+            return await client.call(
+                BOT_FILE_METHOD,
+                {
+                    "botId": operation.payload["bot_id"],
+                    "dialogId": operation.payload["dialog_id"],
+                    "fields": {
+                        "name": operation.payload["name"],
+                        "content": base64.b64encode(content).decode("ascii"),
+                        "message": operation.payload.get("message") or "",
+                    },
+                },
+            )
         return await client.call(
             CHAT_FILE_METHOD,
             {
@@ -156,7 +182,7 @@ async def execute_chat_message(client: Bitrix24Client, operation: BitrixOutboxOp
                 },
             },
         )
-    return await client.call(CHAT_MESSAGE_METHOD, operation.payload)
+    return await client.call(operation.bitrix_method, operation.payload)
 
 
 async def _installation_token(db: AsyncSession, installation: BitrixInstallation) -> str:
@@ -170,7 +196,10 @@ async def _installation_token(db: AsyncSession, installation: BitrixInstallation
 
 
 def _parse_event(event: Any) -> tuple[str, dict[str, Any]] | None:
-    if not isinstance(event, dict) or str(event.get("type", "")).upper() != "ONIMV2MESSAGEADD":
+    if not isinstance(event, dict) or str(event.get("type", "")).upper() not in {
+        "ONIMV2MESSAGEADD",
+        "ONIMBOTV2MESSAGEADD",
+    }:
         return None
     data = event.get("data")
     if not isinstance(data, dict):
@@ -228,7 +257,13 @@ async def _import_attachment(
     if isinstance(declared_size, int) and declared_size > CHAT_IMPORT_MAX_BYTES:
         return None
 
-    result = await client.call("im.v2.File.download", {"dialogId": dialog_id, "fileId": file_id})
+    if installation.im_bot_id:
+        result = await client.call(
+            "imbot.v2.File.download",
+            {"botId": installation.im_bot_id, "fileId": file_id},
+        )
+    else:
+        result = await client.call("im.v2.File.download", {"dialogId": dialog_id, "fileId": file_id})
     download_url = result.get("downloadUrl") if isinstance(result, dict) else None
     if not isinstance(download_url, str):
         return None
@@ -262,6 +297,12 @@ async def import_message_event(
         return None
 
     message_data = data["message"]
+    if (
+        installation is not None
+        and installation.im_bot_id is not None
+        and str(message_data.get("authorId") or "") == str(installation.im_bot_id)
+    ):
+        return None
     chat_data = data["chat"]
     partner = await _partner_for_dialog(db, str(chat_data.get("dialogId") or message_data.get("chatId")))
     if partner is None:
@@ -331,6 +372,8 @@ async def record_message_change_event(
     event_type = {
         "ONIMV2MESSAGEUPDATE": "updated",
         "ONIMV2MESSAGEDELETE": "deleted",
+        "ONIMBOTV2MESSAGEUPDATE": "updated",
+        "ONIMBOTV2MESSAGEDELETE": "deleted",
     }.get(remote_event_type)
     if event_type is None:
         return False
@@ -377,21 +420,76 @@ async def record_message_change_event(
     return await db.scalar(statement) is not None
 
 
+async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installation: BitrixInstallation) -> int:
+    if installation.im_bot_id is None:
+        result = await client.call(
+            "imbot.v2.Bot.register",
+            {
+                "fields": {
+                    "code": BOT_CODE,
+                    "type": "supervisor",
+                    "eventMode": "fetch",
+                    "isHidden": False,
+                    "properties": {
+                        "name": "ЮРИТЕХ Кабинет",
+                        "workPosition": "Сервисный участник интеграции",
+                        "color": "AZURE",
+                    },
+                }
+            },
+        )
+        bot = result.get("bot") if isinstance(result, dict) else None
+        bot_id = bot.get("id") if isinstance(bot, dict) else None
+        if not isinstance(bot_id, int) or isinstance(bot_id, bool):
+            raise Bitrix24Error("INVALID_RESPONSE", "Bot registration returned no bot ID")
+        installation.im_bot_id = bot_id
+        installation.im_bot_event_offset = None
+        await db.flush()
+
+    partners = list(
+        (
+            await db.scalars(
+                select(Partner).where(
+                    Partner.bitrix_chat_id.is_not(None),
+                    Partner.bitrix_chat_bot_joined_at.is_(None),
+                )
+            )
+        ).all()
+    )
+    joined = 0
+    for partner in partners:
+        dialog_id = normalize_dialog_id(partner.bitrix_chat_id or "")
+        chat_id = dialog_id[4:] if dialog_id.lower().startswith("chat") else dialog_id
+        try:
+            await client.call(
+                "im.chat.user.add",
+                {"CHAT_ID": chat_id, "USERS": [installation.im_bot_id], "HIDE_HISTORY": "N"},
+            )
+        except Bitrix24Error as exc:
+            logger.warning(
+                "bitrix_chat_bot_join_failed",
+                partner_id=str(partner.id),
+                error_code=exc.code,
+            )
+            continue
+        partner.bitrix_chat_bot_joined_at = datetime.now(UTC)
+        joined += 1
+    await db.flush()
+    return joined
+
+
 async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, int]:
     installation = await active_installation(db)
     if installation is None:
         return {"received": 0, "imported": 0, "journaled": 0}
     token = await _installation_token(db, installation)
     async with Bitrix24Client(installation.client_endpoint, token) as client:
-        subscribed_at = installation.im_event_subscribed_at
-        if subscribed_at is None or subscribed_at < datetime.now(UTC) - CHAT_EVENT_SUBSCRIPTION_MAX_AGE:
-            await client.call("im.v2.Event.subscribe", {})
-            installation.im_event_subscribed_at = datetime.now(UTC)
+        joined = await ensure_service_bot(db, client, installation)
 
-        params: dict[str, Any] = {"limit": limit}
-        if installation.im_event_offset is not None:
-            params["offset"] = installation.im_event_offset
-        result = await client.call("im.v2.Event.get", params)
+        params: dict[str, Any] = {"botId": installation.im_bot_id, "limit": limit}
+        if installation.im_bot_event_offset is not None:
+            params["offset"] = installation.im_bot_event_offset
+        result = await client.call("imbot.v2.Event.get", params)
         if not isinstance(result, dict):
             raise Bitrix24Error("INVALID_RESPONSE", "Chat event queue returned an unexpected response")
         events = result.get("events")
@@ -407,6 +505,6 @@ async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, i
                 journaled += 1
     next_offset = result.get("nextOffset")
     if isinstance(next_offset, int) and not isinstance(next_offset, bool):
-        installation.im_event_offset = next_offset
+        installation.im_bot_event_offset = next_offset
     await db.commit()
-    return {"received": len(events), "imported": imported, "journaled": journaled}
+    return {"received": len(events), "imported": imported, "journaled": journaled, "joined": joined}
