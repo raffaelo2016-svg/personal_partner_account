@@ -14,15 +14,19 @@ from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
+    CLIENT_DEAL_CATEGORY_ID,
     CLIENT_DEAL_ENTITY_TYPE,
+    CLIENT_DEAL_FIELDS,
+    CLIENT_DEAL_STAGE_ID,
     schedule_client_creation,
 )
 from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, file_marker, schedule_file_creation
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE, active_installation, schedule_partner_creation
 from app.integrations.bitrix24.sync import _access_token, process_outbox_operation
 from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, schedule_task_creation
-from app.models.bitrix_sync import BitrixEntityMap, BitrixOutboxOperation
+from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
+from app.models.court_fee import CourtFee
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.models.task import Task
@@ -137,6 +141,11 @@ async def _remote_cleanup(
         ("tasks.task.delete", {"taskId": remote_ids["task"]} if remote_ids["task"] else None),
         ("crm.timeline.comment.delete", {"id": remote_ids["comment"]} if remote_ids["comment"] else None),
         ("disk.file.delete", {"id": remote_ids["disk_file"]} if remote_ids["disk_file"] else None),
+        ("crm.deal.delete", {"id": remote_ids["reverse_deal"]} if remote_ids["reverse_deal"] else None),
+        (
+            "crm.contact.delete",
+            {"id": remote_ids["reverse_contact"]} if remote_ids["reverse_contact"] else None,
+        ),
         ("crm.deal.delete", {"id": remote_ids["deal"]} if remote_ids["deal"] else None),
         ("crm.contact.delete", {"id": remote_ids["contact"]} if remote_ids["contact"] else None),
         (
@@ -159,6 +168,58 @@ async def _remote_cleanup(
         raise RuntimeError(";".join(errors))
 
 
+async def _create_and_verify_reverse_client(
+    remote: Bitrix24Client,
+    *,
+    partner_id: uuid.UUID,
+    partner_remote_id: str,
+    remote_ids: dict[str, str | None],
+) -> uuid.UUID:
+    contact_result = await remote.call(
+        "crm.contact.add",
+        {
+            "fields": {
+                "LAST_NAME": "[SMOKE]",
+                "NAME": "Входящий",
+                "SECOND_NAME": "Клиент",
+            }
+        },
+    )
+    remote_ids["reverse_contact"] = str(contact_result)
+    deal_result = await remote.call(
+        "crm.deal.add",
+        {
+            "fields": {
+                "TITLE": "[SMOKE] Обратный импорт клиента",
+                "CATEGORY_ID": CLIENT_DEAL_CATEGORY_ID,
+                "STAGE_ID": CLIENT_DEAL_STAGE_ID,
+                "CONTACT_ID": remote_ids["reverse_contact"],
+                f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": partner_remote_id,
+                CLIENT_DEAL_FIELDS["client_type"]: "before_court",
+                CLIENT_DEAL_FIELDS["client_status"]: "documents_collection",
+            }
+        },
+    )
+    remote_ids["reverse_deal"] = str(deal_result)
+
+    for _ in range(20):
+        await asyncio.sleep(1)
+        async with async_session() as db:
+            imported = await db.scalar(select(Client).where(Client.bitrix_deal_id == remote_ids["reverse_deal"]))
+            if imported is None:
+                continue
+            if (
+                imported.partner_id != partner_id
+                or imported.bitrix_contact_id != remote_ids["reverse_contact"]
+                or imported.full_name != "[SMOKE] Входящий Клиент"
+                or imported.type != "before_court"
+                or imported.status != "documents_collection"
+            ):
+                raise RuntimeError("REVERSE_CLIENT_MISMATCH")
+            return imported.id
+    raise RuntimeError("REVERSE_CLIENT_NOT_IMPORTED")
+
+
 async def run_smoke() -> dict[str, str]:
     partner_id = uuid.uuid4()
     client_id = uuid.uuid4()
@@ -169,6 +230,7 @@ async def run_smoke() -> dict[str, str]:
     s3_key: str | None = None
     installation_found = False
     remote_cleanup_error: str | None = None
+    reverse_client_id: uuid.UUID | None = None
     remote_ids: dict[str, str | None] = {
         "partner": None,
         "contact": None,
@@ -176,6 +238,8 @@ async def run_smoke() -> dict[str, str]:
         "task": None,
         "comment": None,
         "disk_file": None,
+        "reverse_contact": None,
+        "reverse_deal": None,
     }
 
     try:
@@ -226,6 +290,15 @@ async def run_smoke() -> dict[str, str]:
             await _process_one(db, client_id, CLIENT_DEAL_ENTITY_TYPE)
             await db.refresh(client)
             remote_ids["deal"] = client.bitrix_deal_id
+
+            token = await _access_token(db, installation)
+            async with Bitrix24Client(installation.client_endpoint, token) as remote:
+                reverse_client_id = await _create_and_verify_reverse_client(
+                    remote,
+                    partner_id=partner_id,
+                    partner_remote_id=str(remote_ids["partner"]),
+                    remote_ids=remote_ids,
+                )
 
             task = Task(
                 id=smoke_id,
@@ -287,6 +360,19 @@ async def run_smoke() -> dict[str, str]:
                 await db.execute(
                     delete(BitrixOutboxOperation).where(BitrixOutboxOperation.local_entity_id.in_(local_ids))
                 )
+                if remote_ids["reverse_deal"]:
+                    await db.execute(
+                        delete(BitrixInboundEvent).where(
+                            BitrixInboundEvent.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE,
+                            BitrixInboundEvent.remote_entity_id == remote_ids["reverse_deal"],
+                        )
+                    )
+                if reverse_client_id:
+                    await db.execute(delete(CourtFee).where(CourtFee.client_id == reverse_client_id))
+                    await db.execute(
+                        delete(BitrixEntityMap).where(BitrixEntityMap.local_entity_id == reverse_client_id)
+                    )
+                    await db.execute(delete(Client).where(Client.id == reverse_client_id))
                 await db.execute(delete(Task).where(Task.id == smoke_id))
                 await db.execute(delete(FileUpload).where(FileUpload.id == smoke_id))
                 await db.execute(delete(Client).where(Client.id == client_id))
@@ -302,6 +388,7 @@ async def run_smoke() -> dict[str, str]:
         "status": "ok",
         "partner": "created_and_removed",
         "client": "created_and_removed",
+        "reverse_client": "created_and_removed",
         "task": "created_and_removed",
         "document": "created_and_removed",
     }
