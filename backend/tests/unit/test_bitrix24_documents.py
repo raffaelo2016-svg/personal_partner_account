@@ -233,7 +233,11 @@ async def test_external_timeline_file_is_imported_to_client_once(db_session: Asy
         "FILES": {"700": {"id": 700, "name": "договор.pdf", "size": 8}},
     }
     receipt.status = "received"
-    completed_again = await process_timeline_comment_add_event(db_session, receipt)
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+    ):
+        completed_again = await process_timeline_comment_add_event(db_session, receipt)
     records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
     assert completed_again is True
     assert len(records) == 1
