@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-BitrixAttentionEntityType = Literal["partner", "client", "file", "task"]
+BitrixAttentionEntityType = Literal["partner", "client", "file", "task", "inbound_client"]
 
 
 class BitrixAttentionItem(BaseModel):
@@ -13,6 +13,8 @@ class BitrixAttentionItem(BaseModel):
     sync_status: str
     error_code: str
     occurred_at: datetime
+    remote_id: str | None = None
+    external_url: str | None = None
 
 
 class BitrixAttentionResponse(BaseModel):

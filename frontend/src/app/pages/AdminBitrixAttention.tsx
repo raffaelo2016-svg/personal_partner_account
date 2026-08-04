@@ -10,11 +10,13 @@ import {
   FileText,
   Loader2,
   UserRound,
+  UserPlus,
   Users,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   fetchBitrixAttention,
+  retryInboundClientImport,
   type AttentionEntityType,
   type AttentionSyncStatus,
   type BitrixAttentionItem,
@@ -33,6 +35,7 @@ const ENTITY_CONFIG = {
   client: { label: 'Клиенты', singular: 'Клиент', icon: UserRound, color: 'bg-blue-100 text-blue-700' },
   file: { label: 'Документы', singular: 'Документ', icon: FileText, color: 'bg-amber-100 text-amber-700' },
   task: { label: 'Задачи', singular: 'Задача', icon: CheckSquare, color: 'bg-emerald-100 text-emerald-700' },
+  inbound_client: { label: 'Входящие клиенты', singular: 'Клиент из Битрикс24', icon: UserPlus, color: 'bg-orange-100 text-orange-700' },
 } as const;
 
 function itemLink(item: BitrixAttentionItem): string | null {
@@ -47,7 +50,8 @@ async function retryItem(item: BitrixAttentionItem) {
   if (item.entity_type === 'partner') return retryPartnerBitrixSync(item.entity_id);
   if (item.entity_type === 'client') return retryAdminClientBitrix(item.entity_id);
   if (item.entity_type === 'file') return retryFileBitrix(item.entity_id);
-  return retryTaskBitrix(item.entity_id);
+  if (item.entity_type === 'task') return retryTaskBitrix(item.entity_id);
+  return retryInboundClientImport(item.entity_id);
 }
 
 export default function AdminBitrixAttention() {
@@ -93,7 +97,7 @@ export default function AdminBitrixAttention() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-6 gap-4">
         <button
           type="button"
           onClick={() => selectEntity('all')}
@@ -166,7 +170,9 @@ export default function AdminBitrixAttention() {
                     <span className={`p-2 rounded-lg flex-shrink-0 ${config.color}`}><Icon className="w-5 h-5" /></span>
                     <div className="min-w-0">
                       <p className="font-medium text-gray-900">{config.singular}</p>
-                      <p className="text-xs text-gray-500 font-mono truncate" title={item.entity_id}>ID: {item.entity_id}</p>
+                      <p className="text-xs text-gray-500 font-mono truncate" title={item.remote_id ?? item.entity_id}>
+                        {item.entity_type === 'inbound_client' ? `Сделка № ${item.remote_id ?? '—'}` : `ID: ${item.entity_id}`}
+                      </p>
                     </div>
                   </div>
                   <div className="flex-1">
@@ -183,6 +189,16 @@ export default function AdminBitrixAttention() {
                       <Link to={link} className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700">
                         Открыть <ExternalLink className="w-4 h-4" />
                       </Link>
+                    )}
+                    {item.external_url && (
+                      <a
+                        href={item.external_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700"
+                      >
+                        Открыть сделку <ExternalLink className="w-4 h-4" />
+                      </a>
                     )}
                   </div>
                 </div>
