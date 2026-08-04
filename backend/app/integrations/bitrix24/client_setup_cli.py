@@ -100,18 +100,26 @@ async def run(*, apply: bool) -> None:
                 await _provision_field(client, definition)
             if not event_bound:
                 await client.call("event.bind", {"event": CLIENT_DEAL_ADD_EVENT, "handler": CLIENT_EVENT_HANDLER})
+                event_bound = await _event_is_bound(client, CLIENT_DEAL_ADD_EVENT, CLIENT_EVENT_HANDLER)
             if not document_event_bound:
                 await client.call(
                     "event.bind",
                     {"event": TIMELINE_COMMENT_ADD_EVENT, "handler": TIMELINE_EVENT_HANDLER},
                 )
+                document_event_bound = await _event_is_bound(
+                    client,
+                    TIMELINE_COMMENT_ADD_EVENT,
+                    TIMELINE_EVENT_HANDLER,
+                )
+
+    if apply and not event_bound:
+        raise SystemExit("Bitrix24 client deal event was not registered")
+    if apply and not document_event_bound:
+        raise SystemExit("Bitrix24 timeline comment event was not registered")
 
     print(f"client_deal_fields_{'created' if apply else 'missing'}={len(missing)}")
-    print(f"client_deal_add_event_{'bound' if event_bound or apply else 'missing'}={int(event_bound or apply)}")
-    print(
-        "timeline_comment_add_event_"
-        f"{'bound' if document_event_bound or apply else 'missing'}={int(document_event_bound or apply)}"
-    )
+    print(f"client_deal_add_event_{'bound' if event_bound else 'missing'}={int(event_bound)}")
+    print(f"timeline_comment_add_event_{'bound' if document_event_bound else 'missing'}={int(document_event_bound)}")
 
 
 def main() -> None:
