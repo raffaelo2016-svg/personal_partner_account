@@ -276,7 +276,16 @@ async def _create_and_verify_reverse_document(
             if await download_file_async(imported.s3_key) != content:
                 raise RuntimeError("REVERSE_DOCUMENT_CONTENT_MISMATCH")
             return imported.id, imported.s3_key
-    raise RuntimeError("REVERSE_DOCUMENT_NOT_IMPORTED")
+    async with async_session() as db:
+        receipt = await db.scalar(
+            select(BitrixInboundEvent).where(
+                BitrixInboundEvent.remote_entity_type == "timeline_comment",
+                BitrixInboundEvent.remote_entity_id == remote_ids["reverse_comment"],
+            )
+        )
+        if receipt is None:
+            raise RuntimeError("REVERSE_DOCUMENT_EVENT_NOT_RECEIVED")
+        raise RuntimeError(f"REVERSE_DOCUMENT_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}")
 
 
 async def run_smoke() -> dict[str, str]:
