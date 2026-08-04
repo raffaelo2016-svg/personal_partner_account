@@ -14,6 +14,7 @@ from app.config import settings
 from app.database import get_db
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.clients import CLIENT_DEAL_ENTITY_TYPE, process_client_deal_add_event
+from app.integrations.bitrix24.documents import TIMELINE_COMMENT_ENTITY_TYPE, process_timeline_comment_add_event
 from app.integrations.bitrix24.partners import mark_remote_partner_conflict
 from app.integrations.bitrix24.sync import register_inbound_event
 from app.integrations.bitrix24.tasks import process_task_status_event
@@ -159,6 +160,7 @@ async def bitrix24_handler(
     conflict = False
     task_status_synced = False
     client_imported = False
+    document_imported = False
     if created:
         conflict = await mark_remote_partner_conflict(
             db,
@@ -175,6 +177,8 @@ async def bitrix24_handler(
                     task_status_synced = await process_task_status_event(db, receipt)
                 elif receipt.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE:
                     client_imported = await process_client_deal_add_event(db, receipt)
+                elif receipt.remote_entity_type == TIMELINE_COMMENT_ENTITY_TYPE:
+                    document_imported = await process_timeline_comment_add_event(db, receipt)
                 await db.commit()
     logger.info(
         "bitrix_event_received",
@@ -189,4 +193,5 @@ async def bitrix24_handler(
         "conflict": conflict,
         "task_status_synced": task_status_synced,
         "client_imported": client_imported,
+        "document_imported": document_imported,
     }

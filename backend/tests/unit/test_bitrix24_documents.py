@@ -4,16 +4,26 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.files import _has_valid_signature
+from app.config import settings
 from app.integrations.bitrix24.documents import (
     FILE_ENTITY_TYPE,
+    TIMELINE_COMMENT_ENTITY_TYPE,
     build_file_operation_payload,
     execute_file_creation,
+    extract_timeline_comment_event_reference,
     file_marker,
+    process_timeline_comment_add_event,
 )
-from app.models.bitrix_sync import BitrixOutboxOperation
+from app.models.bitrix_installation import BitrixInstallation
+from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
+from app.models.client import Client
 from app.models.file_upload import FileUpload
+from app.models.partner import Partner
+from app.models.user import User
 
 
 def _record() -> FileUpload:
@@ -99,3 +109,131 @@ async def test_new_document_is_uploaded_without_original_filename():
     add_payload = remote.call.await_args_list[0].args[1]
     assert record.original_name not in str(add_payload)
     assert add_payload["fields"]["FILES"][0][0] == f"document_{record.id}.pdf"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": {"ID": "42"}},
+        {"data[ID]": "42"},
+    ],
+)
+def test_timeline_comment_event_reference_supports_json_and_form(payload):
+    assert extract_timeline_comment_event_reference("ONCRMTIMELINECOMMENTADD", payload) == "42"
+    assert extract_timeline_comment_event_reference("ONCRMDEALADD", payload) is None
+
+
+async def _saved_client(db: AsyncSession) -> Client:
+    installation = BitrixInstallation(
+        member_id="member-doc-reverse",
+        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+        client_endpoint=f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"encrypted-access",
+        refresh_token_encrypted=b"encrypted-refresh",
+        status="L",
+    )
+    user = User(email="document-reverse@example.test", hashed_password="hash", role="partner", is_active=True)
+    db.add_all([installation, user])
+    await db.flush()
+    partner = Partner(
+        user_id=user.id,
+        partner_type="legal",
+        company_name="ООО Документы",
+        director_name="Петров Пётр Петрович",
+        inn="7701234567",
+        phone="+79990000001",
+        status="active",
+    )
+    db.add(partner)
+    await db.flush()
+    client = Client(
+        partner_id=partner.id,
+        type="before_court",
+        status="documents_collection",
+        full_name="Иванов Иван Иванович",
+        bitrix_deal_id="456",
+        bitrix_sync_status="synced",
+    )
+    db.add(client)
+    await db.flush()
+    db.add(
+        BitrixEntityMap(
+            member_id=installation.member_id,
+            local_entity_type="client_deal",
+            local_entity_id=client.id,
+            bitrix_entity_type="crm_deal",
+            bitrix_entity_id="456",
+        )
+    )
+    await db.flush()
+    return client
+
+
+@pytest.mark.asyncio
+async def test_external_timeline_file_is_imported_to_client_once(db_session: AsyncSession):
+    client = await _saved_client(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-doc-reverse",
+        event_key=uuid4().hex,
+        event_name="ONCRMTIMELINECOMMENTADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type=TIMELINE_COMMENT_ENTITY_TYPE,
+        remote_entity_id="90",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.side_effect = [
+        {
+            "ID": "90",
+            "ENTITY_TYPE": "deal",
+            "ENTITY_ID": "456",
+            "COMMENT": "Документ от сотрудника",
+            "FILES": {"700": {"id": 700, "name": "договор.pdf", "size": 8}},
+        },
+        {
+            "ID": "700",
+            "NAME": "договор.pdf",
+            "SIZE": "8",
+            "DOWNLOAD_URL": f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/download.json?token=signed",
+        },
+    ]
+    remote.download_file.return_value = b"%PDF-1.7"
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+        patch(
+            "app.integrations.bitrix24.documents.upload_file_async",
+            new=AsyncMock(return_value="uploads/imported.pdf"),
+        ),
+    ):
+        completed = await process_timeline_comment_add_event(db_session, receipt)
+
+    record = await db_session.scalar(select(FileUpload).where(FileUpload.client_id == client.id))
+    assert completed is True
+    assert receipt.status == "completed"
+    assert record is not None
+    assert record.original_name == "договор.pdf"
+    assert record.document_type == "other"
+    assert record.bitrix_timeline_comment_id == "90"
+    assert record.bitrix_disk_file_id == "700"
+    assert record.bitrix_sync_status == "synced"
+    remote.download_file.assert_awaited_once()
+
+    remote.call.side_effect = None
+    remote.call.return_value = {
+        "ID": "90",
+        "ENTITY_TYPE": "deal",
+        "ENTITY_ID": "456",
+        "COMMENT": "Документ от сотрудника",
+        "FILES": {"700": {"id": 700, "name": "договор.pdf", "size": 8}},
+    }
+    receipt.status = "received"
+    completed_again = await process_timeline_comment_add_event(db_session, receipt)
+    records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
+    assert completed_again is True
+    assert len(records) == 1

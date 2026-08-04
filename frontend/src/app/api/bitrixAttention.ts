@@ -1,7 +1,7 @@
 import apiClient from './client';
 import type { BitrixSyncStatus } from './clients';
 
-export type AttentionEntityType = 'all' | 'partner' | 'client' | 'file' | 'task' | 'inbound_client';
+export type AttentionEntityType = 'all' | 'partner' | 'client' | 'file' | 'task' | 'inbound_client' | 'inbound_file';
 export type AttentionSyncStatus = 'all' | 'failed' | 'conflict' | 'pending' | 'not_scheduled';
 
 export interface BitrixAttentionItem {
@@ -17,6 +17,10 @@ export interface BitrixAttentionItem {
 
 export async function retryInboundClientImport(receiptId: string): Promise<void> {
   await apiClient.post(`/admin/bitrix-attention/inbound-clients/${receiptId}/retry`);
+}
+
+export async function retryInboundFileImport(receiptId: string): Promise<void> {
+  await apiClient.post(`/admin/bitrix-attention/inbound-files/${receiptId}/retry`);
 }
 
 export interface BitrixAttentionResponse {

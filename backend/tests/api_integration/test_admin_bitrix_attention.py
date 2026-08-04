@@ -107,3 +107,59 @@ class TestAdminBitrixAttention:
             assert receipt.status == "received"
             assert receipt.attempts == 0
             assert receipt.error_code is None
+
+    async def test_lists_failed_inbound_file_and_allows_retry(self, client: AsyncClient, admin_token):
+        receipt_id = uuid.uuid4()
+        async with async_session_test() as session:
+            session.add(
+                BitrixInstallation(
+                    member_id="attention-file-member",
+                    portal_domain="bitrix.example.ru",
+                    client_endpoint="https://bitrix.example.ru/rest/",
+                    server_endpoint="https://oauth.bitrix.info/rest/",
+                    access_token_encrypted=b"token",
+                    refresh_token_encrypted=b"refresh",
+                )
+            )
+            session.add(
+                BitrixInboundEvent(
+                    id=receipt_id,
+                    member_id="attention-file-member",
+                    event_key="attention-inbound-file",
+                    event_name="ONCRMTIMELINECOMMENTADD",
+                    remote_entity_type="timeline_comment",
+                    remote_entity_id="90",
+                    payload_hash="b" * 64,
+                    status="failed",
+                    attempts=8,
+                    error_code="FILE_TOO_LARGE",
+                )
+            )
+            await session.commit()
+
+        response = await client.get(
+            "/api/v1/admin/bitrix-attention",
+            params={"entity_type": "inbound_file"},
+            headers=auth(admin_token),
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["counts"]["inbound_file"] == 1
+        assert body["items"][0]["remote_id"] == "90"
+        assert body["items"][0]["external_url"] is None
+        assert body["items"][0]["error_code"] == "FILE_TOO_LARGE"
+
+        retry = await client.post(
+            f"/api/v1/admin/bitrix-attention/inbound-files/{receipt_id}/retry",
+            headers=auth(admin_token),
+        )
+        assert retry.status_code == 204
+
+        async with async_session_test() as session:
+            receipt = await session.get(BitrixInboundEvent, receipt_id)
+            assert receipt is not None
+            assert receipt.status == "received"
+            assert receipt.attempts == 0
+            assert receipt.error_code is None

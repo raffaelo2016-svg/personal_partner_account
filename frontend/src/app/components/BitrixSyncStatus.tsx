@@ -27,6 +27,14 @@ const ERROR_MESSAGES: Record<string, string> = {
   CLIENT_STATUS_REQUIRED: 'В сделке не заполнен статус клиента ЮРИТЕХ',
   INVALID_DEAL_RESPONSE: 'Не удалось прочитать карточку сделки',
   INVALID_CONTACT_RESPONSE: 'Не удалось прочитать контакт клиента',
+  CLIENT_DEAL_NOT_FOUND: 'Сделка не связана с клиентом кабинета',
+  CLIENT_NOT_FOUND: 'Связанный клиент не найден в кабинете',
+  REMOTE_FILE_ID_MISSING: 'Битрикс24 не передал идентификатор файла',
+  INVALID_FILE_RESPONSE: 'Не удалось прочитать сведения о файле',
+  INVALID_DOWNLOAD_URL: 'Битрикс24 вернул небезопасную ссылку на файл',
+  FILE_TOO_LARGE: 'Размер файла превышает 10 МБ',
+  UNSUPPORTED_FILE_TYPE: 'Тип файла не поддерживается кабинетом',
+  INVALID_FILE_CONTENT: 'Содержимое файла не соответствует его типу',
 };
 
 interface Props {
