@@ -285,9 +285,7 @@ async def _create_and_verify_reverse_document(
         )
         if receipt is None:
             raise RuntimeError("REVERSE_DOCUMENT_EVENT_NOT_RECEIVED")
-        raise RuntimeError(
-            f"REVERSE_DOCUMENT_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}"
-        )
+        raise RuntimeError(f"REVERSE_DOCUMENT_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}")
 
 
 async def run_smoke() -> dict[str, str]:
