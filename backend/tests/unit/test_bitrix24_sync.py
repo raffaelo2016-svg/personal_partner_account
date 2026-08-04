@@ -154,6 +154,24 @@ async def test_deal_add_receipt_is_routed_to_client_import(db_session: AsyncSess
 
 
 @pytest.mark.asyncio
+async def test_timeline_comment_receipt_is_routed_to_document_import(db_session: AsyncSession):
+    await _installation(db_session)
+    payload = {
+        "event": "ONCRMTIMELINECOMMENTADD",
+        "event_id": "evt-comment-90",
+        "data": {"ID": "90"},
+    }
+
+    event_id, created = await register_inbound_event(db_session, member_id="member", payload=payload)
+
+    receipt = await db_session.get(BitrixInboundEvent, event_id)
+    assert created is True
+    assert receipt is not None
+    assert receipt.remote_entity_type == "timeline_comment"
+    assert receipt.remote_entity_id == "90"
+
+
+@pytest.mark.asyncio
 async def test_outbox_operation_is_enqueued_once(db_session: AsyncSession):
     await _installation(db_session)
     local_id = uuid4()

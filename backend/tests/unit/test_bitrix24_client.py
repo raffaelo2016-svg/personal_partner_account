@@ -68,3 +68,33 @@ async def test_list_all_rejects_repeated_next_cursor():
     async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
         with pytest.raises(Bitrix24Error, match="repeated pagination cursor"):
             await client.list_all("user.get")
+
+
+async def test_download_file_accepts_only_bounded_portal_response():
+    async def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.host == "portal.example"
+        return httpx.Response(200, content=b"%PDF-1.7", headers={"content-length": "8"})
+
+    transport = httpx.MockTransport(handler)
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        data = await client.download_file("https://portal.example/rest/download.json?token=signed", max_bytes=32)
+
+    assert data == b"%PDF-1.7"
+
+
+async def test_download_file_rejects_external_host_before_request():
+    transport = httpx.MockTransport(lambda _request: pytest.fail("unsafe URL must not be requested"))
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        with pytest.raises(Bitrix24Error) as exc_info:
+            await client.download_file("https://attacker.example/file.pdf", max_bytes=32)
+
+    assert exc_info.value.code == "INVALID_DOWNLOAD_URL"
+
+
+async def test_download_file_stops_when_limit_is_exceeded():
+    transport = httpx.MockTransport(lambda _request: httpx.Response(200, content=b"x" * 33))
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        with pytest.raises(Bitrix24Error) as exc_info:
+            await client.download_file("https://portal.example/download", max_bytes=32)
+
+    assert exc_info.value.code == "FILE_TOO_LARGE"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import base64
 import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
@@ -31,7 +32,7 @@ from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.models.task import Task
 from app.models.user import User
-from app.services.s3_service import delete_file_async, upload_file_async
+from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
 
 
 async def _process_one(db: AsyncSession, local_id: uuid.UUID, entity_type: str) -> None:
@@ -141,6 +142,14 @@ async def _remote_cleanup(
         ("tasks.task.delete", {"taskId": remote_ids["task"]} if remote_ids["task"] else None),
         ("crm.timeline.comment.delete", {"id": remote_ids["comment"]} if remote_ids["comment"] else None),
         ("disk.file.delete", {"id": remote_ids["disk_file"]} if remote_ids["disk_file"] else None),
+        (
+            "crm.timeline.comment.delete",
+            {"id": remote_ids["reverse_comment"]} if remote_ids["reverse_comment"] else None,
+        ),
+        (
+            "disk.file.delete",
+            {"id": remote_ids["reverse_disk_file"]} if remote_ids["reverse_disk_file"] else None,
+        ),
         ("crm.deal.delete", {"id": remote_ids["reverse_deal"]} if remote_ids["reverse_deal"] else None),
         (
             "crm.contact.delete",
@@ -220,6 +229,56 @@ async def _create_and_verify_reverse_client(
     raise RuntimeError("REVERSE_CLIENT_NOT_IMPORTED")
 
 
+async def _create_and_verify_reverse_document(
+    remote: Bitrix24Client,
+    *,
+    client_id: uuid.UUID,
+    deal_id: str,
+    remote_ids: dict[str, str | None],
+) -> tuple[uuid.UUID, str]:
+    content = b"%PDF-1.7\n% reverse smoke\n"
+    result = await remote.call(
+        "crm.timeline.comment.add",
+        {
+            "fields": {
+                "ENTITY_ID": deal_id,
+                "ENTITY_TYPE": "deal",
+                "COMMENT": "[SMOKE] Обратный импорт документа",
+                "FILES": [["reverse-smoke.pdf", base64.b64encode(content).decode("ascii")]],
+            }
+        },
+    )
+    remote_ids["reverse_comment"] = str(result)
+    created = await remote.call("crm.timeline.comment.get", {"id": remote_ids["reverse_comment"]})
+    files = created.get("FILES") if isinstance(created, dict) else None
+    file_items = list(files.values()) if isinstance(files, dict) else files if isinstance(files, list) else []
+    if not file_items or not isinstance(file_items[0], dict):
+        raise RuntimeError("REVERSE_DOCUMENT_REMOTE_FILE_MISSING")
+    remote_ids["reverse_disk_file"] = str(file_items[0].get("id") or file_items[0].get("ID") or "") or None
+
+    for _ in range(30):
+        await asyncio.sleep(1)
+        async with async_session() as db:
+            imported = await db.scalar(
+                select(FileUpload).where(
+                    FileUpload.client_id == client_id,
+                    FileUpload.bitrix_timeline_comment_id == remote_ids["reverse_comment"],
+                )
+            )
+            if imported is None:
+                continue
+            if (
+                imported.original_name != "reverse-smoke.pdf"
+                or imported.bitrix_disk_file_id != remote_ids["reverse_disk_file"]
+                or imported.bitrix_sync_status != "synced"
+            ):
+                raise RuntimeError("REVERSE_DOCUMENT_MISMATCH")
+            if await download_file_async(imported.s3_key) != content:
+                raise RuntimeError("REVERSE_DOCUMENT_CONTENT_MISMATCH")
+            return imported.id, imported.s3_key
+    raise RuntimeError("REVERSE_DOCUMENT_NOT_IMPORTED")
+
+
 async def run_smoke() -> dict[str, str]:
     partner_id = uuid.uuid4()
     client_id = uuid.uuid4()
@@ -231,6 +290,8 @@ async def run_smoke() -> dict[str, str]:
     installation_found = False
     remote_cleanup_error: str | None = None
     reverse_client_id: uuid.UUID | None = None
+    reverse_document_id: uuid.UUID | None = None
+    reverse_document_s3_key: str | None = None
     remote_ids: dict[str, str | None] = {
         "partner": None,
         "contact": None,
@@ -240,6 +301,8 @@ async def run_smoke() -> dict[str, str]:
         "disk_file": None,
         "reverse_contact": None,
         "reverse_deal": None,
+        "reverse_comment": None,
+        "reverse_disk_file": None,
     }
 
     try:
@@ -336,6 +399,15 @@ async def run_smoke() -> dict[str, str]:
             remote_ids["disk_file"] = record.bitrix_disk_file_id
             if task.bitrix_sync_status != "synced" or record.bitrix_sync_status != "synced":
                 raise RuntimeError("PROJECTION_NOT_SYNCED")
+
+            token = await _access_token(db, installation)
+            async with Bitrix24Client(installation.client_endpoint, token) as remote:
+                reverse_document_id, reverse_document_s3_key = await _create_and_verify_reverse_document(
+                    remote,
+                    client_id=client_id,
+                    deal_id=str(remote_ids["deal"]),
+                    remote_ids=remote_ids,
+                )
     finally:
         if installation_found:
             async with async_session() as db:
@@ -373,6 +445,18 @@ async def run_smoke() -> dict[str, str]:
                         delete(BitrixEntityMap).where(BitrixEntityMap.local_entity_id == reverse_client_id)
                     )
                     await db.execute(delete(Client).where(Client.id == reverse_client_id))
+                if reverse_document_id:
+                    await db.execute(
+                        delete(BitrixEntityMap).where(BitrixEntityMap.local_entity_id == reverse_document_id)
+                    )
+                    await db.execute(delete(FileUpload).where(FileUpload.id == reverse_document_id))
+                if remote_ids["reverse_comment"]:
+                    await db.execute(
+                        delete(BitrixInboundEvent).where(
+                            BitrixInboundEvent.remote_entity_type == "timeline_comment",
+                            BitrixInboundEvent.remote_entity_id == remote_ids["reverse_comment"],
+                        )
+                    )
                 await db.execute(delete(Task).where(Task.id == smoke_id))
                 await db.execute(delete(FileUpload).where(FileUpload.id == smoke_id))
                 await db.execute(delete(Client).where(Client.id == client_id))
@@ -381,6 +465,8 @@ async def run_smoke() -> dict[str, str]:
                 await db.commit()
         if s3_key:
             await delete_file_async(s3_key)
+        if reverse_document_s3_key:
+            await delete_file_async(reverse_document_s3_key)
 
     if remote_cleanup_error:
         raise RuntimeError(f"REMOTE_CLEANUP_FAILED:{remote_cleanup_error}")
@@ -391,6 +477,7 @@ async def run_smoke() -> dict[str, str]:
         "reverse_client": "created_and_removed",
         "task": "created_and_removed",
         "document": "created_and_removed",
+        "reverse_document": "created_and_removed",
     }
 
 

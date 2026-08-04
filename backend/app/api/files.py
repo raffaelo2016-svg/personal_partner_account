@@ -21,6 +21,12 @@ from app.services.s3_service import (
     get_presigned_url_async,
     upload_file_async,
 )
+from app.validation.files import (
+    ALLOWED_EXTENSIONS,
+    ALLOWED_MIME_TYPES,
+    MAX_FILE_SIZE_BYTES,
+    has_valid_signature,
+)
 
 router = APIRouter(tags=["files"])
 
@@ -38,27 +44,8 @@ async def _check_client_access(db: AsyncSession, client_id: str, user: User) -> 
         raise HTTPException(status_code=403, detail={"code": "FORBIDDEN", "message": "Access denied"})
 
 
-UPLOAD_MAX_SIZE_MB = 10
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
-ALLOWED_MIME_TYPES = {
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
-
-
-def _has_valid_signature(data: bytes, extension: str) -> bool:
-    signatures = {
-        ".pdf": (b"%PDF-",),
-        ".jpg": (b"\xff\xd8\xff",),
-        ".jpeg": (b"\xff\xd8\xff",),
-        ".png": (b"\x89PNG\r\n\x1a\n",),
-        ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
-        ".docx": (b"PK\x03\x04",),
-    }
-    return any(data.startswith(signature) for signature in signatures.get(extension, ()))
+UPLOAD_MAX_SIZE_MB = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+_has_valid_signature = has_valid_signature
 
 
 def _read_response(record: FileUpload, url: str) -> FileUploadRead:
@@ -121,7 +108,7 @@ async def upload_endpoint(
         )
 
     data = await file.read()
-    if len(data) > UPLOAD_MAX_SIZE_MB * 1024 * 1024:
+    if len(data) > MAX_FILE_SIZE_BYTES:
         raise HTTPException(
             status_code=413,
             detail={"code": "FILE_TOO_LARGE", "message": f"Max size is {UPLOAD_MAX_SIZE_MB} MB"},

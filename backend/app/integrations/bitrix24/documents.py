@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
 
@@ -12,19 +13,47 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
+from app.integrations.bitrix24.clients import CLIENT_DEAL_ENTITY_TYPE
+from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import active_installation
-from app.models.bitrix_sync import BitrixEntityMap, BitrixOutboxOperation
+from app.integrations.bitrix24.token_storage import decrypt_token
+from app.models.bitrix_installation import BitrixInstallation
+from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
 from app.models.file_upload import FileUpload
-from app.services.s3_service import download_file_async
+from app.services.audit import audit_log
+from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
+from app.validation.files import (
+    ALLOWED_EXTENSIONS,
+    MAX_FILE_SIZE_BYTES,
+    file_extension,
+    has_valid_signature,
+    mime_type_for_filename,
+)
 
 FILE_ENTITY_TYPE = "file"
 FILE_CREATE_METHOD = "crm.timeline.comment.add"
 FILE_MARKER_PREFIX = "partner-cabinet-file:"
+TIMELINE_COMMENT_ADD_EVENT = "ONCRMTIMELINECOMMENTADD"
+TIMELINE_COMMENT_ENTITY_TYPE = "timeline_comment"
+TIMELINE_FILE_REMOTE_ENTITY_TYPE = "crm_timeline_file"
+TIMELINE_EVENT_HANDLER = "https://finzdorovie.ru/api/v1/integrations/bitrix24/handler"
 
 
 def file_marker(file_id: uuid.UUID) -> str:
     return f"[{FILE_MARKER_PREFIX}{file_id}]"
+
+
+def extract_timeline_comment_event_reference(event_name: str, payload: dict[str, Any]) -> str | None:
+    if event_name.upper() != TIMELINE_COMMENT_ADD_EVENT:
+        return None
+    data = payload.get("data")
+    if isinstance(data, dict) and (data.get("ID") or data.get("id")):
+        return str(data.get("ID") or data.get("id"))
+    for key in ("data[ID]", "data[id]"):
+        if payload.get(key):
+            return str(payload[key])
+    return None
 
 
 def build_file_operation_payload(record: FileUpload, *, deal_id: str) -> dict[str, Any]:
@@ -175,3 +204,201 @@ async def execute_file_creation(client: Bitrix24Client, operation: BitrixOutboxO
     if not reference:
         raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an attached Disk file ID")
     return reference
+
+
+def _mark_inbound_failure(receipt: BitrixInboundEvent, code: str) -> bool:
+    receipt.status = "failed"
+    receipt.error_code = code[:100]
+    receipt.attempts += 1
+    return False
+
+
+def _comment_files(comment: dict[str, Any]) -> list[dict[str, Any]]:
+    raw = comment.get("FILES") or comment.get("files") or []
+    values = list(raw.values()) if isinstance(raw, dict) else raw if isinstance(raw, list) else []
+    return [item for item in values if isinstance(item, dict)]
+
+
+def _safe_remote_name(value: Any) -> str | None:
+    name = PurePosixPath(str(value or "").replace("\\", "/")).name.strip()
+    if not name or len(name) > 500 or file_extension(name) not in ALLOWED_EXTENSIONS:
+        return None
+    return name
+
+
+async def _installation_token(db: AsyncSession, installation: BitrixInstallation) -> str:
+    expires_at = installation.token_expires_at
+    if expires_at is not None:
+        if expires_at.tzinfo is None:
+            expires_at = expires_at.replace(tzinfo=UTC)
+        if expires_at <= datetime.now(UTC) + timedelta(minutes=2):
+            return await refresh_installation_tokens(db, installation)
+    return await decrypt_token(db, installation.access_token_encrypted)
+
+
+async def process_timeline_comment_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
+    """Import supported attachments from a known client deal into MinIO once."""
+    receipt.status = "processing"
+    receipt.error_code = None
+    await db.flush()
+    if receipt.remote_entity_type != TIMELINE_COMMENT_ENTITY_TYPE or not receipt.remote_entity_id:
+        receipt.status = "ignored"
+        receipt.processed_at = datetime.now(UTC)
+        return True
+
+    installation = await db.get(BitrixInstallation, receipt.member_id)
+    if installation is None:
+        return _mark_inbound_failure(receipt, "INSTALLATION_NOT_FOUND")
+
+    comment_id = receipt.remote_entity_id
+    try:
+        token = await _installation_token(db, installation)
+        async with Bitrix24Client(installation.client_endpoint, token) as remote:
+            comment = await remote.call("crm.timeline.comment.get", {"id": comment_id})
+            if not isinstance(comment, dict):
+                return _mark_inbound_failure(receipt, "INVALID_COMMENT_RESPONSE")
+            if str(comment.get("ENTITY_TYPE") or comment.get("entityType") or "").lower() != "deal":
+                receipt.status = "ignored"
+                receipt.processed_at = datetime.now(UTC)
+                receipt.attempts += 1
+                return True
+            if FILE_MARKER_PREFIX in str(comment.get("COMMENT") or comment.get("comment") or ""):
+                receipt.status = "ignored"
+                receipt.processed_at = datetime.now(UTC)
+                receipt.attempts += 1
+                return True
+
+            deal_id = str(comment.get("ENTITY_ID") or comment.get("entityId") or "").strip()
+            deal_mapping = await db.scalar(
+                select(BitrixEntityMap).where(
+                    BitrixEntityMap.member_id == receipt.member_id,
+                    BitrixEntityMap.local_entity_type == CLIENT_DEAL_ENTITY_TYPE,
+                    BitrixEntityMap.bitrix_entity_type == "crm_deal",
+                    BitrixEntityMap.bitrix_entity_id == deal_id,
+                )
+            )
+            if deal_mapping is None:
+                return _mark_inbound_failure(receipt, "CLIENT_DEAL_NOT_FOUND")
+            local_client = await db.get(Client, deal_mapping.local_entity_id)
+            if local_client is None or local_client.deleted_at is not None:
+                return _mark_inbound_failure(receipt, "CLIENT_NOT_FOUND")
+
+            files = _comment_files(comment)
+            if not files:
+                receipt.status = "ignored"
+                receipt.processed_at = datetime.now(UTC)
+                receipt.attempts += 1
+                return True
+
+            for item in files:
+                disk_file_id = str(item.get("id") or item.get("ID") or "").strip()
+                if not disk_file_id:
+                    return _mark_inbound_failure(receipt, "REMOTE_FILE_ID_MISSING")
+                remote_reference = f"{comment_id}:{disk_file_id}"
+                existing_mapping = await db.scalar(
+                    select(BitrixEntityMap.id).where(
+                        BitrixEntityMap.member_id == receipt.member_id,
+                        BitrixEntityMap.bitrix_entity_type == TIMELINE_FILE_REMOTE_ENTITY_TYPE,
+                        BitrixEntityMap.bitrix_entity_id == remote_reference,
+                    )
+                )
+                if existing_mapping is not None:
+                    continue
+
+                info = await remote.call("disk.file.get", {"id": disk_file_id})
+                if not isinstance(info, dict):
+                    return _mark_inbound_failure(receipt, "INVALID_FILE_RESPONSE")
+                name = _safe_remote_name(info.get("NAME") or info.get("name") or item.get("name"))
+                if name is None:
+                    return _mark_inbound_failure(receipt, "UNSUPPORTED_FILE_TYPE")
+                try:
+                    announced_size = int(info.get("SIZE") or info.get("size") or item.get("size") or 0)
+                except (TypeError, ValueError):
+                    return _mark_inbound_failure(receipt, "INVALID_FILE_RESPONSE")
+                if announced_size > MAX_FILE_SIZE_BYTES:
+                    return _mark_inbound_failure(receipt, "FILE_TOO_LARGE")
+                download_url = str(info.get("DOWNLOAD_URL") or info.get("downloadUrl") or "")
+                data = await remote.download_file(download_url, max_bytes=MAX_FILE_SIZE_BYTES)
+                extension = file_extension(name)
+                if not has_valid_signature(data, extension):
+                    return _mark_inbound_failure(receipt, "INVALID_FILE_CONTENT")
+                mime_type = mime_type_for_filename(name)
+                if mime_type is None:
+                    return _mark_inbound_failure(receipt, "UNSUPPORTED_FILE_TYPE")
+                content_sha256 = hashlib.sha256(data).hexdigest()
+                duplicate = await db.scalar(
+                    select(FileUpload.id).where(
+                        FileUpload.client_id == local_client.id,
+                        FileUpload.content_sha256 == content_sha256,
+                    )
+                )
+                if duplicate is not None:
+                    continue
+
+                s3_key = await upload_file_async(data, name, mime_type)
+                try:
+                    now = datetime.now(UTC)
+                    record = FileUpload(
+                        client_id=local_client.id,
+                        document_type="other",
+                        original_name=name,
+                        s3_key=s3_key,
+                        size=len(data),
+                        mime_type=mime_type,
+                        content_sha256=content_sha256,
+                        bitrix_sync_status="synced",
+                        bitrix_timeline_comment_id=comment_id,
+                        bitrix_disk_file_id=disk_file_id,
+                        bitrix_synced_at=now,
+                    )
+                    db.add(record)
+                    await db.flush()
+                    db.add(
+                        BitrixEntityMap(
+                            member_id=receipt.member_id,
+                            local_entity_type=FILE_ENTITY_TYPE,
+                            local_entity_id=record.id,
+                            bitrix_entity_type=TIMELINE_FILE_REMOTE_ENTITY_TYPE,
+                            bitrix_entity_id=remote_reference,
+                            sync_version=1,
+                            last_synced_at=now,
+                            last_verified_at=now,
+                        )
+                    )
+                    await db.flush()
+                except Exception:
+                    await delete_file_async(s3_key)
+                    raise
+                audit_log(action="import_file_from_bitrix", target_id=str(record.id), target_type="file")
+    except Bitrix24Error as exc:
+        return _mark_inbound_failure(receipt, exc.code)
+
+    receipt.status = "completed"
+    receipt.error_code = None
+    receipt.processed_at = datetime.now(UTC)
+    receipt.attempts += 1
+    return True
+
+
+async def retry_timeline_comment_events(db: AsyncSession, *, limit: int = 25) -> tuple[int, int]:
+    receipts = list(
+        (
+            await db.scalars(
+                select(BitrixInboundEvent)
+                .where(
+                    BitrixInboundEvent.remote_entity_type == TIMELINE_COMMENT_ENTITY_TYPE,
+                    BitrixInboundEvent.status.in_(("received", "failed")),
+                    BitrixInboundEvent.attempts < settings.BITRIX_OUTBOX_MAX_ATTEMPTS,
+                )
+                .order_by(BitrixInboundEvent.created_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    completed = 0
+    for receipt in receipts:
+        if await process_timeline_comment_add_event(db, receipt):
+            completed += 1
+    await db.commit()
+    return len(receipts), completed

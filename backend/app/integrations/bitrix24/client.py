@@ -28,6 +28,7 @@ class Bitrix24Client:
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.client_endpoint = self._normalize_endpoint(client_endpoint)
+        self._portal_host = (urlparse(self.client_endpoint).hostname or "").lower()
         if not access_token.strip():
             raise ValueError("BITRIX_ACCESS_TOKEN is required")
         self._access_token = access_token
@@ -88,6 +89,45 @@ class Bitrix24Client:
     async def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
         data = await self._request(method, params)
         return data.get("result")
+
+    async def download_file(self, url: str, *, max_bytes: int) -> bytes:
+        """Download a signed Bitrix24 file without allowing arbitrary hosts or unbounded bodies."""
+        parsed = urlparse(str(url).strip())
+        if (
+            parsed.scheme != "https"
+            or (parsed.hostname or "").lower() != self._portal_host
+            or parsed.username
+            or parsed.password
+        ):
+            raise Bitrix24Error("INVALID_DOWNLOAD_URL", "Bitrix24 returned an unsafe file URL")
+        if max_bytes <= 0:
+            raise ValueError("max_bytes must be positive")
+
+        try:
+            async with self._client.stream("GET", url) as response:
+                if response.is_redirect or response.is_error:
+                    raise Bitrix24Error(
+                        f"HTTP_{response.status_code}",
+                        "Bitrix24 file download failed",
+                        status_code=response.status_code,
+                    )
+                content_length = response.headers.get("content-length")
+                if content_length and content_length.isdigit() and int(content_length) > max_bytes:
+                    raise Bitrix24Error("FILE_TOO_LARGE", "Bitrix24 file exceeds the configured limit")
+                chunks: list[bytes] = []
+                size = 0
+                async for chunk in response.aiter_bytes():
+                    size += len(chunk)
+                    if size > max_bytes:
+                        raise Bitrix24Error("FILE_TOO_LARGE", "Bitrix24 file exceeds the configured limit")
+                    chunks.append(chunk)
+        except Bitrix24Error:
+            raise
+        except httpx.TimeoutException as exc:
+            raise Bitrix24Error("TIMEOUT", "Bitrix24 file download timed out") from exc
+        except httpx.HTTPError as exc:
+            raise Bitrix24Error("TRANSPORT_ERROR", "Could not download the Bitrix24 file") from exc
+        return b"".join(chunks)
 
     async def list_all(
         self,

@@ -20,7 +20,13 @@ from app.integrations.bitrix24.clients import (
     enqueue_client_deal,
     extract_client_deal_event_reference,
 )
-from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, execute_file_creation, schedule_file_creation
+from app.integrations.bitrix24.documents import (
+    FILE_ENTITY_TYPE,
+    TIMELINE_COMMENT_ENTITY_TYPE,
+    execute_file_creation,
+    extract_timeline_comment_event_reference,
+    schedule_file_creation,
+)
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE
 from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event_reference, schedule_task_creation
@@ -87,6 +93,7 @@ async def register_inbound_event(
     status = "ignored" if is_self_originated_event(payload) else "received"
     event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
     client_deal_id = extract_client_deal_event_reference(event_name, payload)
+    timeline_comment_id = extract_timeline_comment_event_reference(event_name, payload)
     task_id = extract_task_event_reference(event_name, payload)
     statement = (
         insert(BitrixInboundEvent)
@@ -95,8 +102,16 @@ async def register_inbound_event(
             member_id=member_id,
             event_key=event_key,
             event_name=event_name,
-            remote_entity_type=CLIENT_DEAL_ENTITY_TYPE if client_deal_id else TASK_ENTITY_TYPE if task_id else None,
-            remote_entity_id=client_deal_id or task_id,
+            remote_entity_type=(
+                CLIENT_DEAL_ENTITY_TYPE
+                if client_deal_id
+                else TIMELINE_COMMENT_ENTITY_TYPE
+                if timeline_comment_id
+                else TASK_ENTITY_TYPE
+                if task_id
+                else None
+            ),
+            remote_entity_id=client_deal_id or timeline_comment_id or task_id,
             payload_hash=payload_hash,
             status=status,
         )
