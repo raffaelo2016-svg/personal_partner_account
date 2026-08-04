@@ -288,7 +288,85 @@ async def _create_and_verify_reverse_document(
         raise RuntimeError(f"REVERSE_DOCUMENT_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}")
 
 
-async def run_smoke() -> dict[str, str]:
+async def _wait_for_manual_reverse_document(
+    remote: Bitrix24Client,
+    *,
+    client_id: uuid.UUID,
+    deal_id: str,
+    remote_ids: dict[str, str | None],
+) -> tuple[uuid.UUID, str]:
+    content = b"%PDF-1.7\n% reverse smoke\n"
+    print(
+        json.dumps(
+            {
+                "manual_reverse_document": {
+                    "deal_id": deal_id,
+                    "deal_url": f"https://{settings.BITRIX_ALLOWED_DOMAIN}/crm/deal/details/{deal_id}/",
+                    "filename": "reverse-smoke.pdf",
+                    "comment": "[SMOKE] Ручной обратный импорт документа",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    for _ in range(210):
+        await asyncio.sleep(1)
+        async with async_session() as db:
+            imported = await db.scalar(
+                select(FileUpload).where(
+                    FileUpload.client_id == client_id,
+                    FileUpload.original_name == "reverse-smoke.pdf",
+                    FileUpload.bitrix_timeline_comment_id.is_not(None),
+                )
+            )
+            if imported is None:
+                continue
+            if not imported.bitrix_disk_file_id or imported.bitrix_sync_status != "synced":
+                raise RuntimeError("MANUAL_REVERSE_DOCUMENT_MISMATCH")
+            if await download_file_async(imported.s3_key) != content:
+                raise RuntimeError("MANUAL_REVERSE_DOCUMENT_CONTENT_MISMATCH")
+            remote_ids["reverse_comment"] = imported.bitrix_timeline_comment_id
+            remote_ids["reverse_disk_file"] = imported.bitrix_disk_file_id
+            return imported.id, imported.s3_key
+
+    comments = await remote.list_all(
+        "crm.timeline.comment.list",
+        {
+            "filter": {"ENTITY_ID": deal_id, "ENTITY_TYPE": "deal"},
+            "select": ["ID", "COMMENT", "FILES"],
+            "order": {"ID": "DESC"},
+        },
+        max_pages=5,
+    )
+    for comment in comments:
+        if not isinstance(comment, dict) or "[SMOKE] Ручной обратный импорт документа" not in str(
+            comment.get("COMMENT") or comment.get("comment") or ""
+        ):
+            continue
+        remote_ids["reverse_comment"] = str(comment.get("ID") or comment.get("id") or "") or None
+        files = comment.get("FILES") or comment.get("files") or []
+        file_items = list(files.values()) if isinstance(files, dict) else files if isinstance(files, list) else []
+        if file_items and isinstance(file_items[0], dict):
+            remote_ids["reverse_disk_file"] = str(file_items[0].get("ID") or file_items[0].get("id") or "") or None
+        break
+
+    if remote_ids["reverse_comment"]:
+        async with async_session() as db:
+            receipt = await db.scalar(
+                select(BitrixInboundEvent).where(
+                    BitrixInboundEvent.remote_entity_type == "timeline_comment",
+                    BitrixInboundEvent.remote_entity_id == remote_ids["reverse_comment"],
+                )
+            )
+            if receipt is not None:
+                raise RuntimeError(
+                    f"MANUAL_REVERSE_DOCUMENT_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}"
+                )
+    raise RuntimeError("MANUAL_REVERSE_DOCUMENT_EVENT_NOT_RECEIVED")
+
+
+async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
     partner_id = uuid.uuid4()
     client_id = uuid.uuid4()
     smoke_id = uuid.uuid4()
@@ -411,12 +489,20 @@ async def run_smoke() -> dict[str, str]:
 
             token = await _access_token(db, installation)
             async with Bitrix24Client(installation.client_endpoint, token) as remote:
-                reverse_document_id, reverse_document_s3_key = await _create_and_verify_reverse_document(
-                    remote,
-                    client_id=client_id,
-                    deal_id=str(remote_ids["deal"]),
-                    remote_ids=remote_ids,
-                )
+                if manual_reverse_document:
+                    reverse_document_id, reverse_document_s3_key = await _wait_for_manual_reverse_document(
+                        remote,
+                        client_id=client_id,
+                        deal_id=str(remote_ids["deal"]),
+                        remote_ids=remote_ids,
+                    )
+                else:
+                    reverse_document_id, reverse_document_s3_key = await _create_and_verify_reverse_document(
+                        remote,
+                        client_id=client_id,
+                        deal_id=str(remote_ids["deal"]),
+                        remote_ids=remote_ids,
+                    )
     finally:
         if installation_found:
             async with async_session() as db:
@@ -492,8 +578,18 @@ async def run_smoke() -> dict[str, str]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run a PII-free Bitrix24 production acceptance smoke")
-    parser.parse_args()
-    print(json.dumps(asyncio.run(run_smoke()), ensure_ascii=False))
+    parser.add_argument(
+        "--manual-reverse-document",
+        action="store_true",
+        help="Wait for reverse-smoke.pdf added by a signed-in employee in the Bitrix24 deal UI",
+    )
+    args = parser.parse_args()
+    print(
+        json.dumps(
+            asyncio.run(run_smoke(manual_reverse_document=args.manual_reverse_document)),
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

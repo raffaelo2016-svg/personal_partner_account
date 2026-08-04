@@ -2,6 +2,12 @@ name: Bitrix24 production smoke
 
 on:
   workflow_dispatch:
+    inputs:
+      manual_reverse_document:
+        description: "Wait for a document added manually in the Bitrix24 deal UI"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: bitrix24-production-smoke
@@ -22,5 +28,9 @@ jobs:
           script: |
             set -e
             cd /srv/personal_partner_account
+            MANUAL_ARG=""
+            if [ "${{ inputs.manual_reverse_document }}" = "true" ]; then
+              MANUAL_ARG="--manual-reverse-document"
+            fi
             docker compose -f docker-compose.prod.yml exec -T backend \
-              python -m app.integrations.bitrix24.smoke_cli
+              python -m app.integrations.bitrix24.smoke_cli $MANUAL_ARG
