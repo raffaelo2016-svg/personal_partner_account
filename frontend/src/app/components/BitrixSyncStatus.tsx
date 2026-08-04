@@ -18,6 +18,15 @@ const ERROR_MESSAGES: Record<string, string> = {
   TRANSPORT_ERROR: 'Нет связи с Битрикс24',
   QUERY_LIMIT_EXCEEDED: 'Битрикс24 временно ограничил число запросов',
   INVALID_RESPONSE: 'Битрикс24 вернул неполный ответ',
+  PARTNER_NOT_LINKED: 'В сделке не выбран партнёр ЮРИТЕХ',
+  PARTNER_NOT_FOUND: 'Выбранный партнёр не связан с кабинетом',
+  CONTACT_NOT_LINKED: 'В сделке не выбран контакт клиента',
+  CONTACT_ALREADY_LINKED: 'Этот контакт уже связан с другим клиентом',
+  CLIENT_NAME_REQUIRED: 'В контакте не заполнено имя клиента',
+  CLIENT_TYPE_REQUIRED: 'В сделке не заполнен тип клиента ЮРИТЕХ',
+  CLIENT_STATUS_REQUIRED: 'В сделке не заполнен статус клиента ЮРИТЕХ',
+  INVALID_DEAL_RESPONSE: 'Не удалось прочитать карточку сделки',
+  INVALID_CONTACT_RESPONSE: 'Не удалось прочитать контакт клиента',
 };
 
 interface Props {
