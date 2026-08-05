@@ -12,6 +12,7 @@ from app.config import settings
 from app.integrations.bitrix24.sync import _execute_operation
 from app.integrations.bitrix24.task_setup_cli import _active_user_ids, _values_to_apply
 from app.integrations.bitrix24.tasks import (
+    TASK_ADD_EVENT,
     TASK_ENTITY_TYPE,
     TASK_RESPONSIBLE_SETTING_PREFIX,
     build_task_create_payload,
@@ -64,6 +65,7 @@ def test_task_payload_contains_crm_link_and_external_id():
 )
 def test_task_event_reference_supports_json_and_form_payloads(payload):
     assert extract_task_event_reference("ONTASKUPDATE", payload) == "77"
+    assert extract_task_event_reference(TASK_ADD_EVENT, payload) == "77"
     assert extract_task_event_reference("ONCRMDEALUPDATE", payload) is None
 
 
@@ -241,3 +243,138 @@ async def test_remote_completed_status_updates_local_task(db_session: AsyncSessi
     assert task.status == "completed"
     assert task.completed_at is not None
     assert receipt.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_remote_added_task_is_imported_for_known_client(db_session: AsyncSession):
+    existing_task, client = await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-5",
+        event_key=uuid4().hex,
+        event_name=TASK_ADD_EVENT,
+        payload_hash=uuid4().hex,
+        remote_entity_type=TASK_ENTITY_TYPE,
+        remote_entity_id="901",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "task": {
+            "id": "901",
+            "title": "Получить справку",
+            "description": "Запросить документ",
+            "status": "2",
+            "priority": "2",
+            "deadline": "2026-08-12T18:00:00+03:00",
+            "xmlId": "",
+            "ufCrmTask": ["D_456"],
+        }
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_task_status_event(db_session, receipt)
+
+    imported = await db_session.scalar(select(Task).where(Task.bitrix_task_id == "901"))
+    mapping = await db_session.scalar(
+        select(BitrixEntityMap).where(
+            BitrixEntityMap.member_id == "member-stage-5",
+            BitrixEntityMap.bitrix_entity_type == TASK_ENTITY_TYPE,
+            BitrixEntityMap.bitrix_entity_id == "901",
+        )
+    )
+    assert completed is True
+    assert imported is not None
+    assert imported.id != existing_task.id
+    assert imported.client_id == client.id
+    assert imported.title == "Получить справку"
+    assert imported.description == "Запросить документ"
+    assert imported.status == "pending"
+    assert imported.priority == "high"
+    assert imported.assigned_to == "partner"
+    assert imported.due_date == date(2026, 8, 12)
+    assert imported.bitrix_sync_status == "synced"
+    assert mapping is not None
+    assert mapping.local_entity_id == imported.id
+    assert receipt.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_remote_added_task_from_cabinet_is_not_imported_again(db_session: AsyncSession):
+    existing_task, _ = await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-5",
+        event_key=uuid4().hex,
+        event_name=TASK_ADD_EVENT,
+        payload_hash=uuid4().hex,
+        remote_entity_type=TASK_ENTITY_TYPE,
+        remote_entity_id="902",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "task": {
+            "id": "902",
+            "title": "Собственная задача",
+            "status": "2",
+            "xmlId": f"partner_cabinet:{existing_task.id}",
+            "ufCrmTask": ["D_456"],
+        }
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_task_status_event(db_session, receipt)
+
+    imported = await db_session.scalar(select(Task).where(Task.bitrix_task_id == "902"))
+    assert completed is True
+    assert imported is None
+    assert receipt.status == "ignored"
+
+
+@pytest.mark.asyncio
+async def test_unmapped_update_does_not_import_old_task(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-5",
+        event_key=uuid4().hex,
+        event_name="ONTASKUPDATE",
+        payload_hash=uuid4().hex,
+        remote_entity_type=TASK_ENTITY_TYPE,
+        remote_entity_id="903",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "task": {
+            "id": "903",
+            "title": "Старая задача",
+            "status": "2",
+            "xmlId": "",
+            "ufCrmTask": ["D_456"],
+        }
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_task_status_event(db_session, receipt)
+
+    imported = await db_session.scalar(select(Task).where(Task.bitrix_task_id == "903"))
+    assert completed is True
+    assert imported is None
+    assert receipt.status == "ignored"

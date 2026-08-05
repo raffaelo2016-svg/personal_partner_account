@@ -21,7 +21,7 @@ from app.integrations.bitrix24.documents import (
 )
 from app.integrations.bitrix24.partners import mark_remote_partner_conflict
 from app.integrations.bitrix24.sync import register_inbound_event
-from app.integrations.bitrix24.tasks import process_task_status_event
+from app.integrations.bitrix24.tasks import TASK_ADD_EVENT, process_task_status_event
 from app.integrations.bitrix24.token_storage import TokenStorageError, decrypt_token, encrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixInboundEvent
@@ -163,6 +163,7 @@ async def bitrix24_handler(
     event_id, created = await register_inbound_event(db, member_id=member_id, payload=payload)
     conflict = False
     task_status_synced = False
+    task_imported = False
     client_imported = False
     document_imported = False
     if created:
@@ -179,6 +180,11 @@ async def bitrix24_handler(
             if receipt is not None:
                 if receipt.remote_entity_type == "task":
                     task_status_synced = await process_task_status_event(db, receipt)
+                    task_imported = (
+                        task_status_synced
+                        and receipt.event_name.upper() == TASK_ADD_EVENT
+                        and receipt.status == "completed"
+                    )
                 elif receipt.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE:
                     client_imported = await process_client_deal_add_event(db, receipt)
                 elif receipt.remote_entity_type in {TIMELINE_COMMENT_ENTITY_TYPE, CRM_ACTIVITY_ENTITY_TYPE}:
@@ -196,6 +202,7 @@ async def bitrix24_handler(
         "duplicate": not created,
         "conflict": conflict,
         "task_status_synced": task_status_synced,
+        "task_imported": task_imported,
         "client_imported": client_imported,
         "document_imported": document_imported,
     }

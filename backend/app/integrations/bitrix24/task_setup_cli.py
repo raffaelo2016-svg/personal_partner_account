@@ -1,4 +1,4 @@
-"""Configure stage-5 responsible mappings and the task update event."""
+"""Configure task responsible mappings and inbound task events."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from app.integrations.bitrix24.client import Bitrix24Client
 from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 from app.integrations.bitrix24.tasks import (
+    TASK_ADD_EVENT,
     TASK_CREATOR_SETTING,
     TASK_EVENT_HANDLER,
     TASK_RESPONSIBLE_SETTING_PREFIX,
@@ -33,13 +34,13 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-async def _event_is_bound(client: Bitrix24Client) -> bool:
+async def _event_is_bound(client: Bitrix24Client, event_name: str) -> bool:
     events = await client.call("event.get")
     if not isinstance(events, list):
         return False
     return any(
         isinstance(item, dict)
-        and str(item.get("event") or item.get("EVENT") or "").upper() == TASK_UPDATE_EVENT
+        and str(item.get("event") or item.get("EVENT") or "").upper() == event_name
         and str(item.get("handler") or item.get("HANDLER") or "").rstrip("/") == TASK_EVENT_HANDLER.rstrip("/")
         for item in events
     )
@@ -136,17 +137,28 @@ async def run(
         invalid = [role for role, value in requested.items() if value not in active_ids]
         if invalid:
             raise SystemExit("Configured Bitrix24 user IDs must belong to active users")
-        event_bound = await _event_is_bound(client)
+        update_event_bound = await _event_is_bound(client, TASK_UPDATE_EVENT)
+        add_event_bound = await _event_is_bound(client, TASK_ADD_EVENT)
         if apply:
             await _save_ids(requested)
-            if not event_bound:
+            if not update_event_bound:
                 await client.call("event.bind", {"event": TASK_UPDATE_EVENT, "handler": TASK_EVENT_HANDLER})
+                update_event_bound = await _event_is_bound(client, TASK_UPDATE_EVENT)
+            if not add_event_bound:
+                await client.call("event.bind", {"event": TASK_ADD_EVENT, "handler": TASK_EVENT_HANDLER})
+                add_event_bound = await _event_is_bound(client, TASK_ADD_EVENT)
+
+    if apply and not update_event_bound:
+        raise SystemExit("Bitrix24 task update event could not be verified")
+    if apply and not add_event_bound:
+        raise SystemExit("Bitrix24 task add event could not be verified")
 
     configured = await _configured_ids()
     valid = sum(value in active_ids for value in configured.values())
     print(f"task_responsible_roles_configured={sum(role in configured for role in ('partner', 'admin'))}")
     print(f"task_configured_users_valid={valid}/{len(configured)}")
-    print(f"task_update_event={'bound' if event_bound or apply else 'missing'}")
+    print(f"task_update_event={'bound' if update_event_bound else 'missing'}")
+    print(f"task_add_event={'bound' if add_event_bound else 'missing'}")
 
 
 def main() -> None:
