@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from html import unescape
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -279,7 +280,7 @@ async def _apply_remote_task_fields(db: AsyncSession, task: Task, remote_task: d
     deadline_value = _remote_field(remote_task, "deadline", "DEADLINE")
     now = datetime.now(UTC)
     task.title = title[:255]
-    task.description = str(description_value).strip() if description_value else None
+    task.description = unescape(str(description_value)).strip() if description_value else None
     task.status = status
     task.priority = _PRIORITY_FROM_BITRIX.get(priority_value, "medium")
     task.assigned_to = await _responsible_role(db, remote_task, task.assigned_to)
@@ -441,6 +442,42 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
     receipt.error_code = None
     receipt.processed_at = datetime.now(UTC)
     receipt.attempts += 1
+    return True
+
+
+async def reconcile_remote_task(db: AsyncSession, *, task_id: uuid.UUID) -> bool:
+    """Refresh one explicitly selected mapped task from Bitrix24."""
+    installation = await active_installation(db)
+    if installation is None:
+        return False
+    mapping = await db.scalar(
+        select(BitrixEntityMap).where(
+            BitrixEntityMap.member_id == installation.member_id,
+            BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
+            BitrixEntityMap.local_entity_id == task_id,
+        )
+    )
+    task = await db.get(Task, task_id)
+    if mapping is None or task is None:
+        return False
+
+    try:
+        token = await _installation_token(db, installation)
+        async with Bitrix24Client(installation.client_endpoint, token) as remote:
+            result = await remote.call(
+                "tasks.task.get",
+                {"taskId": mapping.bitrix_entity_id, "select": _TASK_SELECT_FIELDS},
+            )
+    except Bitrix24Error:
+        return False
+
+    remote_task = result.get("task", {}) if isinstance(result, dict) else {}
+    if not await _apply_remote_task_fields(db, task, remote_task):
+        return False
+    now = datetime.now(UTC)
+    mapping.last_synced_at = now
+    mapping.last_verified_at = now
+    await db.commit()
     return True
 
 

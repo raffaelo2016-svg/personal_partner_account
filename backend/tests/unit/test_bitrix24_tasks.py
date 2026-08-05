@@ -18,6 +18,7 @@ from app.integrations.bitrix24.tasks import (
     build_task_create_payload,
     extract_task_event_reference,
     process_task_status_event,
+    reconcile_remote_task,
     reconcile_remote_tasks,
     schedule_task_creation,
 )
@@ -306,6 +307,50 @@ async def test_periodic_reconciliation_recovers_missed_task_update(db_session: A
     assert task.due_date == date(2026, 8, 20)
     assert task.bitrix_sync_status == "synced"
     assert mapping.last_verified_at is not None
+
+
+@pytest.mark.asyncio
+async def test_targeted_reconciliation_refreshes_only_selected_task(db_session: AsyncSession):
+    task, _ = await _saved_entities(db_session)
+    mapping = BitrixEntityMap(
+        member_id="member-stage-5",
+        local_entity_type=TASK_ENTITY_TYPE,
+        local_entity_id=task.id,
+        bitrix_entity_type="task",
+        bitrix_entity_id="905",
+    )
+    db_session.add(mapping)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "task": {
+            "id": "905",
+            "title": "Адресная сверка",
+            "description": "&#91;SMOKE&#93; Только выбранная задача",
+            "status": "3",
+            "priority": "2",
+            "deadline": "2026-08-21T18:00:00+03:00",
+            "responsibleId": "123",
+        }
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        completed = await reconcile_remote_task(db_session, task_id=task.id)
+
+    assert completed is True
+    assert task.title == "Адресная сверка"
+    assert task.description == "[SMOKE] Только выбранная задача"
+    assert task.status == "in_progress"
+    assert task.priority == "high"
+    assert task.due_date == date(2026, 8, 21)
+    assert mapping.last_verified_at is not None
+    remote.call.assert_awaited_once()
+    assert remote.call.await_args.args[1]["taskId"] == "905"
 
 
 @pytest.mark.asyncio
