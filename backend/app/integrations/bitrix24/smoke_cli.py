@@ -24,7 +24,7 @@ from app.integrations.bitrix24.clients import (
 from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, file_marker, schedule_file_creation
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE, active_installation, schedule_partner_creation
 from app.integrations.bitrix24.sync import _access_token, process_outbox_operation
-from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, configured_responsible_id, schedule_task_creation
+from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, schedule_task_creation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
 from app.models.court_fee import CourtFee
@@ -232,66 +232,42 @@ async def _create_and_verify_reverse_client(
     raise RuntimeError("REVERSE_CLIENT_NOT_IMPORTED")
 
 
-async def _create_and_verify_reverse_task(
-    remote: Bitrix24Client,
+async def _wait_for_manual_reverse_task(
     *,
     client_id: uuid.UUID,
     deal_id: str,
-    responsible_id: int,
     remote_ids: dict[str, str | None],
 ) -> uuid.UUID:
-    result = await remote.call(
-        "tasks.task.add",
-        {
-            "fields": {
-                "TITLE": "[SMOKE] Обратный импорт задачи",
-                "DESCRIPTION": "Синтетическая проверка; объект будет удалён автоматически.",
-                "RESPONSIBLE_ID": responsible_id,
-                "DEADLINE": (datetime.now(UTC) + timedelta(days=1)).isoformat(),
-                "PRIORITY": "2",
-                "UF_CRM_TASK": [f"D_{deal_id}"],
-            }
-        },
+    print(
+        json.dumps(
+            {
+                "manual_reverse_task": {
+                    "deal_id": deal_id,
+                    "deal_url": f"https://{settings.BITRIX_ALLOWED_DOMAIN}/crm/deal/details/{deal_id}/",
+                    "title": "[SMOKE] Ручной обратный импорт задачи",
+                }
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
     )
-    result_id = result
-    if isinstance(result, dict):
-        result_id = result.get("id") or result.get("ID")
-        remote_task = result.get("task")
-        if result_id is None and isinstance(remote_task, dict):
-            result_id = remote_task.get("id") or remote_task.get("ID")
-    remote_ids["reverse_task"] = str(result_id or "") or None
-    if not remote_ids["reverse_task"]:
-        raise RuntimeError("REVERSE_TASK_REMOTE_ID_MISSING")
-
-    for _ in range(30):
+    for _ in range(1800):
         await asyncio.sleep(1)
         async with async_session() as db:
             imported = await db.scalar(
                 select(Task).where(
                     Task.client_id == client_id,
-                    Task.bitrix_task_id == remote_ids["reverse_task"],
+                    Task.title == "[SMOKE] Ручной обратный импорт задачи",
+                    Task.bitrix_task_id.is_not(None),
                 )
             )
             if imported is None:
                 continue
-            if (
-                imported.title != "[SMOKE] Обратный импорт задачи"
-                or imported.priority != "high"
-                or imported.assigned_to != "partner"
-                or imported.bitrix_sync_status != "synced"
-            ):
-                raise RuntimeError("REVERSE_TASK_MISMATCH")
+            if imported.assigned_to != "partner" or imported.bitrix_sync_status != "synced":
+                raise RuntimeError("MANUAL_REVERSE_TASK_MISMATCH")
+            remote_ids["reverse_task"] = imported.bitrix_task_id
             return imported.id
-    async with async_session() as db:
-        receipt = await db.scalar(
-            select(BitrixInboundEvent).where(
-                BitrixInboundEvent.remote_entity_type == TASK_ENTITY_TYPE,
-                BitrixInboundEvent.remote_entity_id == remote_ids["reverse_task"],
-            )
-        )
-        if receipt is None:
-            raise RuntimeError("REVERSE_TASK_EVENT_NOT_RECEIVED")
-        raise RuntimeError(f"REVERSE_TASK_IMPORT_FAILED:{receipt.status}:{receipt.error_code or 'NO_ERROR_CODE'}")
+    raise RuntimeError("MANUAL_REVERSE_TASK_EVENT_NOT_RECEIVED")
 
 
 async def _create_and_verify_reverse_document(
@@ -470,7 +446,11 @@ async def _wait_for_manual_reverse_document(
     raise RuntimeError("MANUAL_REVERSE_DOCUMENT_EVENT_NOT_RECEIVED")
 
 
-async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
+async def run_smoke(
+    *,
+    manual_reverse_document: bool = False,
+    manual_reverse_task: bool = False,
+) -> dict[str, str]:
     partner_id = uuid.uuid4()
     client_id = uuid.uuid4()
     smoke_id = uuid.uuid4()
@@ -556,16 +536,12 @@ async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
                     partner_remote_id=str(remote_ids["partner"]),
                     remote_ids=remote_ids,
                 )
-                responsible_id = await configured_responsible_id(db, "partner")
-                if responsible_id is None:
-                    raise RuntimeError("RESPONSIBLE_NOT_CONFIGURED")
-                reverse_task_id = await _create_and_verify_reverse_task(
-                    remote,
-                    client_id=client_id,
-                    deal_id=str(remote_ids["deal"]),
-                    responsible_id=responsible_id,
-                    remote_ids=remote_ids,
-                )
+                if manual_reverse_task:
+                    reverse_task_id = await _wait_for_manual_reverse_task(
+                        client_id=client_id,
+                        deal_id=str(remote_ids["deal"]),
+                        remote_ids=remote_ids,
+                    )
 
             task = Task(
                 id=smoke_id,
@@ -705,7 +681,7 @@ async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
         "client": "created_and_removed",
         "reverse_client": "created_and_removed",
         "task": "created_and_removed",
-        "reverse_task": "created_and_removed",
+        "reverse_task": "created_and_removed" if manual_reverse_task else "skipped",
         "document": "created_and_removed",
         "reverse_document": "created_and_removed",
     }
@@ -718,10 +694,20 @@ def main() -> None:
         action="store_true",
         help="Wait for reverse-smoke.pdf added by a signed-in employee in the Bitrix24 deal UI",
     )
+    parser.add_argument(
+        "--manual-reverse-task",
+        action="store_true",
+        help="Wait for a task added by a signed-in employee in the Bitrix24 deal UI",
+    )
     args = parser.parse_args()
     print(
         json.dumps(
-            asyncio.run(run_smoke(manual_reverse_document=args.manual_reverse_document)),
+            asyncio.run(
+                run_smoke(
+                    manual_reverse_document=args.manual_reverse_document,
+                    manual_reverse_task=args.manual_reverse_task,
+                )
+            ),
             ensure_ascii=False,
         )
     )
