@@ -457,10 +457,7 @@ async def reconcile_remote_tasks(db: AsyncSession, *, limit: int = 25) -> dict[s
                 .where(
                     BitrixEntityMap.member_id == installation.member_id,
                     BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
-                    (
-                        (BitrixEntityMap.last_verified_at.is_(None))
-                        | (BitrixEntityMap.last_verified_at < stale_before)
-                    ),
+                    ((BitrixEntityMap.last_verified_at.is_(None)) | (BitrixEntityMap.last_verified_at < stale_before)),
                 )
                 .order_by(BitrixEntityMap.last_verified_at.asc().nullsfirst(), BitrixEntityMap.created_at)
                 .limit(limit)
