@@ -658,9 +658,7 @@ async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
                     )
                     await db.execute(delete(Client).where(Client.id == reverse_client_id))
                 if reverse_task_id:
-                    await db.execute(
-                        delete(BitrixEntityMap).where(BitrixEntityMap.local_entity_id == reverse_task_id)
-                    )
+                    await db.execute(delete(BitrixEntityMap).where(BitrixEntityMap.local_entity_id == reverse_task_id))
                     await db.execute(delete(Task).where(Task.id == reverse_task_id))
                 if remote_ids["reverse_task"]:
                     await db.execute(

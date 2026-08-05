@@ -264,9 +264,7 @@ async def _import_remote_task(
         receipt.attempts += 1
         return True
 
-    client = await db.scalar(
-        select(Client).where(Client.bitrix_deal_id == deal_id, Client.deleted_at.is_(None))
-    )
+    client = await db.scalar(select(Client).where(Client.bitrix_deal_id == deal_id, Client.deleted_at.is_(None)))
     if client is None:
         return _mark_task_event_failure(receipt, "CLIENT_NOT_FOUND")
     partner = await db.get(Partner, client.partner_id)
@@ -333,9 +331,7 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
         receipt.processed_at = datetime.now(UTC)
         return True
     installation = await db.scalar(
-        select(BitrixInstallation)
-        .where(BitrixInstallation.member_id == receipt.member_id)
-        .with_for_update()
+        select(BitrixInstallation).where(BitrixInstallation.member_id == receipt.member_id).with_for_update()
     )
     if installation is None:
         return _mark_task_event_failure(receipt, "INSTALLATION_NOT_FOUND")
