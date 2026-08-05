@@ -24,7 +24,7 @@ from app.integrations.bitrix24.clients import (
 from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, file_marker, schedule_file_creation
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE, active_installation, schedule_partner_creation
 from app.integrations.bitrix24.sync import _access_token, process_outbox_operation
-from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, schedule_task_creation
+from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, reconcile_remote_task, schedule_task_creation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
 from app.models.court_fee import CourtFee
@@ -317,22 +317,12 @@ async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: st
             ):
                 return
 
-            # Exercise the real missed-event recovery route without changing
-            # reconciliation cadence for any non-smoke task. Re-marking only
-            # this synthetic mapping stale avoids a race where the five-minute
-            # worker runs before the employee has finished all field edits.
+            # Exercise the same field-fetch and mapping path as background
+            # reconciliation, but target only this synthetic smoke task. The
+            # repeated refresh tolerates the employee completing fields in
+            # several UI actions without touching any production task.
             if attempt % 30 == 0:
-                mapping = await db.scalar(
-                    select(BitrixEntityMap).where(
-                        BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
-                        BitrixEntityMap.local_entity_id == task_id,
-                    )
-                )
-                if mapping is not None:
-                    mapping.last_verified_at = datetime.now(UTC) - timedelta(
-                        hours=max(settings.BITRIX_RECONCILE_AFTER_HOURS + 1, 1)
-                    )
-                    await db.commit()
+                await reconcile_remote_task(db, task_id=task_id)
     raise RuntimeError(f"MANUAL_TASK_UPDATE_NOT_RECEIVED:{json.dumps(last_observed, sort_keys=True)}")
 
 

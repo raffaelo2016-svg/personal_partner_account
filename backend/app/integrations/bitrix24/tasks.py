@@ -444,6 +444,42 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
     return True
 
 
+async def reconcile_remote_task(db: AsyncSession, *, task_id: uuid.UUID) -> bool:
+    """Refresh one explicitly selected mapped task from Bitrix24."""
+    installation = await active_installation(db)
+    if installation is None:
+        return False
+    mapping = await db.scalar(
+        select(BitrixEntityMap).where(
+            BitrixEntityMap.member_id == installation.member_id,
+            BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
+            BitrixEntityMap.local_entity_id == task_id,
+        )
+    )
+    task = await db.get(Task, task_id)
+    if mapping is None or task is None:
+        return False
+
+    try:
+        token = await _installation_token(db, installation)
+        async with Bitrix24Client(installation.client_endpoint, token) as remote:
+            result = await remote.call(
+                "tasks.task.get",
+                {"taskId": mapping.bitrix_entity_id, "select": _TASK_SELECT_FIELDS},
+            )
+    except Bitrix24Error:
+        return False
+
+    remote_task = result.get("task", {}) if isinstance(result, dict) else {}
+    if not await _apply_remote_task_fields(db, task, remote_task):
+        return False
+    now = datetime.now(UTC)
+    mapping.last_synced_at = now
+    mapping.last_verified_at = now
+    await db.commit()
+    return True
+
+
 async def reconcile_remote_tasks(db: AsyncSession, *, limit: int = 25) -> dict[str, int]:
     """Refresh stale mapped tasks so a missed Bitrix24 event cannot leave cabinet data stale."""
     installation = await active_installation(db)
