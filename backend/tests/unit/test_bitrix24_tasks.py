@@ -18,6 +18,7 @@ from app.integrations.bitrix24.tasks import (
     build_task_create_payload,
     extract_task_event_reference,
     process_task_status_event,
+    reconcile_remote_tasks,
     schedule_task_creation,
 )
 from app.models.bitrix_installation import BitrixInstallation
@@ -209,14 +210,17 @@ async def test_create_recovers_existing_remote_task_before_retrying_add():
 @pytest.mark.asyncio
 async def test_remote_completed_status_updates_local_task(db_session: AsyncSession):
     task, _ = await _saved_entities(db_session)
-    db_session.add(
-        BitrixEntityMap(
-            member_id="member-stage-5",
-            local_entity_type=TASK_ENTITY_TYPE,
-            local_entity_id=task.id,
-            bitrix_entity_type="task",
-            bitrix_entity_id="888",
-        )
+    db_session.add_all(
+        [
+            SystemSetting(key=f"{TASK_RESPONSIBLE_SETTING_PREFIX}admin", value="456"),
+            BitrixEntityMap(
+                member_id="member-stage-5",
+                local_entity_type=TASK_ENTITY_TYPE,
+                local_entity_id=task.id,
+                bitrix_entity_type="task",
+                bitrix_entity_id="888",
+            ),
+        ]
     )
     receipt = BitrixInboundEvent(
         member_id="member-stage-5",
@@ -230,7 +234,17 @@ async def test_remote_completed_status_updates_local_task(db_session: AsyncSessi
     await db_session.flush()
 
     remote = AsyncMock()
-    remote.call.return_value = {"task": {"status": "5", "closedDate": "2026-08-02T12:00:00+03:00"}}
+    remote.call.return_value = {
+        "task": {
+            "title": "Подтвердить комплект",
+            "description": "Проверка завершена",
+            "status": "5",
+            "priority": "0",
+            "deadline": "2026-08-14T18:00:00+03:00",
+            "closedDate": "2026-08-02T12:00:00+03:00",
+            "responsibleId": "456",
+        }
+    }
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
@@ -240,9 +254,58 @@ async def test_remote_completed_status_updates_local_task(db_session: AsyncSessi
         completed = await process_task_status_event(db_session, receipt)
 
     assert completed is True
+    assert task.title == "Подтвердить комплект"
+    assert task.description == "Проверка завершена"
     assert task.status == "completed"
+    assert task.priority == "low"
+    assert task.due_date == date(2026, 8, 14)
+    assert task.assigned_to == "admin"
     assert task.completed_at is not None
+    assert task.bitrix_synced_at is not None
     assert receipt.status == "completed"
+
+
+@pytest.mark.asyncio
+async def test_periodic_reconciliation_recovers_missed_task_update(db_session: AsyncSession):
+    task, _ = await _saved_entities(db_session)
+    mapping = BitrixEntityMap(
+        member_id="member-stage-5",
+        local_entity_type=TASK_ENTITY_TYPE,
+        local_entity_id=task.id,
+        bitrix_entity_type="task",
+        bitrix_entity_id="904",
+    )
+    db_session.add(mapping)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "task": {
+            "id": "904",
+            "title": "Исправить заявление",
+            "description": "Получить подпись клиента",
+            "status": "3",
+            "priority": "2",
+            "deadline": "2026-08-20T18:00:00+03:00",
+            "responsibleId": "123",
+        }
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        result = await reconcile_remote_tasks(db_session, limit=5)
+
+    assert result == {"claimed": 1, "completed": 1, "failed": 0}
+    assert task.title == "Исправить заявление"
+    assert task.description == "Получить подпись клиента"
+    assert task.status == "in_progress"
+    assert task.priority == "high"
+    assert task.due_date == date(2026, 8, 20)
+    assert task.bitrix_sync_status == "synced"
+    assert mapping.last_verified_at is not None
 
 
 @pytest.mark.asyncio

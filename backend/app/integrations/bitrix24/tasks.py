@@ -48,6 +48,18 @@ _PRIORITY_FROM_BITRIX = {
     "average": "medium",
     "high": "high",
 }
+_TASK_SELECT_FIELDS = [
+    "ID",
+    "TITLE",
+    "DESCRIPTION",
+    "STATUS",
+    "PRIORITY",
+    "DEADLINE",
+    "CLOSED_DATE",
+    "RESPONSIBLE_ID",
+    "XML_ID",
+    "UF_CRM_TASK",
+]
 
 
 async def _setting_user_id(db: AsyncSession, key: str) -> int | None:
@@ -243,6 +255,47 @@ def _mark_task_event_failure(receipt: BitrixInboundEvent, code: str) -> bool:
     return False
 
 
+async def _responsible_role(db: AsyncSession, remote_task: dict[str, Any], fallback: str) -> str:
+    value = _remote_field(remote_task, "responsibleId", "RESPONSIBLE_ID")
+    try:
+        responsible_id = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    for role in ("partner", "admin"):
+        if await configured_responsible_id(db, role) == responsible_id:
+            return role
+    return fallback
+
+
+async def _apply_remote_task_fields(db: AsyncSession, task: Task, remote_task: dict[str, Any]) -> bool:
+    title = str(_remote_field(remote_task, "title", "TITLE") or "").strip()
+    status_value = str(_remote_field(remote_task, "status", "STATUS") or "").lower()
+    status = _STATUS_FROM_BITRIX.get(status_value) or _NAMED_STATUS_FROM_BITRIX.get(status_value)
+    if not title or status is None:
+        return False
+
+    description_value = _remote_field(remote_task, "description", "DESCRIPTION")
+    priority_value = str(_remote_field(remote_task, "priority", "PRIORITY") or "1").lower()
+    deadline_value = _remote_field(remote_task, "deadline", "DEADLINE")
+    now = datetime.now(UTC)
+    task.title = title[:255]
+    task.description = str(description_value).strip() if description_value else None
+    task.status = status
+    task.priority = _PRIORITY_FROM_BITRIX.get(priority_value, "medium")
+    task.assigned_to = await _responsible_role(db, remote_task, task.assigned_to)
+    if deadline_value:
+        task.due_date = _parse_due_date(deadline_value)
+    task.completed_at = (
+        _parse_closed_at(_remote_field(remote_task, "closedDate", "CLOSED_DATE")) or now
+        if status == "completed"
+        else None
+    )
+    task.bitrix_sync_status = "synced"
+    task.bitrix_sync_error_code = None
+    task.bitrix_synced_at = now
+    return True
+
+
 async def _import_remote_task(
     db: AsyncSession,
     *,
@@ -353,17 +406,7 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
                 "tasks.task.get",
                 {
                     "taskId": receipt.remote_entity_id,
-                    "select": [
-                        "ID",
-                        "TITLE",
-                        "DESCRIPTION",
-                        "STATUS",
-                        "PRIORITY",
-                        "DEADLINE",
-                        "CLOSED_DATE",
-                        "XML_ID",
-                        "UF_CRM_TASK",
-                    ],
+                    "select": _TASK_SELECT_FIELDS,
                 },
             )
     except Bitrix24Error as exc:
@@ -387,25 +430,74 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
         )
 
     assert task is not None
-    status_value = remote_task.get("status") or remote_task.get("STATUS")
-    local_status = _STATUS_FROM_BITRIX.get(str(status_value))
-    if local_status is None:
+    if not await _apply_remote_task_fields(db, task, remote_task):
         receipt.status = "failed"
-        receipt.error_code = "UNSUPPORTED_TASK_STATUS"
+        receipt.error_code = "INVALID_REMOTE_TASK"
         receipt.attempts += 1
         return False
-    task.status = local_status
-    task.completed_at = (
-        _parse_closed_at(remote_task.get("closedDate") or remote_task.get("CLOSED_DATE")) or datetime.now(UTC)
-        if local_status == "completed"
-        else None
-    )
+    mapping.last_synced_at = datetime.now(UTC)
     mapping.last_verified_at = datetime.now(UTC)
     receipt.status = "completed"
     receipt.error_code = None
     receipt.processed_at = datetime.now(UTC)
     receipt.attempts += 1
     return True
+
+
+async def reconcile_remote_tasks(db: AsyncSession, *, limit: int = 25) -> dict[str, int]:
+    """Refresh stale mapped tasks so a missed Bitrix24 event cannot leave cabinet data stale."""
+    installation = await active_installation(db)
+    if installation is None:
+        return {"claimed": 0, "completed": 0, "failed": 0}
+    stale_before = datetime.now(UTC) - timedelta(hours=settings.BITRIX_RECONCILE_AFTER_HOURS)
+    mappings = list(
+        (
+            await db.scalars(
+                select(BitrixEntityMap)
+                .where(
+                    BitrixEntityMap.member_id == installation.member_id,
+                    BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
+                    (
+                        (BitrixEntityMap.last_verified_at.is_(None))
+                        | (BitrixEntityMap.last_verified_at < stale_before)
+                    ),
+                )
+                .order_by(BitrixEntityMap.last_verified_at.asc().nullsfirst(), BitrixEntityMap.created_at)
+                .limit(limit)
+                .with_for_update(skip_locked=True)
+            )
+        ).all()
+    )
+    if not mappings:
+        return {"claimed": 0, "completed": 0, "failed": 0}
+
+    completed = 0
+    failed = 0
+    token = await _installation_token(db, installation)
+    async with Bitrix24Client(installation.client_endpoint, token) as remote:
+        for mapping in mappings:
+            task = await db.get(Task, mapping.local_entity_id)
+            if task is None:
+                failed += 1
+                continue
+            try:
+                result = await remote.call(
+                    "tasks.task.get",
+                    {"taskId": mapping.bitrix_entity_id, "select": _TASK_SELECT_FIELDS},
+                )
+            except Bitrix24Error:
+                failed += 1
+                continue
+            remote_task = result.get("task", {}) if isinstance(result, dict) else {}
+            if not await _apply_remote_task_fields(db, task, remote_task):
+                failed += 1
+                continue
+            now = datetime.now(UTC)
+            mapping.last_synced_at = now
+            mapping.last_verified_at = now
+            completed += 1
+    await db.commit()
+    return {"claimed": len(mappings), "completed": completed, "failed": failed}
 
 
 async def retry_task_status_events(db: AsyncSession, *, limit: int = 25) -> tuple[int, int]:
