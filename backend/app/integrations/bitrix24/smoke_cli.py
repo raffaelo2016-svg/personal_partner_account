@@ -270,6 +270,45 @@ async def _wait_for_manual_reverse_task(
     raise RuntimeError("MANUAL_REVERSE_TASK_EVENT_NOT_RECEIVED")
 
 
+async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: str) -> None:
+    expected_due_date = date.today() + timedelta(days=2)
+    print(
+        json.dumps(
+            {
+                "manual_task_update": {
+                    "task_id": remote_task_id,
+                    "task_url": (
+                        f"https://{settings.BITRIX_ALLOWED_DOMAIN}/company/personal/user/57/"
+                        f"tasks/task/view/{remote_task_id}/"
+                    ),
+                    "title": "[SMOKE] Задача обновлена в Битрикс24",
+                    "description": "[SMOKE] Поля обновлены сотрудником",
+                    "priority": "high",
+                    "status": "in_progress",
+                    "due_date": expected_due_date.isoformat(),
+                }
+            },
+            ensure_ascii=False,
+        ),
+        flush=True,
+    )
+    for _ in range(1800):
+        await asyncio.sleep(1)
+        async with async_session() as db:
+            task = await db.get(Task, task_id)
+            if task is None:
+                raise RuntimeError("MANUAL_TASK_UPDATE_LOCAL_TASK_MISSING")
+            if (
+                task.title == "[SMOKE] Задача обновлена в Битрикс24"
+                and task.description == "[SMOKE] Поля обновлены сотрудником"
+                and task.priority == "high"
+                and task.status == "in_progress"
+                and task.due_date == expected_due_date
+            ):
+                return
+    raise RuntimeError("MANUAL_TASK_UPDATE_NOT_RECEIVED")
+
+
 async def _create_and_verify_reverse_document(
     remote: Bitrix24Client,
     *,
@@ -450,6 +489,7 @@ async def run_smoke(
     *,
     manual_reverse_document: bool = False,
     manual_reverse_task: bool = False,
+    manual_task_update: bool = False,
 ) -> dict[str, str]:
     partner_id = uuid.uuid4()
     client_id = uuid.uuid4()
@@ -579,6 +619,11 @@ async def run_smoke(
             remote_ids["disk_file"] = record.bitrix_disk_file_id
             if task.bitrix_sync_status != "synced" or record.bitrix_sync_status != "synced":
                 raise RuntimeError("PROJECTION_NOT_SYNCED")
+            if manual_task_update:
+                await _wait_for_manual_task_update(
+                    task_id=smoke_id,
+                    remote_task_id=str(remote_ids["task"]),
+                )
 
             token = await _access_token(db, installation)
             async with Bitrix24Client(installation.client_endpoint, token) as remote:
@@ -674,6 +719,7 @@ async def run_smoke(
         "client": "created_and_removed",
         "reverse_client": "created_and_removed",
         "task": "created_and_removed",
+        "task_update": "updated_and_verified" if manual_task_update else "skipped",
         "reverse_task": "created_and_removed" if manual_reverse_task else "skipped",
         "document": "created_and_removed",
         "reverse_document": "created_and_removed" if manual_reverse_document else "skipped",
@@ -692,6 +738,11 @@ def main() -> None:
         action="store_true",
         help="Wait for a task added by a signed-in employee in the Bitrix24 deal UI",
     )
+    parser.add_argument(
+        "--manual-task-update",
+        action="store_true",
+        help="Wait for an existing smoke task to be edited by a signed-in employee in the Bitrix24 UI",
+    )
     args = parser.parse_args()
     print(
         json.dumps(
@@ -699,6 +750,7 @@ def main() -> None:
                 run_smoke(
                     manual_reverse_document=args.manual_reverse_document,
                     manual_reverse_task=args.manual_reverse_task,
+                    manual_task_update=args.manual_task_update,
                 )
             ),
             ensure_ascii=False,
