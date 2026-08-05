@@ -13,6 +13,11 @@ on:
         required: false
         default: false
         type: boolean
+      manual_task_update:
+        description: "Wait for the smoke task to be edited manually in the Bitrix24 UI"
+        required: false
+        default: false
+        type: boolean
 
 concurrency:
   group: bitrix24-production-smoke
@@ -39,6 +44,9 @@ jobs:
             fi
             if [ "${{ inputs.manual_reverse_task }}" = "true" ]; then
               MANUAL_ARG="$MANUAL_ARG --manual-reverse-task"
+            fi
+            if [ "${{ inputs.manual_task_update }}" = "true" ]; then
+              MANUAL_ARG="$MANUAL_ARG --manual-task-update"
             fi
             docker compose -f docker-compose.prod.yml exec -T backend \
               python -m app.integrations.bitrix24.smoke_cli $MANUAL_ARG
