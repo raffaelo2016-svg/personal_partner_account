@@ -327,7 +327,7 @@ async def test_targeted_reconciliation_refreshes_only_selected_task(db_session: 
         "task": {
             "id": "905",
             "title": "Адресная сверка",
-            "description": "Только выбранная задача",
+            "description": "&#91;SMOKE&#93; Только выбранная задача",
             "status": "3",
             "priority": "2",
             "deadline": "2026-08-21T18:00:00+03:00",
@@ -344,7 +344,7 @@ async def test_targeted_reconciliation_refreshes_only_selected_task(db_session: 
 
     assert completed is True
     assert task.title == "Адресная сверка"
-    assert task.description == "Только выбранная задача"
+    assert task.description == "[SMOKE] Только выбранная задача"
     assert task.status == "in_progress"
     assert task.priority == "high"
     assert task.due_date == date(2026, 8, 21)

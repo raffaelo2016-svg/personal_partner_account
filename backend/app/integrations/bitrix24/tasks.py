@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import UTC, date, datetime, time, timedelta
+from html import unescape
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -279,7 +280,7 @@ async def _apply_remote_task_fields(db: AsyncSession, task: Task, remote_task: d
     deadline_value = _remote_field(remote_task, "deadline", "DEADLINE")
     now = datetime.now(UTC)
     task.title = title[:255]
-    task.description = str(description_value).strip() if description_value else None
+    task.description = unescape(str(description_value)).strip() if description_value else None
     task.status = status
     task.priority = _PRIORITY_FROM_BITRIX.get(priority_value, "medium")
     task.assigned_to = await _responsible_role(db, remote_task, task.assigned_to)
