@@ -312,7 +312,7 @@ async def _wait_for_manual_reverse_document(
     )
     # The Bitrix24 web uploader can take several minutes before the timeline
     # comment is committed, especially on a busy production portal.
-    for _ in range(600):
+    for _ in range(1800):
         await asyncio.sleep(1)
         async with async_session() as db:
             imported = await db.scalar(
