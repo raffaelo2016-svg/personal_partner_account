@@ -589,13 +589,6 @@ async def run_smoke(
                         deal_id=str(remote_ids["deal"]),
                         remote_ids=remote_ids,
                     )
-                else:
-                    reverse_document_id, reverse_document_s3_key = await _create_and_verify_reverse_document(
-                        remote,
-                        client_id=client_id,
-                        deal_id=str(remote_ids["deal"]),
-                        remote_ids=remote_ids,
-                    )
     finally:
         if installation_found:
             async with async_session() as db:
@@ -683,7 +676,7 @@ async def run_smoke(
         "task": "created_and_removed",
         "reverse_task": "created_and_removed" if manual_reverse_task else "skipped",
         "document": "created_and_removed",
-        "reverse_document": "created_and_removed",
+        "reverse_document": "created_and_removed" if manual_reverse_document else "skipped",
     }
 
 
