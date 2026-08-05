@@ -282,6 +282,7 @@ async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: st
                         f"tasks/task/view/{remote_task_id}/"
                     ),
                     "title": "[SMOKE] Задача обновлена в Битрикс24",
+                    "title_source": "official_api",
                     "description": "[SMOKE] Поля обновлены сотрудником",
                     "priority": "high",
                     "status": "in_progress",
@@ -620,6 +621,15 @@ async def run_smoke(
             if task.bitrix_sync_status != "synced" or record.bitrix_sync_status != "synced":
                 raise RuntimeError("PROJECTION_NOT_SYNCED")
             if manual_task_update:
+                token = await _access_token(db, installation)
+                async with Bitrix24Client(installation.client_endpoint, token) as remote:
+                    await remote.call(
+                        "tasks.task.update",
+                        {
+                            "taskId": str(remote_ids["task"]),
+                            "fields": {"TITLE": "[SMOKE] Задача обновлена в Битрикс24"},
+                        },
+                    )
                 await _wait_for_manual_task_update(
                     task_id=smoke_id,
                     remote_task_id=str(remote_ids["task"]),
