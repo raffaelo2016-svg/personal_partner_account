@@ -283,6 +283,7 @@ async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: st
                     ),
                     "title": "[SMOKE] Задача обновлена в Битрикс24",
                     "title_source": "official_api",
+                    "recovery_path": "event_or_background_reconcile",
                     "description": "[SMOKE] Поля обновлены сотрудником",
                     "priority": "high",
                     "status": "in_progress",
@@ -293,12 +294,20 @@ async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: st
         ),
         flush=True,
     )
-    for _ in range(1800):
+    last_observed: dict[str, str | None] = {}
+    for attempt in range(1800):
         await asyncio.sleep(1)
         async with async_session() as db:
             task = await db.get(Task, task_id)
             if task is None:
                 raise RuntimeError("MANUAL_TASK_UPDATE_LOCAL_TASK_MISSING")
+            last_observed = {
+                "title": task.title,
+                "description": task.description,
+                "priority": task.priority,
+                "status": task.status,
+                "due_date": task.due_date.isoformat(),
+            }
             if (
                 task.title == "[SMOKE] Задача обновлена в Битрикс24"
                 and task.description == "[SMOKE] Поля обновлены сотрудником"
@@ -307,7 +316,24 @@ async def _wait_for_manual_task_update(*, task_id: uuid.UUID, remote_task_id: st
                 and task.due_date == expected_due_date
             ):
                 return
-    raise RuntimeError("MANUAL_TASK_UPDATE_NOT_RECEIVED")
+
+            # Exercise the real missed-event recovery route without changing
+            # reconciliation cadence for any non-smoke task. Re-marking only
+            # this synthetic mapping stale avoids a race where the five-minute
+            # worker runs before the employee has finished all field edits.
+            if attempt % 30 == 0:
+                mapping = await db.scalar(
+                    select(BitrixEntityMap).where(
+                        BitrixEntityMap.local_entity_type == TASK_ENTITY_TYPE,
+                        BitrixEntityMap.local_entity_id == task_id,
+                    )
+                )
+                if mapping is not None:
+                    mapping.last_verified_at = datetime.now(UTC) - timedelta(
+                        hours=max(settings.BITRIX_RECONCILE_AFTER_HOURS + 1, 1)
+                    )
+                    await db.commit()
+    raise RuntimeError(f"MANUAL_TASK_UPDATE_NOT_RECEIVED:{json.dumps(last_observed, sort_keys=True)}")
 
 
 async def _create_and_verify_reverse_document(
