@@ -41,6 +41,7 @@ class FileUpload(Base, TimestampMixin):
     bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled", server_default="not_scheduled")
     bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bitrix_timeline_comment_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    bitrix_activity_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bitrix_disk_file_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
     bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     bitrix_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

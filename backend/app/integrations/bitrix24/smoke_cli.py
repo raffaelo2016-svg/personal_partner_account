@@ -7,7 +7,7 @@ import json
 import uuid
 from datetime import UTC, date, datetime, timedelta
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -33,6 +33,7 @@ from app.models.partner import Partner
 from app.models.task import Task
 from app.models.user import User
 from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
+from app.validation.files import has_valid_signature
 
 
 async def _process_one(db: AsyncSession, local_id: uuid.UUID, entity_type: str) -> None:
@@ -146,6 +147,7 @@ async def _remote_cleanup(
             "crm.timeline.comment.delete",
             {"id": remote_ids["reverse_comment"]} if remote_ids["reverse_comment"] else None,
         ),
+        ("crm.activity.delete", {"id": remote_ids["reverse_activity"]} if remote_ids["reverse_activity"] else None),
         (
             "disk.file.delete",
             {"id": remote_ids["reverse_disk_file"]} if remote_ids["reverse_disk_file"] else None,
@@ -295,7 +297,6 @@ async def _wait_for_manual_reverse_document(
     deal_id: str,
     remote_ids: dict[str, str | None],
 ) -> tuple[uuid.UUID, str]:
-    content = b"%PDF-1.7\n% reverse smoke\n"
     print(
         json.dumps(
             {
@@ -319,18 +320,52 @@ async def _wait_for_manual_reverse_document(
                 select(FileUpload).where(
                     FileUpload.client_id == client_id,
                     FileUpload.original_name == "reverse-smoke.pdf",
-                    FileUpload.bitrix_timeline_comment_id.is_not(None),
+                    or_(
+                        FileUpload.bitrix_timeline_comment_id.is_not(None),
+                        FileUpload.bitrix_activity_id.is_not(None),
+                    ),
                 )
             )
             if imported is None:
                 continue
             if not imported.bitrix_disk_file_id or imported.bitrix_sync_status != "synced":
                 raise RuntimeError("MANUAL_REVERSE_DOCUMENT_MISMATCH")
-            if await download_file_async(imported.s3_key) != content:
+            if not has_valid_signature(await download_file_async(imported.s3_key), ".pdf"):
                 raise RuntimeError("MANUAL_REVERSE_DOCUMENT_CONTENT_MISMATCH")
             remote_ids["reverse_comment"] = imported.bitrix_timeline_comment_id
+            remote_ids["reverse_activity"] = imported.bitrix_activity_id
             remote_ids["reverse_disk_file"] = imported.bitrix_disk_file_id
             return imported.id, imported.s3_key
+
+    activities = await remote.list_all(
+        "crm.activity.list",
+        {
+            "filter": {"OWNER_TYPE_ID": 2, "OWNER_ID": deal_id},
+            "select": ["ID", "DESCRIPTION", "FILES", "STORAGE_ELEMENT_IDS"],
+            "order": {"ID": "DESC"},
+        },
+        max_pages=5,
+    )
+    for activity in activities:
+        if not isinstance(activity, dict) or "[SMOKE] Ручной обратный импорт документа" not in str(
+            activity.get("DESCRIPTION") or activity.get("description") or ""
+        ):
+            continue
+        remote_ids["reverse_activity"] = str(activity.get("ID") or activity.get("id") or "") or None
+        raw_files = activity.get("FILES") or activity.get("STORAGE_ELEMENT_IDS") or []
+        file_items = (
+            list(raw_files.values())
+            if isinstance(raw_files, dict)
+            else raw_files
+            if isinstance(raw_files, list)
+            else []
+        )
+        if file_items:
+            first = file_items[0]
+            remote_ids["reverse_disk_file"] = (
+                str((first.get("ID") or first.get("id")) if isinstance(first, dict) else first) or None
+            )
+        break
 
     comments = await remote.list_all(
         "crm.timeline.comment.list",
@@ -353,12 +388,14 @@ async def _wait_for_manual_reverse_document(
             remote_ids["reverse_disk_file"] = str(file_items[0].get("ID") or file_items[0].get("id") or "") or None
         break
 
-    if remote_ids["reverse_comment"]:
+    inbound_type = "crm_activity" if remote_ids["reverse_activity"] else "timeline_comment"
+    inbound_id = remote_ids["reverse_activity"] or remote_ids["reverse_comment"]
+    if inbound_id:
         async with async_session() as db:
             receipt = await db.scalar(
                 select(BitrixInboundEvent).where(
-                    BitrixInboundEvent.remote_entity_type == "timeline_comment",
-                    BitrixInboundEvent.remote_entity_id == remote_ids["reverse_comment"],
+                    BitrixInboundEvent.remote_entity_type == inbound_type,
+                    BitrixInboundEvent.remote_entity_id == inbound_id,
                 )
             )
             if receipt is not None:
@@ -391,6 +428,7 @@ async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
         "reverse_contact": None,
         "reverse_deal": None,
         "reverse_comment": None,
+        "reverse_activity": None,
         "reverse_disk_file": None,
     }
 
@@ -552,6 +590,13 @@ async def run_smoke(*, manual_reverse_document: bool = False) -> dict[str, str]:
                         delete(BitrixInboundEvent).where(
                             BitrixInboundEvent.remote_entity_type == "timeline_comment",
                             BitrixInboundEvent.remote_entity_id == remote_ids["reverse_comment"],
+                        )
+                    )
+                if remote_ids["reverse_activity"]:
+                    await db.execute(
+                        delete(BitrixInboundEvent).where(
+                            BitrixInboundEvent.remote_entity_type == "crm_activity",
+                            BitrixInboundEvent.remote_entity_id == remote_ids["reverse_activity"],
                         )
                     )
                 await db.execute(delete(Task).where(Task.id == smoke_id))

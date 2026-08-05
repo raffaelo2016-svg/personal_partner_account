@@ -21,9 +21,11 @@ from app.integrations.bitrix24.clients import (
     extract_client_deal_event_reference,
 )
 from app.integrations.bitrix24.documents import (
+    CRM_ACTIVITY_ENTITY_TYPE,
     FILE_ENTITY_TYPE,
     TIMELINE_COMMENT_ENTITY_TYPE,
     execute_file_creation,
+    extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
     schedule_file_creation,
 )
@@ -94,6 +96,7 @@ async def register_inbound_event(
     event_name = str(payload.get("event", "UNKNOWN"))[:100].upper()
     client_deal_id = extract_client_deal_event_reference(event_name, payload)
     timeline_comment_id = extract_timeline_comment_event_reference(event_name, payload)
+    activity_id = extract_crm_activity_event_reference(event_name, payload)
     task_id = extract_task_event_reference(event_name, payload)
     statement = (
         insert(BitrixInboundEvent)
@@ -107,11 +110,13 @@ async def register_inbound_event(
                 if client_deal_id
                 else TIMELINE_COMMENT_ENTITY_TYPE
                 if timeline_comment_id
+                else CRM_ACTIVITY_ENTITY_TYPE
+                if activity_id
                 else TASK_ENTITY_TYPE
                 if task_id
                 else None
             ),
-            remote_entity_id=client_deal_id or timeline_comment_id or task_id,
+            remote_entity_id=client_deal_id or timeline_comment_id or activity_id or task_id,
             payload_hash=payload_hash,
             status=status,
         )

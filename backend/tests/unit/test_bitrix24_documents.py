@@ -10,12 +10,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.files import _has_valid_signature
 from app.config import settings
 from app.integrations.bitrix24.documents import (
+    CRM_ACTIVITY_ENTITY_TYPE,
     FILE_ENTITY_TYPE,
     TIMELINE_COMMENT_ENTITY_TYPE,
     build_file_operation_payload,
     execute_file_creation,
+    extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
     file_marker,
+    process_crm_activity_add_event,
     process_timeline_comment_add_event,
 )
 from app.models.bitrix_installation import BitrixInstallation
@@ -121,6 +124,18 @@ async def test_new_document_is_uploaded_without_original_filename():
 def test_timeline_comment_event_reference_supports_json_and_form(payload):
     assert extract_timeline_comment_event_reference("ONCRMTIMELINECOMMENTADD", payload) == "42"
     assert extract_timeline_comment_event_reference("ONCRMDEALADD", payload) is None
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"data": {"FIELDS": {"ID": "43"}}},
+        {"data[FIELDS][ID]": "43"},
+    ],
+)
+def test_crm_activity_event_reference_supports_json_and_form(payload):
+    assert extract_crm_activity_event_reference("ONCRMACTIVITYADD", payload) == "43"
+    assert extract_crm_activity_event_reference("ONCRMDEALADD", payload) is None
 
 
 async def _saved_client(db: AsyncSession) -> Client:
@@ -238,6 +253,76 @@ async def test_external_timeline_file_is_imported_to_client_once(db_session: Asy
         patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
     ):
         completed_again = await process_timeline_comment_add_event(db_session, receipt)
+    records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
+    assert completed_again is True
+    assert len(records) == 1
+
+
+@pytest.mark.asyncio
+async def test_external_activity_file_is_imported_to_client_once(db_session: AsyncSession):
+    client = await _saved_client(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-doc-reverse",
+        event_key=uuid4().hex,
+        event_name="ONCRMACTIVITYADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE,
+        remote_entity_id="91",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.side_effect = [
+        {
+            "ID": "91",
+            "OWNER_TYPE_ID": "2",
+            "OWNER_ID": "456",
+            "DESCRIPTION": "Документ от сотрудника",
+            "STORAGE_ELEMENT_IDS": [701],
+        },
+        {
+            "ID": "701",
+            "NAME": "заявление.pdf",
+            "SIZE": "8",
+            "DOWNLOAD_URL": f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/download.json?token=signed",
+        },
+    ]
+    remote.download_file.return_value = b"%PDF-1.7"
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+        patch(
+            "app.integrations.bitrix24.documents.upload_file_async",
+            new=AsyncMock(return_value="uploads/imported-activity.pdf"),
+        ),
+    ):
+        completed = await process_crm_activity_add_event(db_session, receipt)
+
+    record = await db_session.scalar(select(FileUpload).where(FileUpload.client_id == client.id))
+    assert completed is True
+    assert receipt.status == "completed"
+    assert record is not None
+    assert record.original_name == "заявление.pdf"
+    assert record.bitrix_activity_id == "91"
+    assert record.bitrix_timeline_comment_id is None
+    assert record.bitrix_disk_file_id == "701"
+
+    remote.call.side_effect = None
+    remote.call.return_value = {
+        "ID": "91",
+        "OWNER_TYPE_ID": "2",
+        "OWNER_ID": "456",
+        "STORAGE_ELEMENT_IDS": [701],
+    }
+    receipt.status = "received"
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+    ):
+        completed_again = await process_crm_activity_add_event(db_session, receipt)
     records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
     assert completed_again is True
     assert len(records) == 1

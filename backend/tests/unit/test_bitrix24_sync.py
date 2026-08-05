@@ -172,6 +172,24 @@ async def test_timeline_comment_receipt_is_routed_to_document_import(db_session:
 
 
 @pytest.mark.asyncio
+async def test_crm_activity_receipt_is_routed_to_document_import(db_session: AsyncSession):
+    await _installation(db_session)
+    payload = {
+        "event": "ONCRMACTIVITYADD",
+        "event_id": "evt-activity-91",
+        "data": {"FIELDS": {"ID": "91"}},
+    }
+
+    event_id, created = await register_inbound_event(db_session, member_id="member", payload=payload)
+
+    receipt = await db_session.get(BitrixInboundEvent, event_id)
+    assert created is True
+    assert receipt is not None
+    assert receipt.remote_entity_type == "crm_activity"
+    assert receipt.remote_entity_id == "91"
+
+
+@pytest.mark.asyncio
 async def test_outbox_operation_is_enqueued_once(db_session: AsyncSession):
     await _installation(db_session)
     local_id = uuid4()
