@@ -10,7 +10,11 @@ from app.config import settings
 from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client
 from app.integrations.bitrix24.clients import CLIENT_DEAL_ADD_EVENT, CLIENT_DEAL_FIELDS, CLIENT_EVENT_HANDLER
-from app.integrations.bitrix24.documents import TIMELINE_COMMENT_ADD_EVENT, TIMELINE_EVENT_HANDLER
+from app.integrations.bitrix24.documents import (
+    CRM_ACTIVITY_ADD_EVENT,
+    TIMELINE_COMMENT_ADD_EVENT,
+    TIMELINE_EVENT_HANDLER,
+)
 from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 
@@ -95,6 +99,7 @@ async def run(*, apply: bool) -> None:
             TIMELINE_COMMENT_ADD_EVENT,
             TIMELINE_EVENT_HANDLER,
         )
+        activity_event_bound = await _event_is_bound(client, CRM_ACTIVITY_ADD_EVENT, TIMELINE_EVENT_HANDLER)
         if apply:
             for definition in missing:
                 await _provision_field(client, definition)
@@ -111,15 +116,28 @@ async def run(*, apply: bool) -> None:
                     TIMELINE_COMMENT_ADD_EVENT,
                     TIMELINE_EVENT_HANDLER,
                 )
+            if not activity_event_bound:
+                await client.call(
+                    "event.bind",
+                    {"event": CRM_ACTIVITY_ADD_EVENT, "handler": TIMELINE_EVENT_HANDLER},
+                )
+                activity_event_bound = await _event_is_bound(
+                    client,
+                    CRM_ACTIVITY_ADD_EVENT,
+                    TIMELINE_EVENT_HANDLER,
+                )
 
     if apply and not event_bound:
         raise SystemExit("Bitrix24 client deal event was not registered")
     if apply and not document_event_bound:
         raise SystemExit("Bitrix24 timeline comment event was not registered")
+    if apply and not activity_event_bound:
+        raise SystemExit("Bitrix24 CRM activity event was not registered")
 
     print(f"client_deal_fields_{'created' if apply else 'missing'}={len(missing)}")
     print(f"client_deal_add_event_{'bound' if event_bound else 'missing'}={int(event_bound)}")
     print(f"timeline_comment_add_event_{'bound' if document_event_bound else 'missing'}={int(document_event_bound)}")
+    print(f"crm_activity_add_event_{'bound' if activity_event_bound else 'missing'}={int(activity_event_bound)}")
 
 
 def main() -> None:

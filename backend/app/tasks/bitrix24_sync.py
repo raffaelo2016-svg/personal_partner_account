@@ -12,7 +12,7 @@ from app.config import settings
 from app.database import async_session
 from app.integrations.bitrix24.chat import poll_chat_events, reconcile_chat_file_history
 from app.integrations.bitrix24.clients import retry_client_deal_events
-from app.integrations.bitrix24.documents import retry_timeline_comment_events
+from app.integrations.bitrix24.documents import retry_document_events
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
 from app.integrations.bitrix24.tasks import retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
@@ -89,7 +89,7 @@ async def _retry_client_events() -> tuple[int, int]:
 
 async def _retry_document_events() -> tuple[int, int]:
     async with async_session() as db:
-        return await retry_timeline_comment_events(db)
+        return await retry_document_events(db)
 
 
 @celery.task(name="app.tasks.bitrix24_sync.reconcile_bitrix_sync")
