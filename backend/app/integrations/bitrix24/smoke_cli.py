@@ -319,7 +319,9 @@ async def _wait_for_manual_reverse_document(
             imported = await db.scalar(
                 select(FileUpload).where(
                     FileUpload.client_id == client_id,
-                    FileUpload.original_name == "reverse-smoke.pdf",
+                    # Bitrix24 Disk appends " (1)", " (2)", ... when the
+                    # synthetic filename already exists in its shared storage.
+                    FileUpload.original_name.like("reverse-smoke%.pdf"),
                     or_(
                         FileUpload.bitrix_timeline_comment_id.is_not(None),
                         FileUpload.bitrix_activity_id.is_not(None),
