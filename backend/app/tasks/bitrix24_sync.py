@@ -14,7 +14,7 @@ from app.integrations.bitrix24.chat import poll_chat_events, reconcile_chat_file
 from app.integrations.bitrix24.clients import retry_client_deal_events
 from app.integrations.bitrix24.documents import retry_document_events
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
-from app.integrations.bitrix24.tasks import retry_task_status_events
+from app.integrations.bitrix24.tasks import reconcile_remote_tasks, retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
 
 logger = structlog.get_logger()
@@ -82,6 +82,11 @@ async def _retry_task_events() -> tuple[int, int]:
         return await retry_task_status_events(db)
 
 
+async def _reconcile_remote_tasks() -> dict[str, int]:
+    async with async_session() as db:
+        return await reconcile_remote_tasks(db, limit=settings.BITRIX_OUTBOX_BATCH_SIZE)
+
+
 async def _retry_client_events() -> tuple[int, int]:
     async with async_session() as db:
         return await retry_client_deal_events(db)
@@ -97,6 +102,7 @@ def reconcile_bitrix_sync() -> dict[str, int]:
     """Recover interrupted work and report stale mappings without exposing data."""
     released = asyncio.run(_release_stale())
     task_events_claimed, task_events_completed = asyncio.run(_retry_task_events())
+    task_reconcile = asyncio.run(_reconcile_remote_tasks())
     client_events_claimed, client_events_completed = asyncio.run(_retry_client_events())
     document_events_claimed, document_events_completed = asyncio.run(_retry_document_events())
     engine = create_engine(settings.sync_database_url)
@@ -115,6 +121,9 @@ def reconcile_bitrix_sync() -> dict[str, int]:
         "stale_mappings": int(stale_mappings or 0),
         "task_events_claimed": task_events_claimed,
         "task_events_completed": task_events_completed,
+        "task_mappings_claimed": task_reconcile["claimed"],
+        "task_mappings_completed": task_reconcile["completed"],
+        "task_mappings_failed": task_reconcile["failed"],
         "client_events_claimed": client_events_claimed,
         "client_events_completed": client_events_completed,
         "document_events_claimed": document_events_claimed,
