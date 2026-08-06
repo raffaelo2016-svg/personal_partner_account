@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable
 from datetime import UTC, datetime, timedelta
+from typing import TypeVar
 
 import structlog
 from sqlalchemy import create_engine, func, select
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session
 from app.celery_app import celery
 from app.config import settings
 from app.database import async_session
+from app.database import engine as async_engine
 from app.integrations.bitrix24.chat import poll_chat_events, reconcile_chat_file_history
 from app.integrations.bitrix24.clients import retry_client_deal_events
 from app.integrations.bitrix24.documents import retry_document_events
@@ -18,6 +21,20 @@ from app.integrations.bitrix24.tasks import reconcile_remote_tasks, retry_task_s
 from app.models.bitrix_sync import BitrixEntityMap
 
 logger = structlog.get_logger()
+ResultT = TypeVar("ResultT")
+
+
+async def _run_with_disposed_pool(awaitable: Awaitable[ResultT]) -> ResultT:
+    """Run one Celery async unit and close its loop-bound DB pool afterwards."""
+    try:
+        return await awaitable
+    finally:
+        await async_engine.dispose()
+
+
+def _run_async(awaitable: Awaitable[ResultT]) -> ResultT:
+    """Keep pooled asyncpg connections from leaking across asyncio.run loops."""
+    return asyncio.run(_run_with_disposed_pool(awaitable))
 
 
 async def _process_ready_operations() -> dict[str, int]:
@@ -35,7 +52,7 @@ async def _process_ready_operations() -> dict[str, int]:
 
 @celery.task(name="app.tasks.bitrix24_sync.process_bitrix_outbox")
 def process_bitrix_outbox() -> dict[str, int]:
-    result = asyncio.run(_process_ready_operations())
+    result = _run_async(_process_ready_operations())
     logger.info("bitrix_outbox_batch_processed", **result)
     return result
 
@@ -48,7 +65,7 @@ async def _poll_chat_events() -> dict[str, int]:
 @celery.task(name="app.tasks.bitrix24_sync.poll_bitrix_chat_events")
 def poll_bitrix_chat_events() -> dict[str, int]:
     try:
-        result = asyncio.run(_poll_chat_events())
+        result = _run_async(_poll_chat_events())
     except Exception as exc:
         logger.warning("bitrix_chat_poll_failed", error_type=type(exc).__name__)
         return {"received": 0, "imported": 0, "journaled": 0, "failed": 1}
@@ -64,7 +81,7 @@ async def _reconcile_chat_files() -> dict[str, int]:
 @celery.task(name="app.tasks.bitrix24_sync.reconcile_bitrix_chat_files")
 def reconcile_bitrix_chat_files() -> dict[str, int]:
     try:
-        result = asyncio.run(_reconcile_chat_files())
+        result = _run_async(_reconcile_chat_files())
     except Exception as exc:
         logger.warning("bitrix_chat_file_reconcile_failed", error_type=type(exc).__name__)
         return {"partners": 0, "scanned": 0, "imported": 0, "failed": 1}
@@ -97,14 +114,29 @@ async def _retry_document_events() -> tuple[int, int]:
         return await retry_document_events(db)
 
 
+async def _recover_interrupted_sync() -> tuple[
+    int,
+    tuple[int, int],
+    dict[str, int],
+    tuple[int, int],
+    tuple[int, int],
+]:
+    """Run recovery steps on one event loop before disposing the shared async pool."""
+    released = await _release_stale()
+    task_events = await _retry_task_events()
+    task_reconcile = await _reconcile_remote_tasks()
+    client_events = await _retry_client_events()
+    document_events = await _retry_document_events()
+    return released, task_events, task_reconcile, client_events, document_events
+
+
 @celery.task(name="app.tasks.bitrix24_sync.reconcile_bitrix_sync")
 def reconcile_bitrix_sync() -> dict[str, int]:
     """Recover interrupted work and report stale mappings without exposing data."""
-    released = asyncio.run(_release_stale())
-    task_events_claimed, task_events_completed = asyncio.run(_retry_task_events())
-    task_reconcile = asyncio.run(_reconcile_remote_tasks())
-    client_events_claimed, client_events_completed = asyncio.run(_retry_client_events())
-    document_events_claimed, document_events_completed = asyncio.run(_retry_document_events())
+    released, task_events, task_reconcile, client_events, document_events = _run_async(_recover_interrupted_sync())
+    task_events_claimed, task_events_completed = task_events
+    client_events_claimed, client_events_completed = client_events
+    document_events_claimed, document_events_completed = document_events
     engine = create_engine(settings.sync_database_url)
     stale_before = datetime.now(UTC) - timedelta(hours=settings.BITRIX_RECONCILE_AFTER_HOURS)
     try:
