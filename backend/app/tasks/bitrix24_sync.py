@@ -34,7 +34,16 @@ async def _run_with_disposed_pool(awaitable: Awaitable[ResultT]) -> ResultT:
 
 def _run_async(awaitable: Awaitable[ResultT]) -> ResultT:
     """Keep pooled asyncpg connections from leaking across asyncio.run loops."""
-    return asyncio.run(_run_with_disposed_pool(awaitable))
+    try:
+        previous_loop = asyncio.get_event_loop()
+    except RuntimeError:
+        previous_loop = None
+
+    try:
+        return asyncio.run(_run_with_disposed_pool(awaitable))
+    finally:
+        if previous_loop is not None and not previous_loop.is_closed():
+            asyncio.set_event_loop(previous_loop)
 
 
 async def _process_ready_operations() -> dict[str, int]:
