@@ -10,6 +10,7 @@
 - срок;
 - приоритет;
 - настроенный ответственный;
+- настроенные наблюдатели;
 - связь со сделкой клиента;
 - внешний UUID для защиты от дублей.
 
@@ -22,6 +23,7 @@
 - `bitrix_task_responsible_partner`;
 - `bitrix_task_responsible_admin`;
 - необязательный создатель — `bitrix_task_creator_id`.
+- наблюдатели — `bitrix_task_auditor_ids` (ID через запятую).
 
 Если для роли нет активного сотрудника, задача остаётся в кабинете со статусом `not_scheduled` и кодом `RESPONSIBLE_NOT_CONFIGURED`. Случайное назначение не выполняется.
 После настройки ответственного такую задачу нужно повторно отправить кнопкой повтора в кабинете или запросом `POST /api/v1/tasks/{task_id}/bitrix/retry`.
@@ -36,7 +38,8 @@ python -m app.integrations.bitrix24.task_setup_cli
 
 ```bash
 python -m app.integrations.bitrix24.task_setup_cli --apply \
-  --partner-responsible-id 123 --admin-responsible-id 456 --creator-id 456
+  --partner-responsible-id 54 --admin-responsible-id 54 --creator-id 1509 \
+  --auditor-ids 56 55 43
 ```
 
 При первой производственной выкладке незаполненные роли безопасно направляются

@@ -13,10 +13,12 @@ from app.integrations.bitrix24.sync import _execute_operation
 from app.integrations.bitrix24.task_setup_cli import _active_user_ids, _values_to_apply
 from app.integrations.bitrix24.tasks import (
     TASK_ADD_EVENT,
+    TASK_AUDITORS_SETTING,
     TASK_ENTITY_TYPE,
     TASK_RESPONSIBLE_SETTING_PREFIX,
     _responsible_role,
     build_task_create_payload,
+    configured_auditor_ids,
     configured_responsible_id,
     extract_task_event_reference,
     process_task_status_event,
@@ -49,15 +51,30 @@ def _task(client_id=None, created_by=None) -> Task:
 def test_task_payload_contains_crm_link_and_external_id():
     task = _task()
 
-    payload = build_task_create_payload(task, deal_id="456", responsible_id=123, creator_id=321)["fields"]
+    payload = build_task_create_payload(
+        task,
+        deal_id="456",
+        responsible_id=123,
+        creator_id=321,
+        auditor_ids=[56, 55, 43],
+    )["fields"]
 
     assert payload["TITLE"] == task.title
     assert payload["RESPONSIBLE_ID"] == 123
     assert payload["CREATED_BY"] == 321
+    assert payload["AUDITORS"] == [56, 55, 43]
     assert payload["PRIORITY"] == "2"
     assert payload["UF_CRM_TASK"] == ["D_456"]
     assert payload["XML_ID"] == f"partner_cabinet:{task.id}"
     assert payload["DEADLINE"].endswith("+03:00")
+
+
+@pytest.mark.asyncio
+async def test_configured_auditors_are_parsed_and_deduplicated(db_session: AsyncSession):
+    db_session.add(SystemSetting(key=TASK_AUDITORS_SETTING, value="56, 55 43,56 invalid"))
+    await db_session.flush()
+
+    assert await configured_auditor_ids(db_session) == [56, 55, 43]
 
 
 @pytest.mark.asyncio
@@ -160,6 +177,7 @@ async def _saved_entities(
     db.add(task)
     if responsible_configured:
         db.add(SystemSetting(key=f"{TASK_RESPONSIBLE_SETTING_PREFIX}partner", value="123"))
+    db.add(SystemSetting(key=TASK_AUDITORS_SETTING, value="56,55,43"))
     await db.flush()
     return task, client
 
@@ -178,6 +196,7 @@ async def test_task_creation_is_queued_once(db_session: AsyncSession):
     assert count == 1
     assert operation is not None
     assert operation.local_entity_type == TASK_ENTITY_TYPE
+    assert operation.payload["fields"]["AUDITORS"] == [56, 55, 43]
     assert task.bitrix_sync_status == "pending"
 
 
