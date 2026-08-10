@@ -145,6 +145,36 @@ class TestTasks:
         assert resp.json()["status"] == "completed"
         assert resp.json()["completed_at"] is not None
 
+    async def test_update_linked_task_status_syncs_to_bitrix(self, client: AsyncClient, setup_db):
+        from app.models.task import Task
+        from tests.conftest import async_session_test
+
+        token, client_id = await _setup_partner_with_client(client, setup_db)
+        create_resp = await client.post(
+            "/api/v1/tasks",
+            json={"client_id": client_id, "title": "Linked task", "due_date": str(date.today())},
+            headers=auth(token),
+        )
+        task_id = create_resp.json()["id"]
+        async with async_session_test() as session:
+            task = await session.get(Task, task_id)
+            assert task is not None
+            task.bitrix_task_id = "14249"
+            task.bitrix_sync_status = "synced"
+            await session.commit()
+
+        sync_status = AsyncMock()
+        with patch("app.integrations.bitrix24.tasks.sync_task_status", sync_status):
+            resp = await client.put(
+                f"/api/v1/tasks/{task_id}",
+                json={"status": "in_progress"},
+                headers=auth(token),
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "in_progress"
+        sync_status.assert_awaited_once()
+
     async def test_task_stats(self, client: AsyncClient, setup_db):
         token, client_id = await _setup_partner_with_client(client, setup_db)
         await client.post(
