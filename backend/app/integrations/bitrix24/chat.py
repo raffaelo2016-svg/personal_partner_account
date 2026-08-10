@@ -60,6 +60,37 @@ def _dialog_variants(value: str) -> set[str]:
     return variants
 
 
+def _chat_delivery_operation(
+    message: ChatMessage,
+    partner: Partner,
+    installation: BitrixInstallation,
+) -> tuple[str, dict[str, Any]]:
+    dialog_id = normalize_dialog_id(partner.bitrix_chat_id or "")
+    if message.attachment_s3_key:
+        method = BOT_FILE_METHOD if installation.im_bot_id else CHAT_FILE_METHOD
+        payload: dict[str, Any] = {
+            "dialog_id": dialog_id,
+            "s3_key": message.attachment_s3_key,
+            "name": message.attachment_filename or f"file-{message.id}",
+            "message": message.text,
+        }
+        if installation.im_bot_id:
+            payload["bot_id"] = installation.im_bot_id
+        return method, payload
+    if installation.im_bot_id:
+        return BOT_MESSAGE_METHOD, {
+            "botId": installation.im_bot_id,
+            "dialogId": dialog_id,
+            "fields": {"message": message.text, "urlPreview": "Y"},
+        }
+    return CHAT_MESSAGE_METHOD, {
+        "DIALOG_ID": dialog_id,
+        "MESSAGE": message.text,
+        "SYSTEM": "N",
+        "URL_PREVIEW": "Y",
+    }
+
+
 async def schedule_chat_message(
     db: AsyncSession,
     message: ChatMessage,
@@ -87,6 +118,8 @@ async def schedule_chat_message(
         message.bitrix_sync_error_code = None
         return False
 
+    method, payload = _chat_delivery_operation(message, partner, installation)
+
     operation_key = f"chat:message:{message.id}:v1"
     operation = await db.scalar(
         select(BitrixOutboxOperation).where(
@@ -103,35 +136,11 @@ async def schedule_chat_message(
             operation.locked_at = None
             operation.completed_at = None
             operation.result_reference = None
+            operation.bitrix_method = method
+            operation.payload = payload
         elif operation.status in {"pending", "processing", "retry", "completed"}:
             return False
     else:
-        if message.attachment_s3_key:
-            method = BOT_FILE_METHOD if installation.im_bot_id else CHAT_FILE_METHOD
-            payload = {
-                "dialog_id": normalize_dialog_id(partner.bitrix_chat_id),
-                "s3_key": message.attachment_s3_key,
-                "name": message.attachment_filename or f"file-{message.id}",
-                "message": message.text,
-            }
-            if installation.im_bot_id:
-                payload["bot_id"] = installation.im_bot_id
-        else:
-            if installation.im_bot_id:
-                method = BOT_MESSAGE_METHOD
-                payload = {
-                    "botId": installation.im_bot_id,
-                    "dialogId": normalize_dialog_id(partner.bitrix_chat_id),
-                    "fields": {"message": message.text, "urlPreview": "Y"},
-                }
-            else:
-                method = CHAT_MESSAGE_METHOD
-                payload = {
-                    "DIALOG_ID": normalize_dialog_id(partner.bitrix_chat_id),
-                    "MESSAGE": message.text,
-                    "SYSTEM": "N",
-                    "URL_PREVIEW": "Y",
-                }
         await db.execute(
             insert(BitrixOutboxOperation)
             .values(
@@ -590,6 +599,71 @@ async def record_message_change_event(
     return await db.scalar(statement) is not None
 
 
+async def _retry_unsynced_partner_messages(db: AsyncSession, partner: Partner) -> int:
+    room = await db.scalar(select(ChatRoom).where(ChatRoom.partner_id == partner.id, ChatRoom.type == "admin"))
+    if room is None:
+        return 0
+    messages = list(
+        (
+            await db.scalars(
+                select(ChatMessage)
+                .where(
+                    ChatMessage.room_id == room.id,
+                    ChatMessage.origin != "bitrix",
+                    ChatMessage.bitrix_message_id.is_(None),
+                    ChatMessage.bitrix_sync_status.in_(("not_scheduled", "failed")),
+                )
+                .order_by(ChatMessage.created_at)
+            )
+        ).all()
+    )
+    queued = 0
+    for message in messages:
+        if await schedule_chat_message(db, message, room=room, retry=True):
+            queued += 1
+    return queued
+
+
+async def _create_service_chat(
+    db: AsyncSession,
+    client: Bitrix24Client,
+    installation: BitrixInstallation,
+    partner: Partner,
+) -> bool:
+    support_user_ids = settings.bitrix_chat_support_user_ids
+    if installation.im_bot_id is None or not support_user_ids:
+        return False
+    result = await client.call(
+        "imbot.v2.Chat.add",
+        {
+            "botId": installation.im_bot_id,
+            "fields": {
+                "title": f"ЮРИТЕХ — {partner.company_name}"[:255],
+                "description": "Чат поддержки партнёра в личном кабинете ЮРИТЕХ",
+                "color": "azure",
+                "userIds": support_user_ids,
+            },
+        },
+    )
+    chat = result.get("chat") if isinstance(result, dict) else None
+    chat_id = chat.get("id") if isinstance(chat, dict) else None
+    if not isinstance(chat_id, int) or isinstance(chat_id, bool):
+        raise Bitrix24Error("INVALID_RESPONSE", "Service chat creation returned no chat ID")
+
+    previous_dialog_id = partner.bitrix_chat_id
+    partner.bitrix_chat_id = normalize_dialog_id(str(chat_id))
+    partner.bitrix_chat_bot_joined_at = datetime.now(UTC)
+    queued = await _retry_unsynced_partner_messages(db, partner)
+    logger.info(
+        "bitrix_service_chat_created",
+        partner_id=str(partner.id),
+        previous_dialog_id=previous_dialog_id,
+        dialog_id=partner.bitrix_chat_id,
+        retried_messages=queued,
+    )
+    return True
+
+
 async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installation: BitrixInstallation) -> int:
     if installation.im_bot_id is None:
         result = await client.call(
@@ -641,6 +715,18 @@ async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installat
                 partner_id=str(partner.id),
                 error_code=exc.code,
             )
+            if exc.code.upper() in {"ACCESS_ERROR", "ACCESS_DENIED"}:
+                try:
+                    replacement_created = await _create_service_chat(db, client, installation, partner)
+                except Bitrix24Error as create_exc:
+                    logger.warning(
+                        "bitrix_service_chat_create_failed",
+                        partner_id=str(partner.id),
+                        error_code=create_exc.code,
+                    )
+                else:
+                    if replacement_created:
+                        joined += 1
             continue
         partner.bitrix_chat_bot_joined_at = datetime.now(UTC)
         joined += 1

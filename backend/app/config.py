@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     BITRIX_RETRY_MAX_SECONDS: int = 3600
     BITRIX_PROCESSING_STALE_MINUTES: int = 15
     BITRIX_RECONCILE_AFTER_HOURS: int = 24
+    BITRIX_CHAT_SUPPORT_USER_IDS: str = "[]"
 
     ENVIRONMENT: str = "development"
 
@@ -90,6 +91,18 @@ class Settings(BaseSettings):
         return value
 
     @property
+    def bitrix_chat_support_user_ids(self) -> list[int]:
+        try:
+            value = json.loads(self.BITRIX_CHAT_SUPPORT_USER_IDS)
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"BITRIX_CHAT_SUPPORT_USER_IDS is not valid JSON: {err}") from err
+        if not isinstance(value, list) or not all(
+            isinstance(user_id, int) and not isinstance(user_id, bool) and user_id > 0 for user_id in value
+        ):
+            raise RuntimeError("BITRIX_CHAT_SUPPORT_USER_IDS must be a JSON list of positive integers")
+        return value
+
+    @property
     def sync_database_url(self) -> str:
         """URL with psycopg2 driver for Alembic migrations."""
         return self.DATABASE_URL.replace("+asyncpg", "+psycopg2")
@@ -114,3 +127,4 @@ settings.validate_production_secrets()
 # Fail fast on bad CORS_ORIGINS / ALLOWED_HOSTS — parse once at boot.
 _ = settings.cors_origins_list
 _ = settings.allowed_hosts_list
+_ = settings.bitrix_chat_support_user_ids

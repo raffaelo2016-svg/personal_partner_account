@@ -8,17 +8,21 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.integrations.bitrix24.chat import (
     BOT_FILE_METHOD,
     BOT_MESSAGE_METHOD,
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
     _reconcile_chat_file_history,
+    ensure_service_bot,
     execute_chat_message,
     import_message_event,
     normalize_dialog_id,
     record_message_change_event,
+    schedule_chat_message,
 )
+from app.integrations.bitrix24.client import Bitrix24Error
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixOutboxOperation
 from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
@@ -153,6 +157,118 @@ async def _partner_room(db_session: AsyncSession) -> ChatRoom:
     db_session.add(room)
     await db_session.commit()
     return room
+
+
+@pytest.mark.asyncio
+async def test_retry_refreshes_failed_operation_with_current_dialog(db_session: AsyncSession):
+    room = await _partner_room(db_session)
+    partner = await db_session.get(Partner, room.partner_id)
+    assert partner is not None
+    installation = BitrixInstallation(
+        member_id="member-retry",
+        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    message = ChatMessage(
+        room_id=room.id,
+        sender_type="user",
+        text="Hello",
+        delivery_status="failed",
+        bitrix_sync_status="failed",
+        bitrix_sync_error_code="ACCESS_DENIED",
+    )
+    db_session.add_all([installation, message])
+    await db_session.flush()
+    operation = BitrixOutboxOperation(
+        member_id=installation.member_id,
+        operation_key=f"chat:message:{message.id}:v1",
+        local_entity_type=CHAT_MESSAGE_ENTITY_TYPE,
+        local_entity_id=message.id,
+        bitrix_method=BOT_MESSAGE_METHOD,
+        payload={"botId": 456, "dialogId": "chat123", "fields": {"message": "Hello"}},
+        status="failed",
+        attempts=1,
+        error_code="ACCESS_DENIED",
+    )
+    db_session.add(operation)
+    await db_session.commit()
+
+    partner.bitrix_chat_id = "chat777"
+    queued = await schedule_chat_message(db_session, message, room=room, retry=True)
+
+    assert queued is True
+    assert operation.status == "pending"
+    assert operation.attempts == 0
+    assert operation.error_code is None
+    assert operation.payload["dialogId"] == "chat777"
+    assert message.bitrix_sync_status == "pending"
+    assert message.delivery_status == "sent"
+
+
+@pytest.mark.asyncio
+async def test_inaccessible_chat_is_replaced_and_failed_messages_are_retried(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    room = await _partner_room(db_session)
+    partner = await db_session.get(Partner, room.partner_id)
+    assert partner is not None
+    installation = BitrixInstallation(
+        member_id="member-replacement",
+        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    message = ChatMessage(
+        room_id=room.id,
+        sender_type="user",
+        text="Hello",
+        delivery_status="failed",
+        bitrix_sync_status="failed",
+        bitrix_sync_error_code="ACCESS_DENIED",
+    )
+    db_session.add_all([installation, message])
+    await db_session.flush()
+    operation = BitrixOutboxOperation(
+        member_id=installation.member_id,
+        operation_key=f"chat:message:{message.id}:v1",
+        local_entity_type=CHAT_MESSAGE_ENTITY_TYPE,
+        local_entity_id=message.id,
+        bitrix_method=BOT_MESSAGE_METHOD,
+        payload={"botId": 456, "dialogId": "chat123", "fields": {"message": "Hello"}},
+        status="failed",
+        attempts=1,
+        error_code="ACCESS_DENIED",
+    )
+    db_session.add(operation)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[55,57,2461]")
+
+    async def remote_call(method: str, payload: dict):
+        if method == "im.chat.user.add":
+            raise Bitrix24Error("ACCESS_ERROR", "No permission")
+        assert method == "imbot.v2.Chat.add"
+        assert payload["fields"]["userIds"] == [55, 57, 2461]
+        return {"chat": {"id": 777}}
+
+    remote = AsyncMock()
+    remote.call.side_effect = remote_call
+
+    joined = await ensure_service_bot(db_session, remote, installation)
+
+    assert joined == 1
+    assert partner.bitrix_chat_id == "chat777"
+    assert partner.bitrix_chat_bot_joined_at is not None
+    assert operation.status == "pending"
+    assert operation.payload["dialogId"] == "chat777"
+    assert message.bitrix_sync_status == "pending"
 
 
 def _message_event(remote_id: int = 5012) -> dict:
