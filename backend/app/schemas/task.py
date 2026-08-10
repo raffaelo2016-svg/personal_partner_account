@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -15,7 +16,7 @@ class TaskCreate(BaseModel):
 class TaskUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
-    status: str | None = None
+    status: Literal["pending", "in_progress", "completed"] | None = None
     priority: str | None = None
     assigned_to: str | None = None
     due_date: date | None = None

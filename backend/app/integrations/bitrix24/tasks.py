@@ -50,6 +50,7 @@ _PRIORITY_FROM_BITRIX = {
     "average": "medium",
     "high": "high",
 }
+_TASK_STATUS_VALUES = {"pending", "in_progress", "completed"}
 _TASK_SELECT_FIELDS = [
     "ID",
     "TITLE",
@@ -208,6 +209,46 @@ async def schedule_task_creation(db: AsyncSession, task: Task, *, retry: bool = 
     task.bitrix_sync_requested_at = datetime.now(UTC)
     await db.flush()
     return True
+
+
+def task_status_methods(current_status: str, target_status: str) -> list[str]:
+    """Return the Bitrix24 task actions needed for one cabinet transition."""
+    if current_status == target_status:
+        return []
+    if target_status not in _TASK_STATUS_VALUES:
+        raise ValueError("Unsupported task status")
+    if target_status == "completed":
+        return ["tasks.task.complete"]
+    if current_status == "completed":
+        methods = ["tasks.task.renew"]
+        if target_status == "in_progress":
+            methods.append("tasks.task.start")
+        return methods
+    if target_status == "in_progress":
+        return ["tasks.task.start"]
+    return ["tasks.task.pause"]
+
+
+async def sync_task_status(db: AsyncSession, task: Task, target_status: str) -> None:
+    """Apply a cabinet status transition to an already linked Bitrix24 task."""
+    if not task.bitrix_task_id:
+        return
+    methods = task_status_methods(task.status, target_status)
+    if not methods:
+        return
+    installation = await active_installation(db)
+    if installation is None:
+        raise Bitrix24Error("INSTALLATION_NOT_FOUND", "Active Bitrix24 installation not found")
+    access_token = await _installation_token(db, installation)
+    async with Bitrix24Client(installation.client_endpoint, access_token) as client:
+        for method in methods:
+            await client.call(method, {"taskId": task.bitrix_task_id})
+
+    now = datetime.now(UTC)
+    task.bitrix_sync_status = "synced"
+    task.bitrix_sync_error_code = None
+    task.bitrix_sync_requested_at = now
+    task.bitrix_synced_at = now
 
 
 def extract_task_event_reference(event_name: str, payload: dict[str, Any]) -> str | None:
