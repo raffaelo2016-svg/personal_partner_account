@@ -164,6 +164,11 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     from app.integrations.bitrix24.clients import schedule_client_creation
 
     await schedule_client_creation(session, client, partner=partner)
+    # Scheduling the Bitrix projection updates the client and makes the
+    # SQL-expression-backed ``updated_at`` value expire after the flush. Load
+    # it explicitly inside the async session so response serialisation does
+    # not attempt implicit IO and raise MissingGreenlet.
+    await session.refresh(client, ["updated_at"])
 
     audit_log(action="create_client", target_id=str(client.id), target_type="client")
     logger.info("client_created", client_id=str(client.id), partner_id=partner_id)
