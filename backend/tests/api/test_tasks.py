@@ -68,6 +68,55 @@ class TestTasks:
         assert resp.json()["title"] == "Собрать документы"
         assert resp.json()["status"] == "pending"
 
+    async def test_create_task_with_active_bitrix_projection(self, client: AsyncClient, setup_db):
+        """Creating a task must return 201 when Bitrix scheduling updates it."""
+        from app.config import settings
+        from app.models.bitrix_installation import BitrixInstallation
+        from app.models.client import Client
+        from app.models.settings import SystemSetting
+        from tests.conftest import async_session_test
+
+        token, client_id = await _setup_partner_with_client(client, setup_db)
+        async with async_session_test() as session:
+            synced_client = await session.get(Client, client_id)
+            assert synced_client is not None
+            synced_client.bitrix_deal_id = "35023"
+            synced_client.bitrix_sync_status = "synced"
+            session.add_all(
+                [
+                    BitrixInstallation(
+                        member_id="member-task-create",
+                        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+                        client_endpoint=f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/",
+                        server_endpoint="https://oauth.bitrix.info/rest/",
+                        access_token_encrypted=b"encrypted-access",
+                        refresh_token_encrypted=b"encrypted-refresh",
+                        status="L",
+                    ),
+                    SystemSetting(key="bitrix_task_responsible_uritech", value="1"),
+                ]
+            )
+            await session.commit()
+
+        resp = await client.post(
+            "/api/v1/tasks",
+            json={
+                "client_id": client_id,
+                "title": "Подготовить согласие",
+                "description": "Подготовить документы",
+                "due_date": str(date.today() + timedelta(days=1)),
+                "assigned_to": "uritech",
+                "priority": "high",
+            },
+            headers=auth(token),
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["title"] == "Подготовить согласие"
+        assert data["bitrix_sync_status"] == "pending"
+        assert data["updated_at"]
+
     async def test_list_tasks(self, client: AsyncClient, setup_db):
         token, client_id = await _setup_partner_with_client(client, setup_db)
         await client.post(

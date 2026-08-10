@@ -100,6 +100,10 @@ async def create_task(
     from app.integrations.bitrix24.tasks import schedule_task_creation
 
     await schedule_task_creation(session, task)
+    # Bitrix scheduling flushes sync metadata and expires the SQL-expression-
+    # backed updated_at value.  Load it explicitly before serialising the task
+    # so the async response does not attempt implicit database IO.
+    await session.refresh(task, ["updated_at"])
     audit_log(action="create_task", target_id=str(task.id), target_type="task")
     logger.info(
         "task_created",
@@ -127,6 +131,7 @@ async def retry_task_bitrix_sync(
 
     await schedule_task_creation(session, task, retry=True)
     await session.flush()
+    await session.refresh(task, ["updated_at"])
     return _task_to_read(task, task.client.full_name if task.client else None)
 
 
