@@ -70,7 +70,12 @@ async def _setting_user_id(db: AsyncSession, key: str) -> int | None:
 
 
 async def configured_responsible_id(db: AsyncSession, assigned_to: str) -> int | None:
-    return await _setting_user_id(db, f"{TASK_RESPONSIBLE_SETTING_PREFIX}{assigned_to}")
+    responsible_id = await _setting_user_id(db, f"{TASK_RESPONSIBLE_SETTING_PREFIX}{assigned_to}")
+    if responsible_id is None and assigned_to == "uritech":
+        # The setup CLI historically stored the internal team mapping under
+        # ``admin``, while the cabinet API and UI use ``uritech``.
+        return await _setting_user_id(db, f"{TASK_RESPONSIBLE_SETTING_PREFIX}admin")
+    return responsible_id
 
 
 def build_task_create_payload(
@@ -262,7 +267,13 @@ async def _responsible_role(db: AsyncSession, remote_task: dict[str, Any], fallb
         responsible_id = int(value)
     except (TypeError, ValueError):
         return fallback
-    for role in ("partner", "admin"):
+
+    # Preserve the cabinet role when several roles intentionally point to the
+    # same Bitrix user.  Otherwise a task assigned to URITECH can be moved to
+    # the partner tab merely because the partner mapping is checked first.
+    if fallback in {"partner", "uritech"} and await configured_responsible_id(db, fallback) == responsible_id:
+        return fallback
+    for role in ("partner", "uritech"):
         if await configured_responsible_id(db, role) == responsible_id:
             return role
     return fallback
