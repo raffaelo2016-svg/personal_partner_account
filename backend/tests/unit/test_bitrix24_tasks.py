@@ -25,6 +25,8 @@ from app.integrations.bitrix24.tasks import (
     reconcile_remote_task,
     reconcile_remote_tasks,
     schedule_task_creation,
+    sync_task_status,
+    task_status_methods,
 )
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
@@ -67,6 +69,21 @@ def test_task_payload_contains_crm_link_and_external_id():
     assert payload["UF_CRM_TASK"] == ["D_456"]
     assert payload["XML_ID"] == f"partner_cabinet:{task.id}"
     assert payload["DEADLINE"].endswith("+03:00")
+
+
+@pytest.mark.parametrize(
+    ("current", "target", "methods"),
+    [
+        ("pending", "in_progress", ["tasks.task.start"]),
+        ("in_progress", "pending", ["tasks.task.pause"]),
+        ("pending", "completed", ["tasks.task.complete"]),
+        ("completed", "pending", ["tasks.task.renew"]),
+        ("completed", "in_progress", ["tasks.task.renew", "tasks.task.start"]),
+        ("in_progress", "in_progress", []),
+    ],
+)
+def test_task_status_methods(current, target, methods):
+    assert task_status_methods(current, target) == methods
 
 
 @pytest.mark.asyncio
@@ -180,6 +197,28 @@ async def _saved_entities(
     db.add(SystemSetting(key=TASK_AUDITORS_SETTING, value="56,55,43"))
     await db.flush()
     return task, client
+
+
+@pytest.mark.asyncio
+async def test_linked_task_can_be_started_from_cabinet(db_session: AsyncSession):
+    task, _ = await _saved_entities(db_session)
+    task.bitrix_task_id = "14249"
+    task.bitrix_sync_status = "synced"
+
+    remote = AsyncMock()
+    remote.call.return_value = {"task": {"id": "14249", "status": "3"}}
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        await sync_task_status(db_session, task, "in_progress")
+
+    remote.call.assert_awaited_once_with("tasks.task.start", {"taskId": "14249"})
+    assert task.bitrix_sync_status == "synced"
+    assert task.bitrix_sync_error_code is None
+    assert task.bitrix_synced_at is not None
 
 
 @pytest.mark.asyncio

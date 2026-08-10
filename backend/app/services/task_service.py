@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.exceptions import BadRequest, Forbidden, NotFound
+from app.integrations.bitrix24.client import Bitrix24Error
 from app.models.client import Client
 from app.models.task import Task
 from app.schemas.task import TaskCreate, TaskRead, TaskStats, TaskUpdate
@@ -149,14 +150,25 @@ async def update_task(
         raise Forbidden("Access denied")
 
     update_data = data.model_dump(exclude_unset=True, mode="json")
-    if "status" in update_data and task.bitrix_task_id:
-        raise BadRequest("Task status is managed in Bitrix24")
+    target_status = update_data.get("status")
+    if target_status and task.bitrix_task_id and target_status != task.status:
+        from app.integrations.bitrix24.tasks import sync_task_status
+
+        try:
+            await sync_task_status(session, task, target_status)
+        except Bitrix24Error as exc:
+            logger.warning(
+                "task_status_bitrix_update_failed",
+                task_id=str(task.id),
+                error_code=exc.code,
+            )
+            raise BadRequest("Could not update task status in Bitrix24") from exc
     for key, value in update_data.items():
         if hasattr(task, key):
             setattr(task, key, value)
 
-    if data.status == "completed" and not task.completed_at:
-        task.completed_at = datetime.now(UTC)
+    if target_status:
+        task.completed_at = datetime.now(UTC) if target_status == "completed" else None
 
     await session.flush()
     await session.refresh(task)
