@@ -80,9 +80,7 @@ async def _configured_auditor_ids() -> list[int]:
     async with async_session() as db:
         setting = await db.get(SystemSetting, TASK_AUDITORS_SETTING)
         value = setting.value if setting else ""
-        return [
-            int(item) for item in value.replace(",", " ").split() if item.isdigit() and int(item) > 0
-        ]
+        return [int(item) for item in value.replace(",", " ").split() if item.isdigit() and int(item) > 0]
 
 
 async def _save_ids(values: dict[str, int], *, auditor_ids: list[int] | None = None) -> None:
