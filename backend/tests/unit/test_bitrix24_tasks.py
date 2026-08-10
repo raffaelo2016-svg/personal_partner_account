@@ -15,7 +15,9 @@ from app.integrations.bitrix24.tasks import (
     TASK_ADD_EVENT,
     TASK_ENTITY_TYPE,
     TASK_RESPONSIBLE_SETTING_PREFIX,
+    _responsible_role,
     build_task_create_payload,
+    configured_responsible_id,
     extract_task_event_reference,
     process_task_status_event,
     reconcile_remote_task,
@@ -56,6 +58,20 @@ def test_task_payload_contains_crm_link_and_external_id():
     assert payload["UF_CRM_TASK"] == ["D_456"]
     assert payload["XML_ID"] == f"partner_cabinet:{task.id}"
     assert payload["DEADLINE"].endswith("+03:00")
+
+
+@pytest.mark.asyncio
+async def test_uritech_responsible_uses_admin_fallback_and_preserves_role(db_session: AsyncSession):
+    db_session.add_all(
+        [
+            SystemSetting(key=f"{TASK_RESPONSIBLE_SETTING_PREFIX}partner", value="57"),
+            SystemSetting(key=f"{TASK_RESPONSIBLE_SETTING_PREFIX}admin", value="57"),
+        ]
+    )
+    await db_session.flush()
+
+    assert await configured_responsible_id(db_session, "uritech") == 57
+    assert await _responsible_role(db_session, {"responsibleId": "57"}, "uritech") == "uritech"
 
 
 @pytest.mark.parametrize(
@@ -260,7 +276,7 @@ async def test_remote_completed_status_updates_local_task(db_session: AsyncSessi
     assert task.status == "completed"
     assert task.priority == "low"
     assert task.due_date == date(2026, 8, 14)
-    assert task.assigned_to == "admin"
+    assert task.assigned_to == "uritech"
     assert task.completed_at is not None
     assert task.bitrix_synced_at is not None
     assert receipt.status == "completed"
