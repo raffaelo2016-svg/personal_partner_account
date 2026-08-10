@@ -81,9 +81,7 @@ async def _configured_auditor_ids() -> list[int]:
         setting = await db.get(SystemSetting, TASK_AUDITORS_SETTING)
         value = setting.value if setting else ""
         return [
-            int(item)
-            for item in value.replace(",", " ").split()
-            if item.isdigit() and int(item) > 0
+            int(item) for item in value.replace(",", " ").split() if item.isdigit() and int(item) > 0
         ]
 
 
