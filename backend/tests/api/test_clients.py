@@ -68,6 +68,50 @@ class TestPartnerClients:
         assert data["full_name"] == "Иванов Иван Иванович"
         assert data["status"] in ("new", "documents_collection")
 
+    async def test_create_client_with_active_bitrix_projection(self, client: AsyncClient, setup_db):
+        """Creating a client must return 201 when Bitrix scheduling updates it."""
+        from app.config import settings
+        from app.models.bitrix_installation import BitrixInstallation
+        from app.models.partner import Partner
+        from tests.conftest import async_session_test
+
+        token, partner_id = await _create_partner_user_and_token(client, setup_db)
+        async with async_session_test() as session:
+            partner = await session.get(Partner, partner_id)
+            assert partner is not None
+            partner.bitrix_partner_item_id = "321"
+            partner.bitrix_sync_status = "synced"
+            session.add(
+                BitrixInstallation(
+                    member_id="member-client-create",
+                    portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+                    client_endpoint=f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/",
+                    server_endpoint="https://oauth.bitrix.info/rest/",
+                    access_token_encrypted=b"encrypted-access",
+                    refresh_token_encrypted=b"encrypted-refresh",
+                    status="L",
+                )
+            )
+            await session.commit()
+
+        resp = await client.post(
+            "/api/v1/clients",
+            json={
+                "type": "in_court",
+                "full_name": "Петров Пётр Петрович",
+                "case_number": "А68-7819/2025",
+                "email": "client@example.test",
+            },
+            headers=auth(token),
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["full_name"] == "Петров Пётр Петрович"
+        assert data["case_number"] == "А68-7819/2025"
+        assert data["bitrix_sync_status"] == "pending"
+        assert data["updated_at"]
+
     async def test_list_clients(self, client: AsyncClient, setup_db):
         token, _ = await _create_partner_user_and_token(client, setup_db)
         await client.post("/api/v1/clients", json=CLIENT_DATA, headers=auth(token))
