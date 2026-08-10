@@ -30,6 +30,7 @@ TASK_EVENT_HANDLER = "https://finzdorovie.ru/api/v1/integrations/bitrix24/handle
 TASK_XML_PREFIX = "partner_cabinet:"
 TASK_RESPONSIBLE_SETTING_PREFIX = "bitrix_task_responsible_"
 TASK_CREATOR_SETTING = "bitrix_task_creator_id"
+TASK_AUDITORS_SETTING = "bitrix_task_auditor_ids"
 
 _PRIORITY_TO_BITRIX = {"low": "0", "medium": "1", "high": "2"}
 _STATUS_FROM_BITRIX = {"2": "pending", "3": "in_progress", "4": "in_progress", "5": "completed", "6": "pending"}
@@ -69,6 +70,22 @@ async def _setting_user_id(db: AsyncSession, key: str) -> int | None:
     return int(value) if value.isdigit() and int(value) > 0 else None
 
 
+def _parse_user_ids(value: str) -> list[int]:
+    result: list[int] = []
+    for item in value.replace(",", " ").split():
+        if not item.isdigit() or int(item) <= 0:
+            continue
+        user_id = int(item)
+        if user_id not in result:
+            result.append(user_id)
+    return result
+
+
+async def configured_auditor_ids(db: AsyncSession) -> list[int]:
+    setting = await db.get(SystemSetting, TASK_AUDITORS_SETTING)
+    return _parse_user_ids(setting.value if setting else "")
+
+
 async def configured_responsible_id(db: AsyncSession, assigned_to: str) -> int | None:
     responsible_id = await _setting_user_id(db, f"{TASK_RESPONSIBLE_SETTING_PREFIX}{assigned_to}")
     if responsible_id is None and assigned_to == "uritech":
@@ -84,6 +101,7 @@ def build_task_create_payload(
     deal_id: str,
     responsible_id: int,
     creator_id: int | None,
+    auditor_ids: list[int] | None = None,
 ) -> dict[str, Any]:
     deadline = datetime.combine(task.due_date, time(23, 59), tzinfo=ZoneInfo("Europe/Moscow"))
     fields: dict[str, Any] = {
@@ -98,6 +116,8 @@ def build_task_create_payload(
         fields["DESCRIPTION"] = task.description
     if creator_id:
         fields["CREATED_BY"] = creator_id
+    if auditor_ids:
+        fields["AUDITORS"] = auditor_ids
     return {"fields": fields}
 
 
@@ -141,6 +161,7 @@ async def schedule_task_creation(db: AsyncSession, task: Task, *, retry: bool = 
         return False
 
     creator_id = await _setting_user_id(db, TASK_CREATOR_SETTING)
+    auditor_ids = await configured_auditor_ids(db)
     operation_key = f"task:create:{task.id}:v1"
     operation = await db.scalar(
         select(BitrixOutboxOperation).where(
@@ -174,6 +195,7 @@ async def schedule_task_creation(db: AsyncSession, task: Task, *, retry: bool = 
                     deal_id=client.bitrix_deal_id,
                     responsible_id=responsible_id,
                     creator_id=creator_id,
+                    auditor_ids=auditor_ids,
                 ),
                 correlation_id=uuid.uuid4(),
                 max_attempts=settings.BITRIX_OUTBOX_MAX_ATTEMPTS,

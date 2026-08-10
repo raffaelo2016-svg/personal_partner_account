@@ -12,6 +12,7 @@ from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 from app.integrations.bitrix24.tasks import (
     TASK_ADD_EVENT,
+    TASK_AUDITORS_SETTING,
     TASK_CREATOR_SETTING,
     TASK_EVENT_HANDLER,
     TASK_RESPONSIBLE_SETTING_PREFIX,
@@ -26,6 +27,7 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--partner-responsible-id", type=int)
     parser.add_argument("--admin-responsible-id", type=int)
     parser.add_argument("--creator-id", type=int)
+    parser.add_argument("--auditor-ids", type=int, nargs="+")
     parser.add_argument(
         "--fill-missing-with-installer",
         action="store_true",
@@ -74,7 +76,18 @@ async def _configured_ids() -> dict[str, int]:
         return result
 
 
-async def _save_ids(values: dict[str, int]) -> None:
+async def _configured_auditor_ids() -> list[int]:
+    async with async_session() as db:
+        setting = await db.get(SystemSetting, TASK_AUDITORS_SETTING)
+        value = setting.value if setting else ""
+        return [
+            int(item)
+            for item in value.replace(",", " ").split()
+            if item.isdigit() and int(item) > 0
+        ]
+
+
+async def _save_ids(values: dict[str, int], *, auditor_ids: list[int] | None = None) -> None:
     keys = {
         "partner": f"{TASK_RESPONSIBLE_SETTING_PREFIX}partner",
         "admin": f"{TASK_RESPONSIBLE_SETTING_PREFIX}admin",
@@ -88,6 +101,13 @@ async def _save_ids(values: dict[str, int]) -> None:
                 db.add(SystemSetting(key=key, value=str(value)))
             else:
                 setting.value = str(value)
+        if auditor_ids is not None:
+            setting = await db.get(SystemSetting, TASK_AUDITORS_SETTING)
+            value = ",".join(str(user_id) for user_id in dict.fromkeys(auditor_ids))
+            if setting is None:
+                db.add(SystemSetting(key=TASK_AUDITORS_SETTING, value=value))
+            else:
+                setting.value = value
         await db.commit()
 
 
@@ -111,6 +131,7 @@ async def run(
     *,
     apply: bool,
     supplied: dict[str, int | None],
+    auditor_ids: list[int] | None = None,
     fill_missing_with_installer: bool = False,
 ) -> None:
     async with async_session() as db:
@@ -135,12 +156,13 @@ async def run(
         if fallback_needed and installer_id not in active_ids:
             raise SystemExit("The Bitrix24 integration installer is not an active user")
         invalid = [role for role, value in requested.items() if value not in active_ids]
-        if invalid:
+        invalid_auditors = [user_id for user_id in (auditor_ids or []) if user_id not in active_ids]
+        if invalid or invalid_auditors:
             raise SystemExit("Configured Bitrix24 user IDs must belong to active users")
         update_event_bound = await _event_is_bound(client, TASK_UPDATE_EVENT)
         add_event_bound = await _event_is_bound(client, TASK_ADD_EVENT)
         if apply:
-            await _save_ids(requested)
+            await _save_ids(requested, auditor_ids=auditor_ids)
             if not update_event_bound:
                 await client.call("event.bind", {"event": TASK_UPDATE_EVENT, "handler": TASK_EVENT_HANDLER})
                 update_event_bound = await _event_is_bound(client, TASK_UPDATE_EVENT)
@@ -154,9 +176,12 @@ async def run(
         raise SystemExit("Bitrix24 task add event could not be verified")
 
     configured = await _configured_ids()
-    valid = sum(value in active_ids for value in configured.values())
+    configured_auditor_ids = await _configured_auditor_ids()
+    configured_users = list(configured.values()) + configured_auditor_ids
+    valid = sum(value in active_ids for value in configured_users)
     print(f"task_responsible_roles_configured={sum(role in configured for role in ('partner', 'admin'))}")
-    print(f"task_configured_users_valid={valid}/{len(configured)}")
+    print(f"task_auditors_configured={len(configured_auditor_ids)}")
+    print(f"task_configured_users_valid={valid}/{len(configured_users)}")
     print(f"task_update_event={'bound' if update_event_bound else 'missing'}")
     print(f"task_add_event={'bound' if add_event_bound else 'missing'}")
 
@@ -171,6 +196,7 @@ def main() -> None:
                 "admin": args.admin_responsible_id,
                 "creator": args.creator_id,
             },
+            auditor_ids=args.auditor_ids,
             fill_missing_with_installer=args.fill_missing_with_installer,
         )
     )
