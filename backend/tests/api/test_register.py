@@ -75,6 +75,63 @@ class TestRegister:
             assert login_resp.status_code == 403
             assert login_resp.json()["code"] == "PARTNER_PENDING"
 
+    async def test_registration_notifies_only_subscribed_active_admins(
+        self,
+        client: AsyncClient,
+        setup_db,
+    ):
+        from app.core.security import hash_password
+        from app.models.notification import Notification
+        from app.models.settings import NotificationPreference
+        from app.models.user import User
+        from tests.conftest import async_session_test
+
+        async with async_session_test() as session:
+            subscribed_admin = User(
+                email="subscribed-admin@test.com",
+                hashed_password=hash_password("password123"),
+                role="admin",
+                is_active=True,
+            )
+            unsubscribed_admin = User(
+                email="unsubscribed-admin@test.com",
+                hashed_password=hash_password("password123"),
+                role="admin",
+                is_active=True,
+            )
+            inactive_admin = User(
+                email="inactive-admin@test.com",
+                hashed_password=hash_password("password123"),
+                role="admin",
+                is_active=False,
+            )
+            session.add_all([subscribed_admin, unsubscribed_admin, inactive_admin])
+            await session.flush()
+            session.add(
+                NotificationPreference(
+                    user_id=unsubscribed_admin.id,
+                    new_partner_notifications=False,
+                )
+            )
+            await session.commit()
+
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={**REGISTER_DATA, "email": "notified-partner@test.com"},
+        )
+        assert resp.status_code == 201
+
+        async with async_session_test() as session:
+            notifications = (await session.execute(select(Notification))).scalars().all()
+
+        assert len(notifications) == 1
+        notification = notifications[0]
+        assert notification.user_id == subscribed_admin.id
+        assert notification.type == "new_partner"
+        assert notification.title == "Новый партнёр ожидает активации"
+        assert notification.message == "ООО Тест зарегистрирован в кабинете"
+        assert notification.link and notification.link.startswith("/admin/partners/")
+
 
 class TestRegisterCaptcha:
     """Yandex SmartCaptcha: при заданном YANDEX_CAPTCHA_SECRET_KEY публичная регистрация требует токен."""

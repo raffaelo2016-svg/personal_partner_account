@@ -1,6 +1,6 @@
 import structlog
 from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -9,6 +9,7 @@ from app.core.exceptions import InvalidCredentials
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models.partner import Partner
+from app.models.settings import NotificationPreference
 from app.models.user import User
 from app.schemas.auth import (
     LoginRequest,
@@ -27,6 +28,7 @@ from app.services.auth_service import (
     revoke_access_token,
     revoke_refresh_token,
 )
+from app.services.notification_service import create_notification
 
 logger = structlog.get_logger()
 
@@ -167,6 +169,35 @@ async def register(
     from app.services.chat_service import ensure_rooms_for_partner
 
     await ensure_rooms_for_partner(db, str(partner.id))
+
+    admins = (
+        (
+            await db.execute(
+                select(User)
+                .outerjoin(NotificationPreference, NotificationPreference.user_id == User.id)
+                .where(
+                    User.role == "admin",
+                    User.is_active.is_(True),
+                    or_(
+                        NotificationPreference.user_id.is_(None),
+                        NotificationPreference.new_partner_notifications.is_(True),
+                    ),
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for admin in admins:
+        await create_notification(
+            db,
+            user_id=str(admin.id),
+            notif_type="new_partner",
+            title="Новый партнёр ожидает активации",
+            message=f"{body.company_name} зарегистрирован в кабинете",
+            link=f"/admin/partners/{partner.id}",
+        )
+
     await db.commit()
 
     audit_log(action="partner_registered", user_id=str(user.id), target_id=str(partner.id), target_type="partner")
