@@ -101,6 +101,7 @@ export default function ClientForm() {
   const [isUploading, setIsUploading] = useState(false);
   const [phoneError, setPhoneError] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [regionError, setRegionError] = useState('');
 
   const uploadAllFiles = useCallback(async (clientId: string) => {
     const allFiles: { file: File; docType: string }[] = [];
@@ -134,6 +135,12 @@ export default function ClientForm() {
     e.preventDefault();
     setPhoneError('');
     setEmailError('');
+    setRegionError('');
+
+    if (!formData.region) {
+      setRegionError('Выберите регион');
+      return;
+    }
 
     const phoneErr = validatePhoneFieldOptional(formData.phone);
     if (phoneErr) {
@@ -158,6 +165,7 @@ export default function ClientForm() {
       phone: normalizePhoneForApi(formData.phone),
       email: emailTrim || null,
       case_number: formData.caseNumber || null,
+      region: formData.region,
     };
 
     if (formData.type === 'before_court') {
@@ -169,7 +177,6 @@ export default function ClientForm() {
       payload.registration_address = formData.registrationAddress || null;
       payload.inn = formData.inn || null;
       payload.snils = formData.snils || null;
-      payload.region = formData.region || null;
       payload.arbitrage_court = formData.arbitrageCourt || null;
     }
 
@@ -219,6 +226,7 @@ export default function ClientForm() {
     const { name, value } = e.target;
     if (name === 'region') {
       const court = getCourtForRegion(value);
+      setRegionError('');
       setFormData({
         ...formData,
         region: value,
@@ -411,6 +419,24 @@ export default function ClientForm() {
                   placeholder="А40-123456/2026"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Регион <span className="text-red-500">*</span>
+                </label>
+                <CustomSelect
+                  value={formData.region}
+                  onChange={(val) => handleChange(syntheticChange('region', val))}
+                  groups={REGION_GROUPS.map((group) => ({
+                    label: group.district,
+                    options: group.regions.map((r) => ({ value: r.name, label: r.name })),
+                  }))}
+                  placeholder="Выберите регион"
+                  size="lg"
+                  triggerClassName={regionError ? 'border-red-500' : ''}
+                />
+                {regionError ? <p className="text-sm text-red-500 mt-1">{regionError}</p> : null}
               </div>
               
               <div>
@@ -687,7 +713,9 @@ export default function ClientForm() {
                     }))}
                     placeholder="Выберите регион"
                     size="lg"
+                    triggerClassName={regionError ? 'border-red-500' : ''}
                   />
+                  {regionError ? <p className="text-sm text-red-500 mt-1">{regionError}</p> : null}
                 </div>
                 
                 <div>
