@@ -7,6 +7,7 @@ import NotificationBell from '../components/NotificationBell';
 import { useAuthStore } from '../store/authStore';
 import { fetchAdminUnreadCount } from '../api/chat';
 import { fetchBitrixAttention } from '../api/bitrixAttention';
+import { fetchPartnerStats } from '../api/partners';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -26,6 +27,12 @@ export default function AdminLayout() {
     refetchInterval: 30_000,
   });
 
+  const { data: partnerStats } = useQuery({
+    queryKey: ['admin', 'partners', 'stats'],
+    queryFn: fetchPartnerStats,
+    refetchInterval: 30_000,
+  });
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -33,7 +40,12 @@ export default function AdminLayout() {
 
   const menuItems = [
     { icon: LayoutDashboard, label: 'Дашборд', path: '/admin' },
-    { icon: Users, label: 'Партнеры', path: '/admin/partners' },
+    {
+      icon: Users,
+      label: 'Партнеры',
+      path: '/admin/partners',
+      badge: partnerStats?.pending_partners ?? 0,
+    },
     { icon: Users, label: 'Все клиенты', path: '/admin/clients' },
     { icon: CheckSquare, label: 'Задачи', path: '/admin/tasks' },
     { icon: AlertTriangle, label: 'Требует внимания', path: '/admin/bitrix-attention', badge: attentionData?.total ?? 0 },
