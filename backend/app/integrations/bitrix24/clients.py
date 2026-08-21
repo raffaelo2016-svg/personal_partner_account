@@ -5,7 +5,7 @@ from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,8 @@ CLIENT_DEAL_STAGE_ID = "C3:NEW"
 CLIENT_UID_FIELD = "UF_CRM_P24_CUID_ITN"
 SELF_ORIGINATOR_ID = "partner_cabinet"
 CLIENT_DEAL_ADD_EVENT = "ONCRMDEALADD"
+CLIENT_DEAL_UPDATE_EVENT = "ONCRMDEALUPDATE"
+CLIENT_DEAL_EVENTS = {CLIENT_DEAL_ADD_EVENT, CLIENT_DEAL_UPDATE_EVENT}
 CLIENT_EVENT_HANDLER = "https://finzdorovie.ru/api/v1/integrations/bitrix24/handler"
 CLIENT_DEAL_FIELDS = {
     "region": "UF_CRM_DEAL_YRITECH_CLIENT_REGION",
@@ -42,7 +44,7 @@ CLIENT_DEAL_FIELDS = {
 
 
 def extract_client_deal_event_reference(event_name: str, payload: dict[str, Any]) -> str | None:
-    if event_name.upper() != CLIENT_DEAL_ADD_EVENT:
+    if event_name.upper() not in CLIENT_DEAL_EVENTS:
         return None
     data = payload.get("data")
     if isinstance(data, dict):
@@ -295,8 +297,80 @@ def _mark_inbound_failure(receipt: BitrixInboundEvent, code: str) -> bool:
     return False
 
 
+async def _supersede_failed_receipts(
+    db: AsyncSession,
+    receipt: BitrixInboundEvent,
+    *,
+    processed_at: datetime,
+) -> None:
+    """Keep one current attention item per remote deal."""
+    await db.execute(
+        update(BitrixInboundEvent)
+        .where(
+            BitrixInboundEvent.id != receipt.id,
+            BitrixInboundEvent.member_id == receipt.member_id,
+            BitrixInboundEvent.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE,
+            BitrixInboundEvent.remote_entity_id == receipt.remote_entity_id,
+            BitrixInboundEvent.status == "failed",
+        )
+        .values(status="ignored", error_code=None, processed_at=processed_at)
+    )
+
+
+async def _mark_current_state_failure(
+    db: AsyncSession,
+    receipt: BitrixInboundEvent,
+    code: str,
+) -> bool:
+    now = datetime.now(UTC)
+    await _supersede_failed_receipts(db, receipt, processed_at=now)
+    return _mark_inbound_failure(receipt, code)
+
+
+async def _complete_existing_client_update(
+    db: AsyncSession,
+    *,
+    receipt: BitrixInboundEvent,
+    client: Client,
+    partner: Partner,
+) -> bool:
+    """Apply a Bitrix deal partner change to an already imported client."""
+    now = datetime.now(UTC)
+    previous_partner_id = client.partner_id
+    client.partner_id = partner.id
+    client.bitrix_sync_status = "synced"
+    client.bitrix_sync_error_code = None
+    client.bitrix_synced_at = now
+
+    if previous_partner_id != partner.id:
+        from app.models.court_fee import CourtFee
+
+        await db.execute(
+            update(CourtFee)
+            .where(CourtFee.client_id == client.id, CourtFee.deleted_at.is_(None))
+            .values(partner_id=partner.id)
+        )
+
+    await _supersede_failed_receipts(db, receipt, processed_at=now)
+    receipt.status = "completed"
+    receipt.error_code = None
+    receipt.processed_at = now
+    receipt.attempts += 1
+    audit_log(
+        action="update_client_partner_from_bitrix",
+        target_id=str(client.id),
+        target_type="client",
+        details={
+            "previous_partner_id": str(previous_partner_id),
+            "partner_id": str(partner.id),
+            "bitrix_deal_id": receipt.remote_entity_id,
+        },
+    )
+    return True
+
+
 async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
-    """Create a cabinet client only from a complete, linked external Arbitration deal."""
+    """Create or relink a cabinet client from an Arbitration deal event."""
     receipt.status = "processing"
     receipt.error_code = None
     await db.flush()
@@ -305,18 +379,15 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
         receipt.processed_at = datetime.now(UTC)
         return True
 
-    existing = await db.scalar(
-        select(BitrixEntityMap.id).where(
+    existing_mapping = await db.scalar(
+        select(BitrixEntityMap).where(
             BitrixEntityMap.member_id == receipt.member_id,
+            BitrixEntityMap.local_entity_type == CLIENT_DEAL_ENTITY_TYPE,
             BitrixEntityMap.bitrix_entity_type == "crm_deal",
             BitrixEntityMap.bitrix_entity_id == receipt.remote_entity_id,
         )
     )
-    if existing is not None:
-        receipt.status = "completed"
-        receipt.processed_at = datetime.now(UTC)
-        receipt.attempts += 1
-        return True
+    existing_client = await db.get(Client, existing_mapping.local_entity_id) if existing_mapping is not None else None
 
     installation = await db.get(BitrixInstallation, receipt.member_id)
     if installation is None:
@@ -332,7 +403,7 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
                 return True
-            if str(deal.get("ORIGINATOR_ID") or "").lower() == SELF_ORIGINATOR_ID:
+            if existing_client is None and str(deal.get("ORIGINATOR_ID") or "").lower() == SELF_ORIGINATOR_ID:
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
@@ -340,7 +411,7 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
 
             partner_remote_id = deal.get(f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}")
             if not partner_remote_id:
-                return _mark_inbound_failure(receipt, "PARTNER_NOT_LINKED")
+                return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_LINKED")
             partner_mapping = await db.scalar(
                 select(BitrixEntityMap).where(
                     BitrixEntityMap.member_id == receipt.member_id,
@@ -349,10 +420,18 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 )
             )
             if partner_mapping is None:
-                return _mark_inbound_failure(receipt, "PARTNER_NOT_FOUND")
+                return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_FOUND")
             partner = await db.get(Partner, partner_mapping.local_entity_id)
             if partner is None:
-                return _mark_inbound_failure(receipt, "PARTNER_NOT_FOUND")
+                return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_FOUND")
+
+            if existing_client is not None:
+                return await _complete_existing_client_update(
+                    db,
+                    receipt=receipt,
+                    client=existing_client,
+                    partner=partner,
+                )
 
             contact_id = str(deal.get("CONTACT_ID") or "").strip()
             if not contact_id or contact_id == "0":
@@ -429,19 +508,33 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
     receipt.error_code = None
     receipt.processed_at = now
     receipt.attempts += 1
+    await _supersede_failed_receipts(db, receipt, processed_at=now)
     audit_log(action="import_client_from_bitrix", target_id=str(client.id), target_type="client")
     return True
 
 
 async def retry_client_deal_events(db: AsyncSession, *, limit: int = 25) -> tuple[int, int]:
+    retryable_errors = {
+        "TIMEOUT",
+        "TRANSPORT_ERROR",
+        "QUERY_LIMIT_EXCEEDED",
+        "OPERATION_TIME_LIMIT",
+        "INTERNAL_SERVER_ERROR",
+    }
     receipts = list(
         (
             await db.scalars(
                 select(BitrixInboundEvent)
                 .where(
                     BitrixInboundEvent.remote_entity_type == CLIENT_DEAL_ENTITY_TYPE,
-                    BitrixInboundEvent.status.in_(("received", "failed")),
-                    BitrixInboundEvent.attempts < settings.BITRIX_OUTBOX_MAX_ATTEMPTS,
+                    or_(
+                        BitrixInboundEvent.status == "received",
+                        and_(
+                            BitrixInboundEvent.status == "failed",
+                            BitrixInboundEvent.error_code.in_(retryable_errors),
+                            BitrixInboundEvent.attempts < settings.BITRIX_OUTBOX_MAX_ATTEMPTS,
+                        ),
+                    ),
                 )
                 .order_by(BitrixInboundEvent.created_at)
                 .limit(limit)

@@ -24,6 +24,7 @@ export function useInfinitePartners(filters: Omit<PartnerFilters, 'page'> = {}) 
     queryKey: ['admin', 'partners', 'infinite', filters],
     queryFn: ({ pageParam = 1 }) => fetchPartners({ ...filters, page: pageParam, page_size: 20 }),
     initialPageParam: 1,
+    refetchOnMount: 'always',
     getNextPageParam: (lastPage) =>
       lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
   });
@@ -34,6 +35,7 @@ export function usePartner(id: string | undefined) {
     queryKey: ['admin', 'partners', id],
     queryFn: () => fetchPartner(id!),
     enabled: !!id,
+    refetchOnMount: 'always',
   });
 }
 

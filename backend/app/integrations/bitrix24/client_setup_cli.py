@@ -9,7 +9,12 @@ from dataclasses import dataclass
 from app.config import settings
 from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client
-from app.integrations.bitrix24.clients import CLIENT_DEAL_ADD_EVENT, CLIENT_DEAL_FIELDS, CLIENT_EVENT_HANDLER
+from app.integrations.bitrix24.clients import (
+    CLIENT_DEAL_ADD_EVENT,
+    CLIENT_DEAL_FIELDS,
+    CLIENT_DEAL_UPDATE_EVENT,
+    CLIENT_EVENT_HANDLER,
+)
 from app.integrations.bitrix24.documents import (
     CRM_ACTIVITY_ADD_EVENT,
     TIMELINE_COMMENT_ADD_EVENT,
@@ -94,6 +99,7 @@ async def run(*, apply: bool) -> None:
         existing = await _existing_field_names(client)
         missing = [item for item in FIELD_DEFINITIONS if CLIENT_DEAL_FIELDS[item.key] not in existing]
         event_bound = await _event_is_bound(client, CLIENT_DEAL_ADD_EVENT, CLIENT_EVENT_HANDLER)
+        update_event_bound = await _event_is_bound(client, CLIENT_DEAL_UPDATE_EVENT, CLIENT_EVENT_HANDLER)
         document_event_bound = await _event_is_bound(
             client,
             TIMELINE_COMMENT_ADD_EVENT,
@@ -106,6 +112,16 @@ async def run(*, apply: bool) -> None:
             if not event_bound:
                 await client.call("event.bind", {"event": CLIENT_DEAL_ADD_EVENT, "handler": CLIENT_EVENT_HANDLER})
                 event_bound = await _event_is_bound(client, CLIENT_DEAL_ADD_EVENT, CLIENT_EVENT_HANDLER)
+            if not update_event_bound:
+                await client.call(
+                    "event.bind",
+                    {"event": CLIENT_DEAL_UPDATE_EVENT, "handler": CLIENT_EVENT_HANDLER},
+                )
+                update_event_bound = await _event_is_bound(
+                    client,
+                    CLIENT_DEAL_UPDATE_EVENT,
+                    CLIENT_EVENT_HANDLER,
+                )
             if not document_event_bound:
                 await client.call(
                     "event.bind",
@@ -129,6 +145,8 @@ async def run(*, apply: bool) -> None:
 
     if apply and not event_bound:
         raise SystemExit("Bitrix24 client deal event was not registered")
+    if apply and not update_event_bound:
+        raise SystemExit("Bitrix24 client deal update event was not registered")
     if apply and not document_event_bound:
         raise SystemExit("Bitrix24 timeline comment event was not registered")
     if apply and not activity_event_bound:
@@ -136,6 +154,7 @@ async def run(*, apply: bool) -> None:
 
     print(f"client_deal_fields_{'created' if apply else 'missing'}={len(missing)}")
     print(f"client_deal_add_event_{'bound' if event_bound else 'missing'}={int(event_bound)}")
+    print(f"client_deal_update_event_{'bound' if update_event_bound else 'missing'}={int(update_event_bound)}")
     print(f"timeline_comment_add_event_{'bound' if document_event_bound else 'missing'}={int(document_event_bound)}")
     print(f"crm_activity_add_event_{'bound' if activity_event_bound else 'missing'}={int(activity_event_bound)}")
 
