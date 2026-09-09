@@ -43,6 +43,7 @@ export default function Registration() {
     firstName: '',
     middleName: '',
     inn: '',
+    kpp: '',
     ogrn: '',
     legalAddress: '',
     
@@ -86,6 +87,7 @@ export default function Registration() {
       firstName: '',
       middleName: '',
       inn: '',
+      kpp: '',
       ogrn: '',
       legalAddress: '',
     });
@@ -100,6 +102,7 @@ export default function Registration() {
       firstName: formData.firstName,
       middleName: formData.middleName,
       inn: formData.inn,
+      kpp: formData.kpp,
       ogrn: formData.ogrn,
       legalAddress: formData.legalAddress,
     });
@@ -183,6 +186,7 @@ export default function Registration() {
         company_name: displayName,
         director_name: isPerson ? fullName : formData.contactName,
         inn: formData.partnerType === 'individual' ? '' : formData.inn,
+        kpp: formData.partnerType === 'legal' ? formData.kpp : undefined,
         phone: phoneE164,
         full_legal_name: formData.partnerType === 'legal' ? formData.companyName : undefined,
         legal_address: formData.partnerType === 'legal' ? formData.legalAddress : undefined,
@@ -212,6 +216,7 @@ export default function Registration() {
           else if (loc.includes('director_name')) fieldErrors.contactName = msg;
           else if (loc.includes('company_name')) fieldErrors.companyName = msg;
           else if (loc.includes('inn')) fieldErrors.inn = msg;
+          else if (loc.includes('kpp')) fieldErrors.kpp = msg;
           else if (loc.includes('password')) fieldErrors.password = msg;
         }
         const mapped = Object.keys(fieldErrors).length;
@@ -364,7 +369,7 @@ export default function Registration() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           ИНН <span className="text-red-500">*</span>
@@ -384,6 +389,28 @@ export default function Registration() {
                         />
                         {errors.inn && (
                           <p className="text-sm text-red-500 mt-1">{errors.inn}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          КПП <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          name="kpp"
+                          value={formData.kpp}
+                          onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
+                          placeholder="770401001"
+                          maxLength={9}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.kpp ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.kpp && (
+                          <p className="text-sm text-red-500 mt-1">{errors.kpp}</p>
                         )}
                       </div>
 

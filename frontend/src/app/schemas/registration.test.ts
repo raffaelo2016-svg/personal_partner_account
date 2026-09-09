@@ -10,6 +10,7 @@ describe('registrationStep1Schema', () => {
     partnerType: 'legal' as const,
     companyName: 'ООО Ромашка',
     inn: '1234567890',
+    kpp: '770401001',
     ogrn: '1234567890123',
     legalAddress: 'г. Москва',
   };
@@ -38,7 +39,19 @@ describe('registrationStep1Schema', () => {
       legalAddress: '',
     });
     const errors = flattenZodErrors(result);
-    expect(Object.keys(errors).length).toBe(4);
+    expect(Object.keys(errors).length).toBe(5);
+  });
+
+  it('rejects a missing KPP for a legal entity', () => {
+    const result = registrationStep1Schema.safeParse({ ...valid, kpp: '' });
+    expect(flattenZodErrors(result).kpp).toBe('Обязательное поле');
+  });
+
+  it('rejects KPP with an invalid reason code', () => {
+    const result = registrationStep1Schema.safeParse({ ...valid, kpp: '770400001' });
+    expect(flattenZodErrors(result).kpp).toBe(
+      'Проверьте КПП (код причины постановки на учёт)',
+    );
   });
 
   it('accepts individual input without INN and company fields', () => {
@@ -160,6 +173,7 @@ describe('flattenZodErrors', () => {
       partnerType: 'legal' as const,
       companyName: 'ООО Ромашка',
       inn: '1234567890',
+      kpp: '770401001',
       ogrn: '1234567890123',
       legalAddress: 'г. Москва',
     };
@@ -172,6 +186,7 @@ describe('flattenZodErrors', () => {
       companyName: 'ок',
       partnerType: 'legal',
       inn: 'abc',
+      kpp: '770401001',
       ogrn: '1234567890123',
       legalAddress: 'ок',
     });
