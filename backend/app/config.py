@@ -46,6 +46,18 @@ class Settings(BaseSettings):
 
     YANDEX_CAPTCHA_SECRET_KEY: str = ""
 
+    # Password recovery email. SMTP_PASSWORD must only be provided through
+    # the environment; an empty host keeps delivery disabled in local dev.
+    PUBLIC_APP_URL: str = "http://localhost:5173"
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 465
+    SMTP_USERNAME: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM_EMAIL: str = ""
+    SMTP_USE_SSL: bool = True
+    SMTP_USE_STARTTLS: bool = False
+    PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+
     # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
     # the local application's credentials stay only in the server environment.
     BITRIX_CLIENT_ENDPOINT: str = ""

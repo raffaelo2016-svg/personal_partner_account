@@ -133,9 +133,13 @@ export default function Login() {
             </div>
             
             <div className="flex items-center justify-end">
-              <a href="#" className="text-sm text-blue-600 hover:underline">
+              <Link
+                to="/forgot-password"
+                state={{ email: formData.email }}
+                className="text-sm text-blue-600 hover:underline"
+              >
                 Забыли пароль?
-              </a>
+              </Link>
             </div>
             
             <button
