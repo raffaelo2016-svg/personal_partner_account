@@ -40,6 +40,16 @@ export async function getMeApi(): Promise<AuthUserResponse> {
   return data;
 }
 
+export async function forgotPasswordApi(email: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post<{ message: string }>('/auth/forgot-password', { email });
+  return data;
+}
+
+export async function resetPasswordApi(token: string, password: string): Promise<{ message: string }> {
+  const { data } = await apiClient.post<{ message: string }>('/auth/reset-password', { token, password });
+  return data;
+}
+
 export interface RegisterPayload {
   email: string;
   password: string;

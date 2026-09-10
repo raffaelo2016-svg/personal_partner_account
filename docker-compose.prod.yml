@@ -67,6 +67,7 @@ services:
       CORS_ORIGINS: '["https://finzdorovie.ru","https://www.finzdorovie.ru"]'
       COOKIE_SECURE: "true"
       COOKIE_SAMESITE: lax
+      PUBLIC_APP_URL: https://finzdorovie.ru
       YOOKASSA_RETURN_URL: https://finzdorovie.ru/dashboard/finance/court-fees
       # Публичный base-URL для presigned S3-ссылок. Путь вида
       # /{bucket}/{key}?X-Amz-... совпадает с nginx location /partner-cabinet/,

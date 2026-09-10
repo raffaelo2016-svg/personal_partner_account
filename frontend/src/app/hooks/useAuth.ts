@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
-import { loginApi, logoutApi, getMeApi, type LoginPayload } from '@/app/api/auth';
+import {
+  forgotPasswordApi,
+  getMeApi,
+  loginApi,
+  logoutApi,
+  resetPasswordApi,
+  type LoginPayload,
+} from '@/app/api/auth';
 import { useAuthStore } from '@/app/store/authStore';
 
 export function useLogin() {
@@ -42,5 +49,18 @@ export function useMe() {
     queryFn: getMeApi,
     enabled: !!accessToken,
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useForgotPassword() {
+  return useMutation({
+    mutationFn: (email: string) => forgotPasswordApi(email),
+  });
+}
+
+export function useResetPassword() {
+  return useMutation({
+    mutationFn: ({ token, password }: { token: string; password: string }) =>
+      resetPasswordApi(token, password),
   });
 }
