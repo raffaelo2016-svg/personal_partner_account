@@ -25,6 +25,14 @@ export const router = createBrowserRouter([
     lazy: lazyPage(() => import('./pages/Registration')),
   },
   {
+    path: '/forgot-password',
+    lazy: lazyPage(() => import('./pages/ForgotPassword')),
+  },
+  {
+    path: '/reset-password',
+    lazy: lazyPage(() => import('./pages/ResetPassword')),
+  },
+  {
     path: '/dashboard',
     Component: AuthGuard,
     children: [

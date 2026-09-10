@@ -24,6 +24,36 @@ test.describe('Auth — happy paths', () => {
     await page.click('text=Клиенты');
     await expect(page).toHaveURL(/\/dashboard\/clients/);
   });
+
+  test('forgot password → email sent → new password saved', async ({ page }) => {
+    await page.route('**/api/v1/auth/forgot-password', async (route: Route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'ok' }),
+      });
+    });
+    await page.route('**/api/v1/auth/reset-password', async (route: Route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ message: 'ok' }),
+      });
+    });
+
+    await page.goto('/login');
+    await page.getByPlaceholder('partner@example.com').fill(PARTNER.email);
+    await page.getByRole('link', { name: 'Забыли пароль?' }).click();
+    await expect(page.getByLabel('Email')).toHaveValue(PARTNER.email);
+    await page.getByRole('button', { name: 'Отправить ссылку' }).click();
+    await expect(page.getByText('Проверьте почту')).toBeVisible();
+
+    await page.goto('/reset-password?token=' + 'x'.repeat(64));
+    await page.getByLabel('Новый пароль', { exact: true }).fill('NewPassword123');
+    await page.getByLabel('Повторите пароль').fill('NewPassword123');
+    await page.getByRole('button', { name: 'Сохранить новый пароль' }).click();
+    await expect(page.getByText('Пароль изменён')).toBeVisible();
+  });
 });
 
 test.describe('Auth — errors', () => {

@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlparse
 
 import pytest
 from httpx import AsyncClient
@@ -157,3 +158,76 @@ class TestLogout:
             json={},
         )
         assert resp.status_code == 200
+
+
+class TestPasswordReset:
+    async def test_forgot_password_does_not_reveal_unknown_email(self, client: AsyncClient):
+        with patch("app.services.password_reset_service.redis_client", new_callable=AsyncMock) as mock_redis:
+            resp = await client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "unknown@example.com"},
+            )
+
+        assert resp.status_code == 200
+        assert "Если аккаунт" in resp.json()["message"]
+        mock_redis.setex.assert_not_awaited()
+
+    async def test_reset_password_end_to_end(self, client: AsyncClient, seed_user):
+        store: dict[str, str] = {}
+        redis = AsyncMock()
+
+        async def get(key: str):
+            return store.get(key)
+
+        async def setex(key: str, _ttl: int, value: str):
+            store[key] = value
+
+        async def delete(*keys: str):
+            for key in keys:
+                store.pop(key, None)
+
+        redis.get.side_effect = get
+        redis.setex.side_effect = setex
+        redis.delete.side_effect = delete
+
+        with (
+            patch("app.services.password_reset_service.redis_client", redis),
+            patch(
+                "app.services.password_reset_service.send_password_reset_email",
+                new_callable=AsyncMock,
+                return_value=True,
+            ) as send_email,
+        ):
+            request_resp = await client.post(
+                "/api/v1/auth/forgot-password",
+                json={"email": "test@example.com"},
+            )
+            assert request_resp.status_code == 200
+            reset_url = send_email.await_args.args[1]
+            token = parse_qs(urlparse(reset_url).query)["token"][0]
+
+            reset_resp = await client.post(
+                "/api/v1/auth/reset-password",
+                json={"token": token, "password": "newpassword456"},
+            )
+            reused_resp = await client.post(
+                "/api/v1/auth/reset-password",
+                json={"token": token, "password": "another789"},
+            )
+
+        assert reset_resp.status_code == 200
+        assert reused_resp.status_code == 400
+
+        with patch("app.services.auth_service.redis_client", new_callable=AsyncMock):
+            login_resp = await client.post(
+                "/api/v1/auth/login",
+                json={"email": "test@example.com", "password": "newpassword456"},
+            )
+        assert login_resp.status_code == 200
+
+    async def test_reset_password_rejects_weak_password(self, client: AsyncClient):
+        resp = await client.post(
+            "/api/v1/auth/reset-password",
+            json={"token": "x" * 64, "password": "onlyletters"},
+        )
+        assert resp.status_code == 422

@@ -1,5 +1,5 @@
 import structlog
-from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,10 +11,13 @@ from app.database import get_db
 from app.models.partner import Partner
 from app.models.user import User
 from app.schemas.auth import (
+    ForgotPasswordRequest,
     LoginRequest,
+    PasswordResetResponse,
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
+    ResetPasswordRequest,
     TokenResponse,
     UserRead,
 )
@@ -27,6 +30,7 @@ from app.services.auth_service import (
     revoke_access_token,
     revoke_refresh_token,
 )
+from app.services.password_reset_service import deliver_password_reset, request_password_reset, reset_password
 
 logger = structlog.get_logger()
 
@@ -55,6 +59,37 @@ def _clear_refresh_cookie(response: Response) -> None:
         path=REFRESH_COOKIE_PATH,
         domain=settings.COOKIE_DOMAIN,
     )
+
+
+@router.post("/forgot-password", response_model=PasswordResetResponse)
+@limiter.limit("3/minute")
+async def forgot_password(
+    request: Request,
+    body: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    delivery = await request_password_reset(db, body.email)
+    if delivery:
+        background_tasks.add_task(deliver_password_reset, delivery)
+    return PasswordResetResponse(
+        message="Если аккаунт с таким email существует, мы отправили ссылку для восстановления пароля."
+    )
+
+
+@router.post("/reset-password", response_model=PasswordResetResponse)
+@limiter.limit("5/minute")
+async def complete_password_reset(
+    request: Request,
+    body: ResetPasswordRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    if not await reset_password(db, body.token, body.password):
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "INVALID_RESET_TOKEN", "message": "Ссылка недействительна или устарела"},
+        )
+    return PasswordResetResponse(message="Пароль успешно изменён.")
 
 
 @router.post("/login", response_model=TokenResponse)

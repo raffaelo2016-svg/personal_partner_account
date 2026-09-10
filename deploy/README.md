@@ -32,6 +32,11 @@
 | `CORS_ORIGINS` | `["https://finzdorovie.ru","https://www.finzdorovie.ru"]`, без `"*"` |
 | `MINIO_PASSWORD` | совпадает с `S3_SECRET_KEY` |
 | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | сейчас **тестовый магазин** (`test_…`) — осознанно, до запуска боевых платежей |
+| `PUBLIC_APP_URL` | `https://finzdorovie.ru` — используется в ссылках восстановления пароля |
+| `SMTP_HOST`, `SMTP_PORT` | SMTP-сервер корпоративной почты и его SSL-порт |
+| `SMTP_USERNAME`, `SMTP_PASSWORD` | логин и пароль приложения почтового ящика для системных писем |
+| `SMTP_FROM_EMAIL` | адрес отправителя писем восстановления пароля |
+| `SMTP_USE_SSL`, `SMTP_USE_STARTTLS` | для порта 465 обычно `true` / `false` |
 
 Валидация выполняется при старте (`backend/app/config.py`): дефолтные значения
 секретов в prod/staging приводят к `RuntimeError`; `COOKIE_SECURE=false` в prod —
