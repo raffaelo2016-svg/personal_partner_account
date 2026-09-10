@@ -68,6 +68,9 @@ services:
       COOKIE_SECURE: "true"
       COOKIE_SAMESITE: lax
       PUBLIC_APP_URL: https://finzdorovie.ru
+      # Основной канал отправки — HTTPS API: SMTP-порты недоступны с VPS.
+      # API-ключ хранится только в серверном .env.
+      RESEND_FROM_EMAIL: "ЮРИТЕХ <noreply@finzdorovie.ru>"
       YOOKASSA_RETURN_URL: https://finzdorovie.ru/dashboard/finance/court-fees
       # Публичный base-URL для presigned S3-ссылок. Путь вида
       # /{bucket}/{key}?X-Amz-... совпадает с nginx location /partner-cabinet/,

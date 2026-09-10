@@ -33,6 +33,8 @@
 | `MINIO_PASSWORD` | совпадает с `S3_SECRET_KEY` |
 | `YOOKASSA_SHOP_ID`, `YOOKASSA_SECRET_KEY` | сейчас **тестовый магазин** (`test_…`) — осознанно, до запуска боевых платежей |
 | `PUBLIC_APP_URL` | `https://finzdorovie.ru` — используется в ссылках восстановления пароля |
+| `RESEND_API_KEY` | API-ключ Resend для отправки писем через HTTPS; хранится только в серверном `.env` |
+| `RESEND_FROM_EMAIL` | На production задан как `ЮРИТЕХ <noreply@finzdorovie.ru>`; домен должен быть подтверждён в Resend |
 | `SMTP_HOST`, `SMTP_PORT` | SMTP-сервер корпоративной почты и его SSL-порт |
 | `SMTP_USERNAME`, `SMTP_PASSWORD` | логин и пароль приложения почтового ящика для системных писем |
 | `SMTP_FROM_EMAIL` | адрес отправителя писем восстановления пароля |
