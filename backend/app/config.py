@@ -46,9 +46,11 @@ class Settings(BaseSettings):
 
     YANDEX_CAPTCHA_SECRET_KEY: str = ""
 
-    # Password recovery email. SMTP_PASSWORD must only be provided through
-    # the environment; an empty host keeps delivery disabled in local dev.
+    # Password recovery email. RESEND_API_KEY / SMTP_PASSWORD must only be
+    # provided through the environment; empty credentials disable delivery.
     PUBLIC_APP_URL: str = "http://localhost:5173"
+    RESEND_API_KEY: str = ""
+    RESEND_FROM_EMAIL: str = ""
     SMTP_HOST: str = ""
     SMTP_PORT: int = 465
     SMTP_USERNAME: str = ""
