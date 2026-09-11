@@ -43,6 +43,12 @@ const EMPTY_FORM = {
   email: '',
 };
 
+const DOCUMENT_TYPES = [
+  { id: 'passport', label: 'Паспорт' },
+  { id: 'snils', label: 'СНИЛС' },
+  { id: 'inn_certificate', label: 'ИНН' },
+] as const;
+
 function formatSnils(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11);
   const first = digits.slice(0, 3);
@@ -304,25 +310,6 @@ export default function ClientForm() {
     });
   };
 
-  const requiredDocuments = [
-    { id: 'passport', label: 'Паспорт', required: true },
-    { id: 'snils', label: 'СНИЛС', required: true },
-    { id: 'inn_certificate', label: 'Свидетельство ИНН', required: true },
-    { id: 'children_birth_cert', label: 'Свидетельство о рождении детей', required: false },
-    { id: 'marriage_cert', label: 'Свидетельство о заключении/расторжении брака', required: false },
-    { id: 'employment_history', label: 'Справка о сведениях о трудовой деятельности из информационных ресурсов Пенсионного фонда', required: true },
-    { id: 'pension_account', label: 'Справка, содержащая сведения о состоянии индивидуального лицевого счета застрахованного лица', required: true },
-    { id: 'tax_registry', label: 'Выписка из Единого государственного реестра налогоплательщиков', required: true },
-    { id: 'no_ip_status', label: 'Справка об отсутствии статуса ИП', required: true },
-    { id: 'ndfl_2', label: 'Справки 2-НДФЛ (за последние три года)', required: true },
-    { id: 'tax_debt', label: 'Справка об исполнении обязанности по уплате налогов, сборов, страховых взносов, пеней, штрафов, процентов', required: true },
-    { id: 'credit_debt', label: 'Справка о задолженности по кредитным обязательствам', required: true },
-    { id: 'credit_agreements', label: 'Копии кредитных договоров', required: true },
-    { id: 'criminal_record', label: 'Справка о наличии (отсутствии) судимости', required: true },
-    { id: 'deposit_payment', label: 'Квитанция по оплате 25000 на депозит', required: true },
-    { id: 'other', label: 'Прочее', required: false },
-  ];
-  
   const selectedCourt = useMemo(
     () => (formData.region ? getCourtForRegion(formData.region) : null),
     [formData.region],
@@ -526,12 +513,11 @@ export default function ClientForm() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Дата рождения <span className="text-red-500">*</span>
+                    Дата рождения
                   </label>
                   <DateInput
                     value={formData.dateOfBirth}
                     onChange={(val) => handleChange(syntheticChange('dateOfBirth', val))}
-                    required
                   />
                 </div>
 
@@ -579,7 +565,7 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Серия паспорта <span className="text-red-500">*</span>
+                      Серия паспорта
                     </label>
                     <input
                       type="text"
@@ -588,7 +574,6 @@ export default function ClientForm() {
                       name="passportSeries"
                       value={formData.passportSeries}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="1234"
                       maxLength={4}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -596,7 +581,7 @@ export default function ClientForm() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Номер паспорта <span className="text-red-500">*</span>
+                      Номер паспорта
                     </label>
                     <input
                       type="text"
@@ -605,7 +590,6 @@ export default function ClientForm() {
                       name="passportNumber"
                       value={formData.passportNumber}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="567890"
                       maxLength={6}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -616,25 +600,23 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Дата выдачи <span className="text-red-500">*</span>
+                      Дата выдачи
                     </label>
                     <DateInput
                       value={formData.passportIssueDate}
                       onChange={(val) => handleChange(syntheticChange('passportIssueDate', val))}
-                      required
                     />
                   </div>
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Кем выдан <span className="text-red-500">*</span>
+                    Кем выдан
                   </label>
                   <textarea
                     name="passportIssuedBy"
                     value={formData.passportIssuedBy}
                     onChange={handleChange}
-                    required
                     placeholder="Отделением УФМС России..."
                     rows={2}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -643,13 +625,12 @@ export default function ClientForm() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Адрес регистрации <span className="text-red-500">*</span>
+                    Адрес регистрации
                   </label>
                   <textarea
                     name="registrationAddress"
                     value={formData.registrationAddress}
                     onChange={handleChange}
-                    required
                     placeholder="г. Москва, ул. Примерная, д. 1, кв. 1"
                     rows={2}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -659,7 +640,7 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ИНН <span className="text-red-500">*</span>
+                      ИНН
                     </label>
                     <input
                       type="text"
@@ -668,7 +649,6 @@ export default function ClientForm() {
                       name="inn"
                       value={formData.inn}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="123456789012"
                       maxLength={12}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -676,7 +656,7 @@ export default function ClientForm() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      СНИЛС <span className="text-red-500">*</span>
+                      СНИЛС
                     </label>
                     <input
                       type="text"
@@ -684,7 +664,6 @@ export default function ClientForm() {
                       name="snils"
                       value={formData.snils}
                       onChange={(e) => { e.target.value = formatSnils(e.target.value); handleChange(e); }}
-                      required
                       placeholder="123-456-789 00"
                       maxLength={14}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -702,7 +681,7 @@ export default function ClientForm() {
               <div className="space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Регион подачи <span className="text-red-500">*</span>
+                    Регион подачи
                   </label>
                   <CustomSelect
                     value={formData.region}
@@ -720,7 +699,7 @@ export default function ClientForm() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Арбитражный суд <span className="text-red-500">*</span>
+                    Арбитражный суд
                   </label>
                   {selectedCourt ? (
                     <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-900">
@@ -749,18 +728,17 @@ export default function ClientForm() {
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX. Максимальный размер файла: 10 МБ
+                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX. Максимальный размер файла: 10 МБ
               </p>
               
               <div className="space-y-3">
-                {requiredDocuments.map((doc) => (
+                {DOCUMENT_TYPES.map((doc) => (
                   <div key={doc.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <label className="text-sm font-medium text-gray-900">
                             {doc.label}
-                            {doc.required && <span className="text-red-500 ml-1">*</span>}
                           </label>
                           {documentUploads[doc.id]?.length > 0 && (
                             <div className="flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">
