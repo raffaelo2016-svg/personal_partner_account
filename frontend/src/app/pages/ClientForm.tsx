@@ -47,6 +47,7 @@ const DOCUMENT_TYPES = [
   { id: 'passport', label: 'Паспорт' },
   { id: 'snils', label: 'СНИЛС' },
   { id: 'inn_certificate', label: 'ИНН' },
+  { id: 'other', label: 'Прочие документы' },
 ] as const;
 
 function formatSnils(value: string): string {

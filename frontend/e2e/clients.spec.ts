@@ -38,14 +38,15 @@ test.describe('Clients — CRUD', () => {
     expect(found).toBeGreaterThan(0);
   });
 
-  test('document upload offers only passport, SNILS and INN and stays optional', async ({ page }) => {
+  test('document upload offers passport, SNILS, INN and other documents and stays optional', async ({ page }) => {
     await page.goto('/dashboard/clients/new');
 
     const uploads = page.locator('[id^="doc-upload-"]');
-    await expect(uploads).toHaveCount(3);
+    await expect(uploads).toHaveCount(4);
     await expect(page.getByText('Паспорт', { exact: true })).toBeVisible();
     await expect(page.getByText('СНИЛС', { exact: true }).last()).toBeVisible();
     await expect(page.getByText('ИНН', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Прочие документы', { exact: true })).toBeVisible();
     await expect(page.getByText('Загрузка необязательна.')).toBeVisible();
   });
 
