@@ -1,6 +1,7 @@
 import {
   ArrowLeft, Mail, Phone, Calendar, Users, Briefcase,
   Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
+  WalletCards, CircleDollarSign, Clock3,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
@@ -391,6 +392,54 @@ export default function AdminPartnerDetails() {
             </div>
             <div className={`p-3 rounded-lg ${statusStyle}`}>
               {statusIcon}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Финансовая информация */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Финансовая информация</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-gray-600">Общая задолженность</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {((partner.finance_total_cost ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-gray-200">
+                <WalletCards className="w-6 h-6 text-gray-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-amber-700">Текущая задолженность</p>
+                <p className="text-2xl font-semibold text-amber-900 mt-1">
+                  {((partner.finance_current_debt ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-amber-200">
+                <Clock3 className="w-6 h-6 text-amber-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-red-700">Просроченная задолженность</p>
+                <p className="text-2xl font-semibold text-red-900 mt-1">
+                  {((partner.finance_overdue_debt ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-red-200">
+                <CircleDollarSign className="w-6 h-6 text-red-600" />
+              </div>
             </div>
           </div>
         </div>
