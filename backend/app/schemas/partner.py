@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import Self
 
 from pydantic import BaseModel, EmailStr, Field, model_validator
@@ -22,6 +22,8 @@ class PartnerCreate(BaseModel):
     kpp: str | None = None
     court_fee_per_client: int = 1_500_000
     payment_term_days: int = 10
+    free_client_limit: int = Field(default=0, ge=0, le=10_000)
+    promotion_start_date: date | None = None
 
     @model_validator(mode="after")
     def _normalize_inn_kpp(self) -> Self:
@@ -44,6 +46,8 @@ class PartnerUpdate(BaseModel):
     kpp: str | None = None
     court_fee_per_client: int | None = None
     payment_term_days: int | None = None
+    free_client_limit: int | None = Field(default=None, ge=0, le=10_000)
+    promotion_start_date: date | None = None
     status: PartnerStatus | None = None
 
 
@@ -63,6 +67,9 @@ class PartnerRead(BaseModel):
     kpp: str | None = None
     court_fee_per_client: int
     payment_term_days: int
+    free_client_limit: int = 0
+    promotion_start_date: date | None = None
+    promotion_end_date: date | None = None
     status: str
     created_at: datetime
     updated_at: datetime

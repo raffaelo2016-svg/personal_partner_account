@@ -1,4 +1,4 @@
-import { ArrowLeft, Eye, EyeOff, Check, CircleDollarSign, CalendarDays } from 'lucide-react';
+import { ArrowLeft, Eye, EyeOff, Check, CircleDollarSign, CalendarDays, Gift, CalendarClock } from 'lucide-react';
 import { useState } from 'react';
 import { Link } from 'react-router';
 import { createPartner } from '@/app/api/partners';
@@ -11,6 +11,33 @@ import {
   validateInnForPartnerType,
   validateKpp,
 } from '@/app/utils/innKpp';
+
+const PRICE_PRESETS = [10_000, 15_000, 17_000];
+
+function todayForDateInput() {
+  const now = new Date();
+  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  return local.toISOString().slice(0, 10);
+}
+
+function addCalendarMonthForDisplay(value: string) {
+  if (!value) return '';
+  const [year, month, day] = value.split('-').map(Number);
+  const target = new Date(year, month - 1, 1);
+  target.setMonth(target.getMonth() + 1);
+  const lastDay = new Date(target.getFullYear(), target.getMonth() + 1, 0).getDate();
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(target.getFullYear(), target.getMonth(), Math.min(day, lastDay)),
+  );
+}
+
+function formatDateForDisplay(value: string) {
+  if (!value) return '—';
+  const [year, month, day] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(year, month - 1, day),
+  );
+}
 
 export default function AdminAddPartner() {
   const [partnerType, setPartnerType] = useState<'individual' | 'legal' | 'entrepreneur'>('individual');
@@ -35,6 +62,9 @@ export default function AdminAddPartner() {
   // Financial fields
   const [courtFee, setCourtFee] = useState('');
   const [paymentTermDays, setPaymentTermDays] = useState('');
+  const [promotionEnabled, setPromotionEnabled] = useState(false);
+  const [freeClientLimit, setFreeClientLimit] = useState('10');
+  const [promotionStartDate, setPromotionStartDate] = useState(todayForDateInput);
   const [courtFeeError, setCourtFeeError] = useState('');
   const [paymentTermError, setPaymentTermError] = useState('');
 
@@ -115,6 +145,14 @@ export default function AdminAddPartner() {
       setPaymentTermError('Срок должен быть больше 0');
       return;
     }
+    if (promotionEnabled && (!freeClientLimit || Number(freeClientLimit) <= 0)) {
+      setApiError('Укажите количество бесплатных клиентов');
+      return;
+    }
+    if (promotionEnabled && !promotionStartDate) {
+      setApiError('Укажите дату начала льготного месяца');
+      return;
+    }
 
     const phoneErr = validatePhoneField(phone);
     if (phoneErr) {
@@ -164,6 +202,8 @@ export default function AdminAddPartner() {
         kpp: partnerType === 'legal' ? kpp : undefined,
         court_fee_per_client: Math.round(Number(courtFee) * 100),
         payment_term_days: Number(paymentTermDays),
+        free_client_limit: promotionEnabled ? Number(freeClientLimit) : 0,
+        promotion_start_date: promotionEnabled ? promotionStartDate : null,
       });
       setSuccess(true);
       toast.success('Партнёр добавлен');
@@ -188,6 +228,8 @@ export default function AdminAddPartner() {
           director_name: 'ФИО',
           court_fee_per_client: 'Сумма судебных расходов',
           payment_term_days: 'Срок оплаты',
+          free_client_limit: 'Количество бесплатных клиентов',
+          promotion_start_date: 'Дата начала предложения',
         };
         const generalMessages: string[] = [];
         for (const item of detail as Array<{ loc?: unknown; msg?: unknown }>) {
@@ -618,6 +660,25 @@ export default function AdminAddPartner() {
                 </p>
               </div>
             </div>
+            <div className="flex flex-wrap gap-2 mb-3">
+              {PRICE_PRESETS.map((price) => (
+                <button
+                  key={price}
+                  type="button"
+                  onClick={() => {
+                    setCourtFee(String(price));
+                    setCourtFeeError('');
+                  }}
+                  className={`px-4 py-2 rounded-lg border text-sm font-medium transition-colors ${
+                    Number(courtFee) === price
+                      ? 'border-blue-600 bg-blue-600 text-white'
+                      : 'border-blue-200 bg-white text-gray-800 hover:border-blue-400'
+                  }`}
+                >
+                  {price.toLocaleString('ru-RU')} ₽
+                </button>
+              ))}
+            </div>
             <input
               type="number"
               value={courtFee}
@@ -639,6 +700,109 @@ export default function AdminAddPartner() {
                 Обязательное поле для расчета платежей
               </p>
             )}
+          </div>
+
+          <div className="bg-white border border-gray-200 rounded-xl p-5">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center flex-shrink-0">
+                <Gift className="w-5 h-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-base font-semibold text-gray-900">Льготный месяц</h3>
+                <p className="text-sm text-gray-600 mt-0.5">
+                  Первые клиенты будут бесплатными только в течение одного календарного месяца.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+              <button
+                type="button"
+                onClick={() => setPromotionEnabled(false)}
+                className={`p-3 rounded-lg border text-left ${
+                  !promotionEnabled ? 'border-blue-600 bg-blue-50' : 'border-gray-200'
+                }`}
+              >
+                <span className="block text-sm font-medium text-gray-900">Без льготы</span>
+                <span className="text-xs text-gray-500">Оплата с первого клиента</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPromotionEnabled(true)}
+                className={`p-3 rounded-lg border text-left ${
+                  promotionEnabled ? 'border-blue-600 bg-blue-50' : 'border-gray-200'
+                }`}
+              >
+                <span className="block text-sm font-medium text-gray-900">Первые клиенты бесплатно</span>
+                <span className="text-xs text-gray-500">Лимит действует один месяц</span>
+              </button>
+            </div>
+
+            {promotionEnabled ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Бесплатных клиентов
+                  </label>
+                  <div className="flex gap-2 mb-2">
+                    {[5, 10].map((limit) => (
+                      <button
+                        key={limit}
+                        type="button"
+                        onClick={() => setFreeClientLimit(String(limit))}
+                        className={`px-4 py-2 rounded-lg border text-sm font-medium ${
+                          Number(freeClientLimit) === limit
+                            ? 'border-emerald-600 bg-emerald-600 text-white'
+                            : 'border-gray-300 bg-white text-gray-700'
+                        }`}
+                      >
+                        {limit}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={freeClientLimit}
+                    onChange={(e) => setFreeClientLimit(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Начало льготного месяца
+                  </label>
+                  <input
+                    type="date"
+                    value={promotionStartDate}
+                    onChange={(e) => setPromotionStartDate(e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-300 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  />
+                  <p className="text-xs text-gray-500 mt-2 flex items-center gap-1.5">
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    Дата окончания рассчитается автоматически
+                  </p>
+                </div>
+                <div className="sm:col-span-2 rounded-lg bg-emerald-50 border border-emerald-200 p-3 text-sm text-emerald-900">
+                  Льгота закончится после передачи {freeClientLimit || '0'} клиентов или через один календарный месяц — что наступит раньше.
+                </div>
+                <div className="sm:col-span-2 rounded-xl border border-blue-200 bg-blue-50 p-4">
+                  <div className="flex items-center justify-between gap-3 text-sm font-medium text-gray-900">
+                    <span>Период действия предложения</span>
+                    <span className="text-xs text-blue-700">1 календарный месяц</span>
+                  </div>
+                  <div className="relative h-2 rounded-full bg-blue-200 my-4">
+                    <div className="absolute inset-0 rounded-full bg-blue-600" />
+                    <span className="absolute left-0 top-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-blue-600 bg-white" />
+                    <span className="absolute right-0 top-1/2 w-4 h-4 translate-x-1/2 -translate-y-1/2 rounded-full border-4 border-blue-600 bg-white" />
+                  </div>
+                  <div className="flex justify-between gap-4 text-xs text-gray-600">
+                    <span><b className="block text-gray-900">{formatDateForDisplay(promotionStartDate)}</b>Начало</span>
+                    <span className="text-right"><b className="block text-gray-900">{addCalendarMonthForDisplay(promotionStartDate)}</b>Окончание</span>
+                  </div>
+                </div>
+              </div>
+            ) : null}
           </div>
 
           <div className="bg-blue-50 border border-blue-200 rounded-xl p-5">

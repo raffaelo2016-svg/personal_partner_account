@@ -2,6 +2,16 @@
 
 from datetime import date, timedelta
 
+from app.services.partner_service import add_calendar_month
+
+
+def test_add_calendar_month_keeps_day_when_available():
+    assert add_calendar_month(date(2026, 9, 7)) == date(2026, 10, 7)
+
+
+def test_add_calendar_month_clamps_to_month_end():
+    assert add_calendar_month(date(2026, 1, 31)) == date(2026, 2, 28)
+
 
 class TestDueDateCalculation:
     """Расчёт due_date для court_fee."""

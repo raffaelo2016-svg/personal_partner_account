@@ -30,6 +30,9 @@ export interface Partner {
   kpp?: string | null;
   court_fee_per_client: number;
   payment_term_days: number;
+  free_client_limit: number;
+  promotion_start_date?: string | null;
+  promotion_end_date?: string | null;
   status: PartnerStatus;
   created_at: string;
   updated_at: string;
@@ -74,6 +77,8 @@ export interface PartnerCreate {
   kpp?: string;
   court_fee_per_client?: number;
   payment_term_days?: number;
+  free_client_limit?: number;
+  promotion_start_date?: string | null;
 }
 
 export interface PartnerUpdate {
@@ -89,6 +94,8 @@ export interface PartnerUpdate {
   kpp?: string | null;
   court_fee_per_client?: number;
   payment_term_days?: number;
+  free_client_limit?: number;
+  promotion_start_date?: string | null;
   status?: PartnerStatus;
 }
 

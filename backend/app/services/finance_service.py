@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 import structlog
 from sqlalchemy import case, extract, func, select
@@ -23,6 +23,13 @@ from app.services.audit import audit_log
 logger = structlog.get_logger()
 
 
+def _promotion_datetime_bounds(start: date, end: date) -> tuple[datetime, datetime]:
+    return (
+        datetime.combine(start, time.min, tzinfo=UTC),
+        datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC),
+    )
+
+
 def _fee_to_read(
     fee: CourtFee,
     client_name: str | None = None,
@@ -33,6 +40,8 @@ def _fee_to_read(
         id=str(fee.id),
         client_id=str(fee.client_id),
         partner_id=str(fee.partner_id),
+        base_amount=fee.base_amount,
+        discount_amount=fee.discount_amount,
         amount=fee.amount,
         status=fee.status,
         due_date=fee.due_date,
@@ -49,13 +58,50 @@ async def create_court_fee_for_client(
     client: Client,
     partner: Partner,
 ) -> CourtFee:
-    due = date.today() + timedelta(days=partner.payment_term_days or 10)
+    today = date.today()
+    due = today + timedelta(days=partner.payment_term_days or 10)
+
+    # Serialise promotion allocation per partner so concurrent client creates
+    # cannot consume the same final free slot.
+    locked_partner = (
+        await session.execute(select(Partner).where(Partner.id == partner.id).with_for_update())
+    ).scalar_one()
+    promotion_active = bool(
+        locked_partner.free_client_limit > 0
+        and locked_partner.promotion_start_date
+        and locked_partner.promotion_end_date
+        and locked_partner.promotion_start_date <= today <= locked_partner.promotion_end_date
+    )
+    free_clients_used = 0
+    if promotion_active:
+        assert locked_partner.promotion_start_date is not None
+        assert locked_partner.promotion_end_date is not None
+        promotion_start_at, promotion_end_at = _promotion_datetime_bounds(
+            locked_partner.promotion_start_date,
+            locked_partner.promotion_end_date,
+        )
+        free_clients_used = (
+            await session.execute(
+                select(func.count(CourtFee.id)).where(
+                    CourtFee.partner_id == locked_partner.id,
+                    CourtFee.status == "promo_free",
+                    CourtFee.created_at >= promotion_start_at,
+                    CourtFee.created_at < promotion_end_at,
+                    CourtFee.deleted_at.is_(None),
+                )
+            )
+        ).scalar_one()
+
+    base_amount = locked_partner.court_fee_per_client or 1_500_000
+    is_promo_free = promotion_active and free_clients_used < locked_partner.free_client_limit
 
     fee = CourtFee(
         client_id=client.id,
-        partner_id=partner.id,
-        amount=partner.court_fee_per_client or 1_500_000,
-        status="unpaid",
+        partner_id=locked_partner.id,
+        base_amount=base_amount,
+        discount_amount=base_amount if is_promo_free else 0,
+        amount=0 if is_promo_free else base_amount,
+        status="promo_free" if is_promo_free else "unpaid",
         due_date=due,
     )
     session.add(fee)
@@ -64,9 +110,20 @@ async def create_court_fee_for_client(
         action="create_court_fee",
         target_id=str(fee.id),
         target_type="court_fee",
-        details={"client_id": str(client.id), "amount": fee.amount},
+        details={
+            "client_id": str(client.id),
+            "base_amount": fee.base_amount,
+            "discount_amount": fee.discount_amount,
+            "amount": fee.amount,
+            "promotion_applied": is_promo_free,
+        },
     )
-    logger.info("court_fee_created", fee_id=str(fee.id), client_id=str(client.id))
+    logger.info(
+        "court_fee_created",
+        fee_id=str(fee.id),
+        client_id=str(client.id),
+        promotion_applied=is_promo_free,
+    )
     return fee
 
 
@@ -117,6 +174,8 @@ async def list_court_fees(
         base = base.where(CourtFee.status.in_(["unpaid", "overdue"]))
     elif category == "overdue":
         base = base.where(CourtFee.status.in_(["unpaid", "overdue"]), CourtFee.due_date < today)
+    elif category == "promo_free":
+        base = base.where(CourtFee.status == "promo_free")
     elif category == "current":
         base = base.join(Client, Client.id == CourtFee.client_id).where(
             CourtFee.status.in_(["unpaid", "overdue"]),
@@ -154,6 +213,9 @@ async def list_court_fees(
 async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> CourtFeeSummary:
     partner = await session.get(Partner, partner_id)
     fee_per_client = partner.court_fee_per_client if partner else 0
+    free_client_limit = partner.free_client_limit if partner else 0
+    promotion_start_date = partner.promotion_start_date if partner else None
+    promotion_end_date = partner.promotion_end_date if partner else None
     today = date.today()
     now = datetime.now(UTC)
 
@@ -164,6 +226,16 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
         & (extract("month", CourtFee.paid_at) == now.month)
         & (extract("year", CourtFee.paid_at) == now.year)
     )
+    promotion_free_cond = CourtFee.status == "promo_free"
+    if promotion_start_date and promotion_end_date:
+        promotion_start_at, promotion_end_at = _promotion_datetime_bounds(
+            promotion_start_date,
+            promotion_end_date,
+        )
+        promotion_free_cond &= CourtFee.created_at >= promotion_start_at
+        promotion_free_cond &= CourtFee.created_at < promotion_end_at
+    else:
+        promotion_free_cond &= CourtFee.id.is_(None)
 
     # Query 1: aggregates without Client join
     q1 = select(
@@ -172,6 +244,11 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
         func.coalesce(func.sum(case((paid_month_cond, CourtFee.amount), else_=0)), 0).label("paid_this_month"),
         func.count().filter(unpaid_cond).label("unpaid_count"),
         func.count().filter(overdue_cond).label("overdue_count"),
+        func.count().filter(promotion_free_cond).label("free_clients_used"),
+        func.coalesce(
+            func.sum(case((promotion_free_cond, CourtFee.discount_amount), else_=0)),
+            0,
+        ).label("promotion_savings"),
         func.count().label("total_clients"),
     ).where(
         CourtFee.partner_id == partner_id,
@@ -198,6 +275,15 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
     r2 = (await session.execute(q2)).one()
 
     payment_term_days = partner.payment_term_days if partner else 10
+    promotion_active = bool(
+        free_client_limit > 0
+        and promotion_start_date
+        and promotion_end_date
+        and promotion_start_date <= today <= promotion_end_date
+        and r1.free_clients_used < free_client_limit
+    )
+    promotion_days_remaining = max(0, (promotion_end_date - today).days) if promotion_end_date else 0
+    free_clients_remaining = max(0, free_client_limit - r1.free_clients_used) if promotion_active else 0
 
     return CourtFeeSummary(
         fee_per_client=fee_per_client,
@@ -210,6 +296,14 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
         current_count=r2.current_count,
         overdue_count=r1.overdue_count,
         total_clients=r1.total_clients,
+        free_client_limit=free_client_limit,
+        free_clients_used=r1.free_clients_used,
+        free_clients_remaining=free_clients_remaining,
+        promotion_start_date=promotion_start_date,
+        promotion_end_date=promotion_end_date,
+        promotion_active=promotion_active,
+        promotion_days_remaining=promotion_days_remaining,
+        promotion_savings=r1.promotion_savings,
     )
 
 
@@ -275,6 +369,8 @@ async def initiate_payment(
             partner_id=partner_id,
         )
         raise NotFound("Court fee not found")
+    if fee.status == "promo_free" or fee.amount <= 0:
+        raise PaymentError("Эти судебные расходы бесплатны по условиям предложения", code="PROMO_FREE_FEE")
 
     # Idempotency: if fee is already paid, return the existing transaction
     if fee.status == "paid":

@@ -1,7 +1,7 @@
 import {
   ArrowLeft, Mail, Phone, Calendar, Users, Briefcase,
   Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
-  WalletCards, CircleDollarSign, Clock3,
+  WalletCards, CircleDollarSign, Clock3, Gift, CalendarClock,
 } from 'lucide-react';
 import { useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
@@ -55,6 +55,13 @@ function parseFio(full: string) {
   return { lastName: parts[0] ?? '', firstName: parts[1] ?? '', middleName: parts.slice(2).join(' ') };
 }
 
+function formatDateOnly(value?: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(`${value}T00:00:00`),
+  );
+}
+
 function EditPartnerModal({
   partner,
   onClose,
@@ -84,8 +91,20 @@ function EditPartnerModal({
   const [postalAddress, setPostalAddress] = useState(partner.postal_address ?? '');
   const [courtFee, setCourtFee] = useState(String(partner.court_fee_per_client / 100));
   const [paymentDays, setPaymentDays] = useState(String(partner.payment_term_days));
+  const [promotionEnabled, setPromotionEnabled] = useState(partner.free_client_limit > 0);
+  const [freeClientLimit, setFreeClientLimit] = useState(String(partner.free_client_limit || 10));
+  const [promotionStartDate, setPromotionStartDate] = useState(partner.promotion_start_date ?? '');
 
   const handleSave = () => {
+    if (!courtFee || Number(courtFee) <= 0 || !paymentDays || Number(paymentDays) <= 0) {
+      toast.error('Проверьте стоимость клиента и срок оплаты');
+      return;
+    }
+    if (promotionEnabled && (!freeClientLimit || Number(freeClientLimit) <= 0)) {
+      toast.error('Укажите количество бесплатных клиентов');
+      return;
+    }
+
     const directorName =
       type === 'legal'
         ? companyName
@@ -103,6 +122,8 @@ function EditPartnerModal({
       postal_address: postalAddress || undefined,
       court_fee_per_client: Math.round(Number(courtFee) * 100),
       payment_term_days: Number(paymentDays),
+      free_client_limit: promotionEnabled ? Number(freeClientLimit) : 0,
+      promotion_start_date: promotionEnabled ? promotionStartDate || null : null,
     };
 
     updatePartner.mutate(
@@ -238,12 +259,98 @@ function EditPartnerModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Стоимость клиента (₽)</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {[10_000, 15_000, 17_000].map((price) => (
+                    <button
+                      key={price}
+                      type="button"
+                      onClick={() => setCourtFee(String(price))}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                        Number(courtFee) === price
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-gray-300 bg-white text-gray-700'
+                      }`}
+                    >
+                      {price.toLocaleString('ru-RU')} ₽
+                    </button>
+                  ))}
+                </div>
                 <input type="number" min="1" className={inputCls} value={courtFee} onChange={(e) => setCourtFee(e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}>Срок оплаты (дней)</label>
                 <input type="number" min="1" className={inputCls} value={paymentDays} onChange={(e) => setPaymentDays(e.target.value)} />
               </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Gift className="w-5 h-5 text-emerald-600" />
+                <h5 className="text-sm font-semibold text-gray-900">Льготный месяц</h5>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setPromotionEnabled(false)}
+                  className={`p-3 rounded-lg border text-left text-sm ${
+                    !promotionEnabled ? 'border-blue-600 bg-blue-50 font-medium' : 'border-gray-200'
+                  }`}
+                >
+                  Без льготы
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPromotionEnabled(true)}
+                  className={`p-3 rounded-lg border text-left text-sm ${
+                    promotionEnabled ? 'border-blue-600 bg-blue-50 font-medium' : 'border-gray-200'
+                  }`}
+                >
+                  Первые клиенты бесплатно
+                </button>
+              </div>
+              {promotionEnabled ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Количество бесплатных клиентов</label>
+                    <div className="flex gap-2 mb-2">
+                      {[5, 10].map((limit) => (
+                        <button
+                          key={limit}
+                          type="button"
+                          onClick={() => setFreeClientLimit(String(limit))}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                            Number(freeClientLimit) === limit
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-gray-300 bg-white text-gray-700'
+                          }`}
+                        >
+                          {limit}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      className={inputCls}
+                      value={freeClientLimit}
+                      onChange={(e) => setFreeClientLimit(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Начало льготного месяца</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={promotionStartDate}
+                      onChange={(e) => setPromotionStartDate(e.target.value)}
+                    />
+                  </div>
+                  <p className="sm:col-span-2 text-xs text-gray-500 flex items-center gap-1.5">
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    Срок окончания будет рассчитан автоматически: один календарный месяц.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -544,6 +651,26 @@ export default function AdminPartnerDetails() {
                 <p className="text-gray-900 font-medium">{partner.payment_term_days} дней</p>
               </div>
             </div>
+            {partner.free_client_limit > 0 ? (
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Gift className="w-5 h-5 text-emerald-700 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-emerald-900">
+                      Первые {partner.free_client_limit} клиентов бесплатно
+                    </p>
+                    <p className="text-sm text-emerald-800 mt-1">
+                      Период: {formatDateOnly(partner.promotion_start_date)} — {formatDateOnly(partner.promotion_end_date)}
+                    </p>
+                    <p className="text-xs text-emerald-700 mt-2">
+                      Льгота завершается по исчерпании лимита или окончании месяца — что наступит раньше.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-gray-500">Льготное предложение не установлено.</p>
+            )}
           </div>
         </div>
 

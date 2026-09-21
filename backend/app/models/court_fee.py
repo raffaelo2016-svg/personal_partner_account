@@ -21,6 +21,8 @@ class CourtFee(Base, TimestampMixin, SoftDeleteMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     client_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("clients.id"), index=True)
     partner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("partners.id"), index=True)
+    base_amount: Mapped[int] = mapped_column(Integer, default=0)
+    discount_amount: Mapped[int] = mapped_column(Integer, default=0)
     amount: Mapped[int] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(20), default="unpaid", index=True)
     due_date: Mapped[date] = mapped_column(index=True)
