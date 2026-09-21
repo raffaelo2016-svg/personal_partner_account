@@ -547,18 +547,29 @@ export default function AdminDebtorDetails() {
               </div>
             ) : (
               <div className="space-y-3">
-                {clientFees.map((fee: { id: string; amount: number; status: string; due_date: string | null; paid_at: string | null; created_at: string }) => {
-                  const statusCfg = fee.status === 'paid'
-                    ? { label: 'Оплачено', color: 'bg-green-100 text-green-700 border-green-300' }
-                    : fee.status === 'overdue'
-                      ? { label: 'Просрочено', color: 'bg-red-100 text-red-700 border-red-300' }
-                      : { label: 'Ожидает оплаты', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' };
+                {clientFees.map((fee: { id: string; base_amount?: number; discount_amount?: number; amount: number; status: string; due_date: string | null; paid_at: string | null; created_at: string }) => {
+                  const statusCfg = fee.status === 'promo_free'
+                    ? { label: 'Бесплатно по предложению', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' }
+                    : fee.status === 'paid'
+                      ? { label: 'Оплачено', color: 'bg-green-100 text-green-700 border-green-300' }
+                      : fee.status === 'overdue'
+                        ? { label: 'Просрочено', color: 'bg-red-100 text-red-700 border-red-300' }
+                        : { label: 'Ожидает оплаты', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' };
                   return (
                     <div key={fee.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {(fee.amount / 100).toLocaleString('ru-RU')} ₽
-                        </p>
+                        {fee.status === 'promo_free' ? (
+                          <p className="text-sm font-medium text-emerald-700">
+                            <span className="text-xs text-gray-400 line-through mr-2">
+                              {((fee.base_amount ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                            </span>
+                            0 ₽
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium text-gray-900">
+                            {(fee.amount / 100).toLocaleString('ru-RU')} ₽
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500">
                           {fee.due_date ? `Срок: ${formatDateShort(fee.due_date, tz)}` : 'Срок не установлен'}
                           {fee.paid_at ? ` · Оплачено ${formatDateShort(fee.paid_at, tz)}` : ''}

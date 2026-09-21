@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import CheckConstraint, ForeignKey, Index, String
@@ -46,6 +46,9 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
 
     court_fee_per_client: Mapped[int] = mapped_column(default=1_500_000)
     payment_term_days: Mapped[int] = mapped_column(default=10)
+    free_client_limit: Mapped[int] = mapped_column(default=0)
+    promotion_start_date: Mapped[date | None] = mapped_column(default=None)
+    promotion_end_date: Mapped[date | None] = mapped_column(default=None)
     status: Mapped[str] = mapped_column(String(20), default="pending")
 
     # Bitrix24 is an operational projection. Cabinet requisites remain authoritative.

@@ -7,6 +7,7 @@ import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { SkeletonCard } from '../components/ui/skeleton';
 import OverdueDebtAlert from '../components/OverdueDebtAlert';
+import { PromotionIncentiveBanner } from '../components/PromotionIncentiveBanner';
 
 export default function Dashboard() {
   const tz = useTimezone();
@@ -89,6 +90,8 @@ export default function Dashboard() {
         currentDebt={(feeSummary?.current_debt ?? 0) / 100}
         unpaidCount={feeSummary?.unpaid_count}
       />
+
+      <PromotionIncentiveBanner summary={feeSummary} />
       
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

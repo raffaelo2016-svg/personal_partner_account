@@ -1,3 +1,4 @@
+import calendar
 from datetime import date, datetime
 
 import structlog
@@ -14,6 +15,14 @@ from app.schemas.partner import PartnerBitrixCollabBinding, PartnerCreate, Partn
 from app.services.audit import audit_log
 
 logger = structlog.get_logger()
+
+
+def add_calendar_month(value: date) -> date:
+    """Return the same calendar day next month, clamped to month end."""
+    year = value.year + (1 if value.month == 12 else 0)
+    month = 1 if value.month == 12 else value.month + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
 
 
 async def list_partners(
@@ -248,6 +257,9 @@ def _partner_to_read(
         kpp=partner.kpp,
         court_fee_per_client=partner.court_fee_per_client,
         payment_term_days=partner.payment_term_days,
+        free_client_limit=partner.free_client_limit,
+        promotion_start_date=partner.promotion_start_date,
+        promotion_end_date=partner.promotion_end_date,
         status=partner.status,
         created_at=partner.created_at,
         updated_at=partner.updated_at,
@@ -285,6 +297,9 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
     session.add(user)
     await session.flush()
 
+    free_client_limit = data.free_client_limit or 0
+    promotion_start_date = (data.promotion_start_date or date.today()) if free_client_limit > 0 else None
+
     partner = Partner(
         user_id=user.id,
         partner_type=data.partner_type,
@@ -299,6 +314,9 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
         kpp=data.kpp,
         court_fee_per_client=data.court_fee_per_client if data.court_fee_per_client is not None else 1_500_000,
         payment_term_days=data.payment_term_days if data.payment_term_days is not None else 10,
+        free_client_limit=free_client_limit,
+        promotion_start_date=promotion_start_date,
+        promotion_end_date=add_calendar_month(promotion_start_date) if promotion_start_date else None,
         status="active",
     )
     session.add(partner)
@@ -325,9 +343,18 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
 
     previous_status = partner.status
     update_data = data.model_dump(exclude_unset=True)
+    promotion_start_was_set = "promotion_start_date" in update_data
     for key, value in update_data.items():
         if hasattr(partner, key):
             setattr(partner, key, value if not hasattr(value, "value") else value.value)
+
+    if partner.free_client_limit <= 0:
+        partner.free_client_limit = 0
+        partner.promotion_start_date = None
+        partner.promotion_end_date = None
+    elif promotion_start_was_set or partner.promotion_start_date is None:
+        partner.promotion_start_date = partner.promotion_start_date or date.today()
+        partner.promotion_end_date = add_calendar_month(partner.promotion_start_date)
 
     await session.flush()
     if previous_status != "active" and partner.status == "active":

@@ -117,6 +117,30 @@ class TestCreatePartner:
         resp = await client.post("/api/v1/admin/partners", json=payload, headers=auth_headers(admin_token))
         assert resp.status_code == 409
 
+    async def test_create_partner_with_one_calendar_month_promotion(self, client: AsyncClient, admin_token: str):
+        resp = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "promo-partner@test.com",
+                "password": "securepass123",
+                "company_name": "Promo Company",
+                "director_name": "Promo Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-44",
+                "court_fee_per_client": 1_700_000,
+                "free_client_limit": 10,
+                "promotion_start_date": "2026-09-07",
+            },
+            headers=auth_headers(admin_token),
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["court_fee_per_client"] == 1_700_000
+        assert data["free_client_limit"] == 10
+        assert data["promotion_start_date"] == "2026-09-07"
+        assert data["promotion_end_date"] == "2026-10-07"
+
 
 class TestGetPartner:
     async def test_get_partner_not_found(self, client: AsyncClient, admin_token: str):

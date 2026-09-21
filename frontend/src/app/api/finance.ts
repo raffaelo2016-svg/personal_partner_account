@@ -4,6 +4,8 @@ export interface CourtFeeData {
   id: string;
   client_id: string;
   partner_id: string;
+  base_amount: number;
+  discount_amount: number;
   amount: number;
   status: string;
   due_date: string;
@@ -25,6 +27,14 @@ export interface CourtFeeSummary {
   overdue_count: number;
   total_clients: number;
   payment_term_days: number;
+  free_client_limit: number;
+  free_clients_used: number;
+  free_clients_remaining: number;
+  promotion_start_date?: string | null;
+  promotion_end_date?: string | null;
+  promotion_active: boolean;
+  promotion_days_remaining: number;
+  promotion_savings: number;
 }
 
 export interface DebtBanner {

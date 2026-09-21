@@ -1,4 +1,4 @@
-import { AlertCircle, Users, TrendingUp, DollarSign, Loader2, Clock, Filter } from 'lucide-react';
+import { AlertCircle, Users, TrendingUp, DollarSign, Loader2, Clock, Filter, Gift, CalendarDays } from 'lucide-react';
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchCourtFees, fetchCourtFeeSummary, payCourtFee } from '../api/finance';
@@ -6,6 +6,7 @@ import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import PaymentModal from '../components/PaymentModal';
 import CustomSelect from '../components/ui/CustomSelect';
+import type { CourtFeeSummary } from '../api/finance';
 
 const COURT_FEE_FILTERS = [
   { value: 'all', label: 'Все клиенты' },
@@ -13,7 +14,143 @@ const COURT_FEE_FILTERS = [
   { value: 'current', label: 'Текущая задолженность' },
   { value: 'overdue', label: 'Просроченная задолженность' },
   { value: 'paid', label: 'Оплачено' },
+  { value: 'promo_free', label: 'Бесплатно по предложению' },
 ];
+
+function parseDateOnly(value: string) {
+  const [year, month, day] = value.split('-').map(Number);
+  return Date.UTC(year, month - 1, day);
+}
+
+function formatPromoDate(value?: string | null) {
+  if (!value) return '—';
+  const [year, month, day] = value.split('-').map(Number);
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long' }).format(
+    new Date(year, month - 1, day),
+  );
+}
+
+function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
+  if (!summary.free_client_limit || !summary.promotion_start_date || !summary.promotion_end_date) {
+    return null;
+  }
+
+  const start = parseDateOnly(summary.promotion_start_date);
+  const end = parseDateOnly(summary.promotion_end_date);
+  const now = new Date();
+  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const scheduled = today < start;
+  const totalDays = Math.max(1, Math.round((end - start) / 86_400_000));
+  const elapsedDays = Math.max(0, totalDays - summary.promotion_days_remaining);
+  const timeProgress = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
+  const clientProgress = Math.min(100, Math.round((summary.free_clients_used / summary.free_client_limit) * 100));
+  const exhausted = summary.free_clients_used >= summary.free_client_limit;
+  const endingSoon = summary.promotion_active && summary.promotion_days_remaining <= 7;
+  const statusLabel = summary.promotion_active
+    ? `Осталось ${summary.promotion_days_remaining} дн.`
+    : scheduled
+      ? `Начнётся ${formatPromoDate(summary.promotion_start_date)}`
+    : exhausted
+      ? 'Лимит использован'
+      : 'Предложение завершено';
+
+  return (
+    <section className={`rounded-2xl border p-6 shadow-sm ${
+      summary.promotion_active
+        ? 'border-blue-200 bg-gradient-to-br from-blue-600 to-blue-500 text-white'
+        : 'border-gray-200 bg-white text-gray-900'
+    }`}>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-3">
+          <div className={`rounded-xl p-2.5 ${summary.promotion_active ? 'bg-white/15' : 'bg-gray-100'}`}>
+            <Gift className={`w-6 h-6 ${summary.promotion_active ? 'text-white' : 'text-gray-500'}`} />
+          </div>
+          <div>
+            <h2 className="text-xl font-semibold">Льготный месяц для новых клиентов</h2>
+            <p className={`text-sm mt-1 ${summary.promotion_active ? 'text-blue-100' : 'text-gray-500'}`}>
+              Первые {summary.free_client_limit} клиентов без судебных расходов до {formatPromoDate(summary.promotion_end_date)}
+            </p>
+          </div>
+        </div>
+        <span className={`self-start rounded-full px-3 py-1.5 text-xs font-semibold ${
+          endingSoon
+            ? 'bg-amber-100 text-amber-800'
+            : summary.promotion_active
+              ? 'bg-white/15 text-white'
+              : 'bg-gray-100 text-gray-600'
+        }`}>
+          {statusLabel}
+        </span>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+        <div className={`rounded-xl p-4 ${summary.promotion_active ? 'bg-white text-gray-900' : 'bg-gray-50'}`}>
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span>Бесплатные клиенты</span>
+            <strong>{summary.free_clients_used} из {summary.free_client_limit}</strong>
+          </div>
+          <div
+            className="h-2.5 rounded-full bg-gray-200 overflow-hidden"
+            role="progressbar"
+            aria-label="Использовано бесплатных клиентов"
+            aria-valuemin={0}
+            aria-valuemax={summary.free_client_limit}
+            aria-valuenow={summary.free_clients_used}
+          >
+            <div className="h-full rounded-full bg-emerald-500" style={{ width: `${clientProgress}%` }} />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {summary.promotion_active
+              ? `Можно передать бесплатно ещё: ${summary.free_clients_remaining}`
+              : `Бесплатно передано: ${summary.free_clients_used}`}
+          </p>
+        </div>
+        <div className={`rounded-xl p-4 ${summary.promotion_active ? 'bg-white text-gray-900' : 'bg-gray-50'}`}>
+          <div className="flex items-center justify-between text-sm mb-2">
+            <span>Время предложения</span>
+            <strong>{elapsedDays} из {totalDays} дней</strong>
+          </div>
+          <div
+            className="h-2.5 rounded-full bg-gray-200 overflow-hidden"
+            role="progressbar"
+            aria-label="Прошло дней льготного периода"
+            aria-valuemin={0}
+            aria-valuemax={totalDays}
+            aria-valuenow={elapsedDays}
+          >
+            <div className="h-full rounded-full bg-amber-400" style={{ width: `${timeProgress}%` }} />
+          </div>
+          <p className="text-xs text-gray-500 mt-2">
+            {formatPromoDate(summary.promotion_start_date)} — {formatPromoDate(summary.promotion_end_date)}
+          </p>
+        </div>
+      </div>
+
+      <div className={`mt-5 rounded-xl border p-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between ${
+        summary.promotion_active
+          ? 'border-white/30 bg-white/10'
+          : 'border-gray-200 bg-gray-50'
+      }`}>
+        <div>
+          <strong className="text-sm">
+            {summary.promotion_active
+              ? `Успейте передать ещё ${summary.free_clients_remaining} клиентов бесплатно`
+              : scheduled
+                ? `Льготный месяц начнётся ${formatPromoDate(summary.promotion_start_date)}`
+              : 'Для новых клиентов действует обычная стоимость'}
+          </strong>
+          <p className={`text-xs mt-1 ${summary.promotion_active ? 'text-blue-100' : 'text-gray-500'}`}>
+            Экономия за период: {(summary.promotion_savings / 100).toLocaleString('ru-RU')} ₽
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <CalendarDays className="w-4 h-4" />
+          Неиспользованный остаток сгорит {formatPromoDate(summary.promotion_end_date)}
+        </div>
+      </div>
+    </section>
+  );
+}
 
 export default function CourtFees() {
   const tz = useTimezone();
@@ -72,6 +209,8 @@ export default function CourtFees() {
     id: f.id,
     clientName: f.client_name ?? 'Клиент',
     courtFee: f.amount / 100,
+    baseAmount: f.base_amount / 100,
+    discountAmount: f.discount_amount / 100,
     status: f.status,
     addedDate: f.created_at?.split('T')[0] ?? '',
     dueDate: f.due_date,
@@ -97,6 +236,11 @@ export default function CourtFees() {
           label: 'Просрочено',
           color: 'bg-red-100 text-red-700 border-red-300',
         };
+      case 'promo_free':
+        return {
+          label: 'Бесплатно по предложению',
+          color: 'bg-emerald-100 text-emerald-700 border-emerald-300',
+        };
       default:
         return {
           label: status,
@@ -121,6 +265,8 @@ export default function CourtFees() {
           Управление оплатой судебных расходов за клиентов
         </p>
       </div>
+
+      {summary ? <PromotionTimeline summary={summary} /> : null}
 
       {/* Alert - Debt Warning */}
       {partnerData.overdueDebt > 0 && (
@@ -340,9 +486,18 @@ export default function CourtFees() {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm font-semibold text-gray-900">
-                        {debt.courtFee.toLocaleString('ru-RU')} ₽
-                      </div>
+                      {debt.status === 'promo_free' ? (
+                        <div>
+                          <div className="text-xs text-gray-400 line-through">
+                            {debt.baseAmount.toLocaleString('ru-RU')} ₽
+                          </div>
+                          <div className="text-sm font-semibold text-emerald-700">0 ₽</div>
+                        </div>
+                      ) : (
+                        <div className="text-sm font-semibold text-gray-900">
+                          {debt.courtFee.toLocaleString('ru-RU')} ₽
+                        </div>
+                      )}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span
@@ -357,14 +512,16 @@ export default function CourtFees() {
                         : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
-                      {debt.status === 'paid'
+                      {debt.status === 'promo_free'
+                        ? <span className="text-emerald-700">Оплата не требуется</span>
+                        : debt.status === 'paid'
                         ? `Оплачено ${formatDateShort(debt.paidDate!, tz)}`
                         : debt.courtProcedureDate
                           ? formatDateShort(debt.dueDate!, tz)
                           : <span className="text-gray-400">—</span>}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm">
-                      {debt.status !== 'paid' && (
+                      {debt.status !== 'paid' && debt.status !== 'promo_free' && (
                         <button
                           className="text-blue-600 hover:text-blue-700 font-medium"
                           onClick={() => {
@@ -396,6 +553,15 @@ export default function CourtFees() {
               Оплата судебных расходов производится за каждого добавленного клиента
             </span>
           </li>
+          {summary?.free_client_limit ? (
+            <li className="flex items-start gap-2">
+              <span className="text-blue-600 mt-1">•</span>
+              <span>
+                Первые {summary.free_client_limit} клиентов бесплатны только в период с{' '}
+                {formatPromoDate(summary.promotion_start_date)} по {formatPromoDate(summary.promotion_end_date)}
+              </span>
+            </li>
+          ) : null}
           <li className="flex items-start gap-2">
             <span className="text-blue-600 mt-1">•</span>
             <span>
