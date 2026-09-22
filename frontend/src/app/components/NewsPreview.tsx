@@ -4,7 +4,7 @@ import { ArrowRight, Newspaper, Pin } from 'lucide-react';
 import { fetchNews } from '../api/news';
 
 export default function NewsPreview() {
-  const { data, isError } = useQuery({ queryKey: ['news', 3], queryFn: () => fetchNews(3) });
+  const { data, isError } = useQuery({ queryKey: ['news', 'latest', 1], queryFn: () => fetchNews(1, 'latest') });
   if (isError || !data?.items.length) return null;
 
   return (

@@ -92,6 +92,34 @@ async def test_news_publication_read_and_acknowledgement(client: AsyncClient, se
     assert (await client.get(f"/api/v1/news/{post_id}", headers=auth(partner_token))).status_code == 404
 
 
+async def test_latest_news_ignores_older_pinned_post(client: AsyncClient, setup_db):
+    admin_token, partner_token = await setup_users(client)
+    first = await client.post(
+        "/api/v1/admin/news",
+        json={"title": "Старая закреплённая новость", "body": "Первый текст", "pinned": True},
+        headers=auth(admin_token),
+    )
+    first_id = first.json()["id"]
+    assert (await client.post(f"/api/v1/admin/news/{first_id}/publish", headers=auth(admin_token))).status_code == 200
+
+    second = await client.post(
+        "/api/v1/admin/news",
+        json={"title": "Новая новость", "body": "Второй текст"},
+        headers=auth(admin_token),
+    )
+    second_id = second.json()["id"]
+    assert (await client.post(f"/api/v1/admin/news/{second_id}/publish", headers=auth(admin_token))).status_code == 200
+
+    default = await client.get("/api/v1/news?limit=1", headers=auth(partner_token))
+    assert default.status_code == 200
+    assert default.json()["items"][0]["id"] == first_id
+
+    latest = await client.get("/api/v1/news?limit=1&sort=latest", headers=auth(partner_token))
+    assert latest.status_code == 200
+    assert latest.json()["total"] == 2
+    assert [post["id"] for post in latest.json()["items"]] == [second_id]
+
+
 async def test_news_cover_upload_replace_and_remove(client: AsyncClient, setup_db):
     admin_token, partner_token = await setup_users(client)
     draft = await client.post(

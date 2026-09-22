@@ -102,14 +102,20 @@ async def visible_post(db: AsyncSession, post_id: uuid.UUID) -> NewsPost:
 async def list_news(
     limit: int = Query(30, ge=1, le=100),
     offset: int = Query(0, ge=0),
+    sort: Literal["pinned", "latest"] = Query("pinned"),
     db: AsyncSession = Depends(get_db),  # noqa: B008
     user: User = Depends(require_role("partner")),  # noqa: B008
 ):
+    ordering = (
+        (NewsPost.published_at.desc(), NewsPost.id.desc())
+        if sort == "latest"
+        else (NewsPost.pinned.desc(), NewsPost.published_at.desc(), NewsPost.id.desc())
+    )
     rows = await db.execute(
         select(NewsPost, NewsReceipt)
         .outerjoin(NewsReceipt, (NewsReceipt.post_id == NewsPost.id) & (NewsReceipt.user_id == user.id))
         .where(NewsPost.status == "published")
-        .order_by(NewsPost.pinned.desc(), NewsPost.published_at.desc())
+        .order_by(*ordering)
         .limit(limit)
         .offset(offset)
     )

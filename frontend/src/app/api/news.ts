@@ -18,8 +18,8 @@ export interface NewsPost {
 
 export type NewsInput = Pick<NewsPost, 'title' | 'body' | 'category' | 'important' | 'pinned' | 'requires_acknowledgement'>;
 
-export async function fetchNews(limit = 30): Promise<{ items: NewsPost[]; total: number }> {
-  const { data } = await apiClient.get('/news', { params: { limit } });
+export async function fetchNews(limit = 30, sort: 'pinned' | 'latest' = 'pinned'): Promise<{ items: NewsPost[]; total: number }> {
+  const { data } = await apiClient.get('/news', { params: { limit, sort } });
   return data;
 }
 
