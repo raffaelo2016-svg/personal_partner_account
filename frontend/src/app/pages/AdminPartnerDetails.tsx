@@ -337,7 +337,9 @@ function EditPartnerModal({
                     />
                   </div>
                   <div>
-                    <label className={labelCls}>Начало льготного месяца</label>
+                    <label className={labelCls}>
+                      {partner.promotion_end_date ? 'Начало льготного месяца' : 'Начало предложения'}
+                    </label>
                     <input
                       type="date"
                       className={inputCls}
@@ -347,7 +349,9 @@ function EditPartnerModal({
                   </div>
                   <p className="sm:col-span-2 text-xs text-gray-500 flex items-center gap-1.5">
                     <CalendarClock className="w-3.5 h-3.5" />
-                    Срок окончания будет рассчитан автоматически: один календарный месяц.
+                    {partner.promotion_end_date
+                      ? 'Срок окончания будет рассчитан автоматически: один календарный месяц.'
+                      : 'Предложение действует без ограничения по сроку — до исчерпания лимита.'}
                   </p>
                 </div>
               ) : null}
@@ -660,10 +664,14 @@ export default function AdminPartnerDetails() {
                       Первые {partner.free_client_limit} клиентов бесплатно
                     </p>
                     <p className="text-sm text-emerald-800 mt-1">
-                      Период: {formatDateOnly(partner.promotion_start_date)} — {formatDateOnly(partner.promotion_end_date)}
+                      {partner.promotion_end_date
+                        ? `Период: ${formatDateOnly(partner.promotion_start_date)} — ${formatDateOnly(partner.promotion_end_date)}`
+                        : `С ${formatDateOnly(partner.promotion_start_date)}, без ограничения по сроку`}
                     </p>
                     <p className="text-xs text-emerald-700 mt-2">
-                      Льгота завершается по исчерпании лимита или окончании месяца — что наступит раньше.
+                      {partner.promotion_end_date
+                        ? 'Льгота завершается по исчерпании лимита или окончании месяца — что наступит раньше.'
+                        : 'Льгота завершается после исчерпания лимита.'}
                     </p>
                   </div>
                 </div>

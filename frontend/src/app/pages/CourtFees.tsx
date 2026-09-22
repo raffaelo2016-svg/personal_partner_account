@@ -31,23 +31,23 @@ function formatPromoDate(value?: string | null) {
 }
 
 function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
-  if (!summary.free_client_limit || !summary.promotion_start_date || !summary.promotion_end_date) {
+  if (!summary.free_client_limit || !summary.promotion_start_date) {
     return null;
   }
 
   const start = parseDateOnly(summary.promotion_start_date);
-  const end = parseDateOnly(summary.promotion_end_date);
+  const end = summary.promotion_end_date ? parseDateOnly(summary.promotion_end_date) : null;
   const now = new Date();
   const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
   const scheduled = today < start;
-  const totalDays = Math.max(1, Math.round((end - start) / 86_400_000));
-  const elapsedDays = Math.max(0, totalDays - summary.promotion_days_remaining);
-  const timeProgress = Math.min(100, Math.round((elapsedDays / totalDays) * 100));
+  const totalDays = end === null ? 0 : Math.max(1, Math.round((end - start) / 86_400_000));
+  const elapsedDays = end === null ? 0 : Math.max(0, totalDays - summary.promotion_days_remaining);
+  const timeProgress = totalDays ? Math.min(100, Math.round((elapsedDays / totalDays) * 100)) : 0;
   const clientProgress = Math.min(100, Math.round((summary.free_clients_used / summary.free_client_limit) * 100));
   const exhausted = summary.free_clients_used >= summary.free_client_limit;
-  const endingSoon = summary.promotion_active && summary.promotion_days_remaining <= 7;
+  const endingSoon = summary.promotion_active && end !== null && summary.promotion_days_remaining <= 7;
   const statusLabel = summary.promotion_active
-    ? `Осталось ${summary.promotion_days_remaining} дн.`
+    ? end === null ? 'Без ограничения по сроку' : `Осталось ${summary.promotion_days_remaining} дн.`
     : scheduled
       ? `Начнётся ${formatPromoDate(summary.promotion_start_date)}`
     : exhausted
@@ -66,9 +66,12 @@ function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
             <Gift className={`w-6 h-6 ${summary.promotion_active ? 'text-white' : 'text-gray-500'}`} />
           </div>
           <div>
-            <h2 className="text-xl font-semibold">Льготный месяц для новых клиентов</h2>
+            <h2 className="text-xl font-semibold">
+              {end === null ? 'Бесплатные клиенты' : 'Льготный месяц для новых клиентов'}
+            </h2>
             <p className={`text-sm mt-1 ${summary.promotion_active ? 'text-blue-100' : 'text-gray-500'}`}>
-              Первые {summary.free_client_limit} клиентов без судебных расходов до {formatPromoDate(summary.promotion_end_date)}
+              Первые {summary.free_client_limit} клиентов без судебных расходов
+              {end === null ? ' без ограничения по сроку' : ` до ${formatPromoDate(summary.promotion_end_date)}`}
             </p>
           </div>
         </div>
@@ -108,20 +111,23 @@ function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
         <div className={`rounded-xl p-4 ${summary.promotion_active ? 'bg-white text-gray-900' : 'bg-gray-50'}`}>
           <div className="flex items-center justify-between text-sm mb-2">
             <span>Время предложения</span>
-            <strong>{elapsedDays} из {totalDays} дней</strong>
+            <strong>{end === null ? 'Без ограничения' : `${elapsedDays} из ${totalDays} дней`}</strong>
           </div>
-          <div
-            className="h-2.5 rounded-full bg-gray-200 overflow-hidden"
-            role="progressbar"
-            aria-label="Прошло дней льготного периода"
-            aria-valuemin={0}
-            aria-valuemax={totalDays}
-            aria-valuenow={elapsedDays}
-          >
-            <div className="h-full rounded-full bg-amber-400" style={{ width: `${timeProgress}%` }} />
-          </div>
+            {end !== null ? (
+              <div
+                className="h-2.5 rounded-full bg-gray-200 overflow-hidden"
+                role="progressbar"
+                aria-label="Прошло дней льготного периода"
+                aria-valuemin={0}
+                aria-valuemax={totalDays}
+                aria-valuenow={elapsedDays}
+              >
+                <div className="h-full rounded-full bg-amber-400" style={{ width: `${timeProgress}%` }} />
+              </div>
+            ) : null}
           <p className="text-xs text-gray-500 mt-2">
-            {formatPromoDate(summary.promotion_start_date)} — {formatPromoDate(summary.promotion_end_date)}
+            С {formatPromoDate(summary.promotion_start_date)}
+            {end === null ? ', до исчерпания лимита' : ` — ${formatPromoDate(summary.promotion_end_date)}`}
           </p>
         </div>
       </div>
@@ -134,9 +140,9 @@ function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
         <div>
           <strong className="text-sm">
             {summary.promotion_active
-              ? `Успейте передать ещё ${summary.free_clients_remaining} клиентов бесплатно`
+              ? `Можно передать ещё ${summary.free_clients_remaining} клиентов бесплатно`
               : scheduled
-                ? `Льготный месяц начнётся ${formatPromoDate(summary.promotion_start_date)}`
+                ? `Предложение начнётся ${formatPromoDate(summary.promotion_start_date)}`
               : 'Для новых клиентов действует обычная стоимость'}
           </strong>
           <p className={`text-xs mt-1 ${summary.promotion_active ? 'text-blue-100' : 'text-gray-500'}`}>
@@ -145,7 +151,9 @@ function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
         </div>
         <div className="flex items-center gap-2 text-sm font-medium">
           <CalendarDays className="w-4 h-4" />
-          Неиспользованный остаток сгорит {formatPromoDate(summary.promotion_end_date)}
+          {end === null
+            ? 'Без ограничения по сроку'
+            : `Неиспользованный остаток сгорит ${formatPromoDate(summary.promotion_end_date)}`}
         </div>
       </div>
     </section>
@@ -557,8 +565,11 @@ export default function CourtFees() {
             <li className="flex items-start gap-2">
               <span className="text-blue-600 mt-1">•</span>
               <span>
-                Первые {summary.free_client_limit} клиентов бесплатны только в период с{' '}
-                {formatPromoDate(summary.promotion_start_date)} по {formatPromoDate(summary.promotion_end_date)}
+                Первые {summary.free_client_limit} клиентов бесплатны с{' '}
+                {formatPromoDate(summary.promotion_start_date)}
+                {summary.promotion_end_date
+                  ? ` по ${formatPromoDate(summary.promotion_end_date)}`
+                  : ' без ограничения по сроку, до исчерпания лимита'}
               </span>
             </li>
           ) : null}
