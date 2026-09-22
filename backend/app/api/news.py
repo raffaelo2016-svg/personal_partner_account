@@ -1,20 +1,24 @@
+import hashlib
+import hmac
+import time
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, Response, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.dependencies import require_role
 from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models.news import NewsPost, NewsReceipt
 from app.models.notification import Notification
 from app.models.user import User
-from app.services.s3_service import delete_file_async, get_presigned_url, upload_file_async
+from app.services.s3_service import delete_file_async, download_file_async, get_presigned_url, upload_file_async
 from app.validation.files import file_extension, has_valid_signature
 
 router = APIRouter(prefix="/news", tags=["news"])
@@ -34,6 +38,21 @@ def valid_news_image(data: bytes, extension: str) -> bool:
     if extension == ".webp":
         return data.startswith(b"RIFF") and data[8:12] == b"WEBP"
     return has_valid_signature(data, extension)
+
+
+def cover_signature(post_id: uuid.UUID, expires: int, key: str) -> str:
+    message = f"{post_id}:{expires}:{key}".encode()
+    return hmac.new(settings.SECRET_KEY.encode(), message, hashlib.sha256).hexdigest()
+
+
+def cover_url(post: NewsPost) -> str | None:
+    if not post.image_s3_key:
+        return None
+    if settings.ENVIRONMENT != "production":
+        return get_presigned_url(post.image_s3_key, expires_in=3600)
+    expires = int(time.time()) + 3600
+    signature = cover_signature(post.id, expires, post.image_s3_key)
+    return f"{settings.PUBLIC_APP_URL.rstrip('/')}/api/v1/news/{post.id}/image?expires={expires}&signature={signature}"
 
 
 class NewsInput(BaseModel):
@@ -59,7 +78,7 @@ def serialize(post: NewsPost, receipt: NewsReceipt | None = None) -> dict:
         "id": str(post.id),
         "title": post.title,
         "body": post.body,
-        "image_url": get_presigned_url(post.image_s3_key, expires_in=3600) if post.image_s3_key else None,
+        "image_url": cover_url(post),
         "category": post.category,
         "important": post.important,
         "pinned": post.pinned,
@@ -110,6 +129,28 @@ async def unread_news_count(
         .where(NewsPost.status == "published", NewsReceipt.read_at.is_(None))
     )
     return {"count": count or 0}
+
+
+@router.get("/{post_id}/image")
+async def get_news_image(
+    post_id: uuid.UUID,
+    expires: int,
+    signature: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    post = await db.get(NewsPost, post_id)
+    if not post or not post.image_s3_key or post.status == "archived" or expires < int(time.time()):
+        raise HTTPException(404, "Image not found")
+    expected = cover_signature(post.id, expires, post.image_s3_key)
+    if not hmac.compare_digest(signature, expected):
+        raise HTTPException(404, "Image not found")
+    image = await download_file_async(post.image_s3_key)
+    suffix = file_extension(post.image_s3_key)
+    return Response(
+        content=image,
+        media_type=NEWS_IMAGE_MIME.get(suffix, "application/octet-stream"),
+        headers={"Cache-Control": "private, max-age=300", "X-Content-Type-Options": "nosniff"},
+    )
 
 
 @router.get("/{post_id}")

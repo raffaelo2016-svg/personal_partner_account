@@ -1,4 +1,5 @@
 from unittest.mock import AsyncMock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from httpx import AsyncClient
@@ -155,3 +156,43 @@ async def test_news_cover_upload_replace_and_remove(client: AsyncClient, setup_d
         assert removed.json()["image_url"] is None
         delete.assert_awaited_with("uploads/second.png")
         assert (await client.get(f"/api/v1/news/{post_id}", headers=auth(partner_token))).json()["image_url"] is None
+
+
+async def test_news_cover_is_served_through_signed_backend_url(client: AsyncClient, setup_db):
+    admin_token, partner_token = await setup_users(client)
+    draft = await client.post(
+        "/api/v1/admin/news",
+        json={"title": "Новость с картинкой", "body": "Текст"},
+        headers=auth(admin_token),
+    )
+    post_id = draft.json()["id"]
+    png = b"\x89PNG\r\n\x1a\n" + b"test-image"
+    with (
+        patch("app.api.news.settings.ENVIRONMENT", "production"),
+        patch("app.api.news.upload_file_async", new_callable=AsyncMock, return_value="uploads/cover.png"),
+        patch("app.api.news.download_file_async", new_callable=AsyncMock, return_value=png) as download,
+    ):
+        uploaded = await client.post(
+            f"/api/v1/admin/news/{post_id}/image",
+            files={"file": ("cover.png", png, "image/png")},
+            headers=auth(admin_token),
+        )
+        assert uploaded.status_code == 200
+        image_path = urlsplit(uploaded.json()["image_url"])
+        assert image_path.path == f"/api/v1/news/{post_id}/image"
+
+        cover = await client.get(f"{image_path.path}?{image_path.query}")
+        assert cover.status_code == 200
+        assert cover.content == png
+        assert cover.headers["content-type"] == "image/png"
+        download.assert_awaited_with("uploads/cover.png")
+
+        expires = parse_qs(image_path.query)["expires"][0]
+        invalid = await client.get(f"{image_path.path}?expires={expires}&signature=wrong")
+        assert invalid.status_code == 404
+        expired = await client.get(f"{image_path.path}?expires=1&signature=wrong")
+        assert expired.status_code == 404
+
+        await client.post(f"/api/v1/admin/news/{post_id}/publish", headers=auth(admin_token))
+        partner_news = await client.get(f"/api/v1/news/{post_id}", headers=auth(partner_token))
+        assert partner_news.json()["image_url"] is not None
