@@ -72,6 +72,55 @@ class TestAdminRooms:
         resp = await client.get("/api/v1/admin/chat/rooms", headers=auth(partner_with_rooms))
         assert resp.status_code == 403
 
+    async def test_tech_support_conversation_is_separate(self, client: AsyncClient, admin_token, partner_with_rooms):
+        partner_rooms = (await client.get("/api/v1/chat/rooms", headers=auth(partner_with_rooms))).json()
+        support_room = next(room for room in partner_rooms if room["type"] == "tech_support")
+        admin_room = next(room for room in partner_rooms if room["type"] == "admin")
+
+        sent = await client.post(
+            f"/api/v1/chat/rooms/{support_room['id']}/messages",
+            json={"text": "Не открывается раздел клиентов"},
+            headers=auth(partner_with_rooms),
+        )
+        assert sent.status_code == 201
+
+        support_list = await client.get(
+            "/api/v1/admin/chat/rooms",
+            params={"room_type": "tech_support"},
+            headers=auth(admin_token),
+        )
+        assert support_list.status_code == 200
+        assert any(room["id"] == support_room["id"] and room["unread_count"] == 1 for room in support_list.json())
+
+        admin_list = (await client.get("/api/v1/admin/chat/rooms", headers=auth(admin_token))).json()
+        assert any(room["id"] == admin_room["id"] and room["unread_count"] == 0 for room in admin_list)
+        assert all(room["type"] == "admin" for room in admin_list)
+
+        messages = await client.get(
+            f"/api/v1/admin/chat/rooms/{support_room['id']}/messages",
+            headers=auth(admin_token),
+        )
+        assert messages.status_code == 200
+        assert messages.json()[-1]["text"] == "Не открывается раздел клиентов"
+
+        reply = await client.post(
+            f"/api/v1/admin/chat/rooms/{support_room['id']}/messages",
+            json={"text": "Проверим доступ"},
+            headers=auth(admin_token),
+        )
+        assert reply.status_code == 201
+        assert reply.json()["sender_type"] == "admin"
+
+        partner_unread = await client.get("/api/v1/chat/unread-count", headers=auth(partner_with_rooms))
+        assert partner_unread.json()["unread_count"] == 1
+        partner_messages = await client.get(
+            f"/api/v1/chat/rooms/{support_room['id']}/messages",
+            headers=auth(partner_with_rooms),
+        )
+        assert partner_messages.json()[-1]["text"] == "Проверим доступ"
+        final_unread = await client.get("/api/v1/chat/unread-count", headers=auth(partner_with_rooms))
+        assert final_unread.json()["unread_count"] == 0
+
 
 class TestAdminMessages:
     """GET/POST /api/v1/admin/chat/rooms/{room_id}/messages"""

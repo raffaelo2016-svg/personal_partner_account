@@ -26,6 +26,7 @@ export default function AdminChat() {
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showJournal, setShowJournal] = useState(false);
+  const [roomType, setRoomType] = useState<'admin' | 'tech_support'>('admin');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,8 +47,8 @@ export default function AdminChat() {
   }, [searchText]);
 
   const { data: rooms, isLoading: roomsLoading } = useQuery({
-    queryKey: ['adminChatRooms', debouncedSearch],
-    queryFn: () => fetchAdminChatRooms(debouncedSearch || undefined),
+    queryKey: ['adminChatRooms', roomType, debouncedSearch],
+    queryFn: () => fetchAdminChatRooms(debouncedSearch || undefined, roomType),
   });
 
   const {
@@ -70,8 +71,8 @@ export default function AdminChat() {
   const { data: messageEvents = [], isLoading: eventsLoading } = useQuery({
     queryKey: ['adminChatMessageEvents', activeRoomId],
     queryFn: () => fetchAdminChatMessageEvents(activeRoomId!),
-    enabled: !!activeRoomId && showJournal,
-    refetchInterval: showJournal ? 15_000 : false,
+    enabled: !!activeRoomId && showJournal && roomType === 'admin',
+    refetchInterval: showJournal && roomType === 'admin' ? 15_000 : false,
   });
 
   const sendMutation = useMutation({
@@ -198,6 +199,18 @@ export default function AdminChat() {
               <span className="flex items-center gap-1 text-orange-600"><WifiOff className="w-3 h-3" /> Переподключение...</span>
             )}
           </p>
+          <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Тип чата">
+            {([
+              ['admin', 'Рабочие вопросы'],
+              ['tech_support', 'Техподдержка'],
+            ] as const).map(([type, label]) => (
+              <button key={type} type="button" role="tab" aria-selected={roomType === type}
+                onClick={() => { setRoomType(type); setActiveRoomId(null); setShowJournal(false); clearWsMessages(); }}
+                className={`flex-1 rounded-md px-2 py-2 text-sm font-medium ${roomType === type ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)}
@@ -214,7 +227,7 @@ export default function AdminChat() {
             <button key={room.id}
               onClick={() => { setActiveRoomId(room.id); clearWsMessages(); isInitialLoad.current = true; }}
               className={`w-full p-4 flex items-center gap-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeRoomId === room.id ? 'bg-blue-50' : ''}`}>
-              <div className="w-11 h-11 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className={`w-11 h-11 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center flex-shrink-0`}>
                 <span className="text-white font-semibold text-sm">{(room.partner_name ?? 'П').slice(0, 2).toUpperCase()}</span>
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -233,21 +246,21 @@ export default function AdminChat() {
         {activeRoom ? (
           <>
             <div className="bg-white border-b border-gray-200 p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+              <div className={`w-10 h-10 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center`}>
                 <span className="text-white font-semibold text-sm">{(activeRoom.partner_name ?? 'П').slice(0, 2).toUpperCase()}</span>
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">{activeRoom.partner_name ?? 'Партнёр'}</h3>
-                <p className="text-sm text-gray-500">Чат с партнёром</p>
+                <p className="text-sm text-gray-500">{roomType === 'tech_support' ? 'Техническая поддержка' : 'Чат с партнёром'}</p>
               </div>
-              <button
+              {roomType === 'admin' && <button
                 type="button"
                 onClick={() => setShowJournal((value) => !value)}
                 className="ml-auto inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               >
                 <History className="h-4 w-4" />
                 История изменений
-              </button>
+              </button>}
             </div>
 
             {showJournal && (

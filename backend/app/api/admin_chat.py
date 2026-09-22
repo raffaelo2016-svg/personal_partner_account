@@ -1,4 +1,5 @@
 import html
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -44,10 +45,11 @@ def _message_payload(msg: ChatMessageRead) -> dict:
 @router.get("/rooms", response_model=list[ChatRoomRead])
 async def admin_chat_rooms(
     search: str | None = Query(None, max_length=100),  # noqa: B008
+    room_type: Literal["admin", "tech_support"] = Query("admin"),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     _current_user: User = Depends(require_role("admin")),  # noqa: B008
 ):
-    rooms = await list_admin_rooms(db, search=search)
+    rooms = await list_admin_rooms(db, search=search, room_type=room_type)
     await db.commit()
     return rooms
 

@@ -12,7 +12,8 @@ from app.services.s3_service import delete_file_async, get_presigned_url, upload
 
 logger = structlog.get_logger()
 
-ROOM_TYPES = ["admin", "arbitration_manager", "assistant", "ai_assistant"]
+ROOM_TYPES = ["admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"]
+STAFF_ROOM_TYPES = {"admin", "tech_support"}
 CHAT_UPLOAD_MAX_SIZE_MB = 10
 CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
 CHAT_ALLOWED_MIME_TYPES = {
@@ -187,6 +188,8 @@ async def send_message(
         raise NotFound("Chat room not found")
     if partner_id and str(room.partner_id) != partner_id:
         raise Forbidden("Access denied")
+    if sender_type == "admin" and room.type not in STAFF_ROOM_TYPES:
+        raise Forbidden("Access denied")
 
     msg = ChatMessage(
         room_id=room_id,
@@ -220,14 +223,15 @@ async def list_admin_rooms(
     session: AsyncSession,
     *,
     search: str | None = None,
+    room_type: str = "admin",
 ) -> list[ChatRoomRead]:
-    """Все admin-чаты для панели администратора."""
+    """Чаты выбранного типа для панели администратора."""
     from datetime import UTC
     from datetime import datetime as dt
 
     from app.models.partner import Partner
 
-    q = select(ChatRoom).where(ChatRoom.type == "admin")
+    q = select(ChatRoom).where(ChatRoom.type == room_type)
     rooms = list((await session.execute(q)).scalars().all())
 
     partner_ids = {str(r.partner_id) for r in rooms}
@@ -321,7 +325,7 @@ async def get_admin_messages(
     before: str | None = None,
 ) -> list[ChatMessageRead]:
     room = await session.get(ChatRoom, room_id)
-    if not room or room.type != "admin":
+    if not room or room.type not in STAFF_ROOM_TYPES:
         raise NotFound("Admin chat room not found")
 
     q = select(ChatMessage).where(ChatMessage.room_id == room_id)
@@ -425,7 +429,7 @@ async def get_total_unread_for_admin(session: AsyncSession) -> int:
         .select_from(ChatMessage)
         .join(ChatRoom, ChatMessage.room_id == ChatRoom.id)
         .where(
-            ChatRoom.type == "admin",
+            ChatRoom.type.in_(STAFF_ROOM_TYPES),
             ChatMessage.sender_type == "user",
             ChatMessage.delivery_status != "read",
         )
@@ -439,7 +443,7 @@ async def get_total_unread_for_partner(session: AsyncSession, partner_id: str) -
         .select_from(ChatMessage)
         .join(ChatRoom, ChatMessage.room_id == ChatRoom.id)
         .where(
-            ChatRoom.type == "admin",
+            ChatRoom.type.in_(STAFF_ROOM_TYPES),
             ChatRoom.partner_id == partner_id,
             ChatMessage.sender_type == "admin",
             ChatMessage.delivery_status != "read",

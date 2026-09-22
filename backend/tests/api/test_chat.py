@@ -52,9 +52,9 @@ class TestChat:
         resp = await client.get("/api/v1/chat/rooms", headers=auth(token))
         assert resp.status_code == 200
         rooms = resp.json()
-        assert len(rooms) == 4
+        assert len(rooms) == 5
         types = {r["type"] for r in rooms}
-        assert types == {"admin", "arbitration_manager", "assistant", "ai_assistant"}
+        assert types == {"admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"}
 
     async def test_send_and_get_messages(self, client: AsyncClient, setup_db):
         token = await _setup_partner(client, setup_db)
