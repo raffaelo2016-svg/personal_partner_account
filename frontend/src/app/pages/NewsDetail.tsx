@@ -42,6 +42,9 @@ export default function NewsDetail() {
           </div>
           <h1 className="text-3xl font-semibold text-gray-900">{post.title}</h1>
           <p className="text-sm text-gray-500 mt-3">{post.published_at ? new Date(post.published_at).toLocaleDateString('ru-RU') : ''}</p>
+          {post.image_url && (
+            <img src={post.image_url} alt={`Обложка новости «${post.title}»`} className="mt-6 w-full aspect-video rounded-xl object-cover" />
+          )}
           <div className="mt-8 text-gray-700 leading-relaxed whitespace-pre-wrap break-words">{post.body}</div>
           {post.requires_acknowledgement && (
             <div className="mt-10 pt-6 border-t border-gray-100">

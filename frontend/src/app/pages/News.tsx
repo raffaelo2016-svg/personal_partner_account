@@ -28,6 +28,9 @@ export default function News() {
               </div>
               {!post.read_at && <span className="text-xs text-blue-600 font-medium whitespace-nowrap">Не прочитано</span>}
             </div>
+            {post.image_url && (
+              <img src={post.image_url} alt="" loading="lazy" className="mt-4 w-full aspect-[16/7] rounded-xl object-cover" />
+            )}
             <h2 className="text-xl font-semibold text-gray-900 mt-3">{post.title}</h2>
             <p className="text-gray-600 mt-2 line-clamp-2 whitespace-pre-line">{post.body}</p>
             <p className="text-xs text-gray-400 mt-4">{post.published_at ? new Date(post.published_at).toLocaleDateString('ru-RU') : ''}</p>

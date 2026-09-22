@@ -19,13 +19,16 @@ export default function NewsPreview() {
       </div>
       <div className="divide-y divide-gray-100">
         {data.items.map((post) => (
-          <Link key={post.id} to={`/dashboard/news/${post.id}`} className="block px-6 py-4 hover:bg-blue-50/40">
-            <span className="flex items-center gap-2 font-medium text-gray-900">
-              {post.pinned && <Pin className="w-4 h-4 text-blue-500" aria-label="Закреплено" />}
-              {post.title}
-              {!post.read_at && <span className="w-2 h-2 rounded-full bg-blue-600" aria-label="Не прочитано" />}
+          <Link key={post.id} to={`/dashboard/news/${post.id}`} className="flex items-center gap-4 px-6 py-4 hover:bg-blue-50/40">
+            {post.image_url && <img src={post.image_url} alt="" loading="lazy" className="h-14 w-20 shrink-0 rounded-lg object-cover" />}
+            <span className="min-w-0">
+              <span className="flex items-center gap-2 font-medium text-gray-900">
+                {post.pinned && <Pin className="w-4 h-4 text-blue-500" aria-label="Закреплено" />}
+                {post.title}
+                {!post.read_at && <span className="w-2 h-2 rounded-full bg-blue-600" aria-label="Не прочитано" />}
+              </span>
+              <span className="block text-sm text-gray-500 mt-1 line-clamp-1">{post.body}</span>
             </span>
-            <span className="block text-sm text-gray-500 mt-1 line-clamp-1">{post.body}</span>
           </Link>
         ))}
       </div>

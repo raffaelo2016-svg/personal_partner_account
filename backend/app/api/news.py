@@ -1,22 +1,39 @@
-from __future__ import annotations
-
 import uuid
 from datetime import UTC, datetime
 from typing import Literal
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import structlog
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import require_role
+from app.core.rate_limit import limiter
 from app.database import get_db
 from app.models.news import NewsPost, NewsReceipt
 from app.models.notification import Notification
 from app.models.user import User
+from app.services.s3_service import delete_file_async, get_presigned_url, upload_file_async
+from app.validation.files import file_extension, has_valid_signature
 
 router = APIRouter(prefix="/news", tags=["news"])
 admin_router = APIRouter(prefix="/admin/news", tags=["admin-news"])
+logger = structlog.get_logger()
+
+MAX_NEWS_IMAGE_BYTES = 5 * 1024 * 1024
+NEWS_IMAGE_MIME = {
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".png": "image/png",
+    ".webp": "image/webp",
+}
+
+
+def valid_news_image(data: bytes, extension: str) -> bool:
+    if extension == ".webp":
+        return data.startswith(b"RIFF") and data[8:12] == b"WEBP"
+    return has_valid_signature(data, extension)
 
 
 class NewsInput(BaseModel):
@@ -42,6 +59,7 @@ def serialize(post: NewsPost, receipt: NewsReceipt | None = None) -> dict:
         "id": str(post.id),
         "title": post.title,
         "body": post.body,
+        "image_url": get_presigned_url(post.image_s3_key, expires_in=3600) if post.image_s3_key else None,
         "category": post.category,
         "important": post.important,
         "pinned": post.pinned,
@@ -181,6 +199,69 @@ async def update_news(
     return serialize(post)
 
 
+@admin_router.post("/{post_id}/image")
+@limiter.limit("10/minute")
+async def upload_news_image(
+    request: Request,
+    post_id: uuid.UUID,
+    file: UploadFile = File(...),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    post = await db.get(NewsPost, post_id)
+    if not post or post.status == "archived":
+        raise HTTPException(404, "News not found")
+
+    extension = file_extension(file.filename or "")
+    content_type = file.content_type or ""
+    if NEWS_IMAGE_MIME.get(extension) != content_type:
+        raise HTTPException(415, "Upload a JPEG, PNG or WebP image")
+
+    data = await file.read(MAX_NEWS_IMAGE_BYTES + 1)
+    if len(data) > MAX_NEWS_IMAGE_BYTES:
+        raise HTTPException(413, "Image must be 5 MB or smaller")
+    if not valid_news_image(data, extension):
+        raise HTTPException(415, "Invalid image content")
+
+    new_key = await upload_file_async(data, f"news-cover{extension}", content_type)
+    old_key = post.image_s3_key
+    post.image_s3_key = new_key
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        await delete_file_async(new_key)
+        raise
+    await db.refresh(post)
+    if old_key:
+        try:
+            await delete_file_async(old_key)
+        except Exception:
+            logger.warning("news_image_cleanup_failed", post_id=str(post.id))
+    return serialize(post)
+
+
+@admin_router.delete("/{post_id}/image")
+async def delete_news_image(
+    post_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    post = await db.get(NewsPost, post_id)
+    if not post or post.status == "archived":
+        raise HTTPException(404, "News not found")
+    old_key = post.image_s3_key
+    if old_key:
+        post.image_s3_key = None
+        await db.commit()
+        await db.refresh(post)
+        try:
+            await delete_file_async(old_key)
+        except Exception:
+            logger.warning("news_image_cleanup_failed", post_id=str(post.id))
+    return serialize(post)
+
+
 @admin_router.post("/{post_id}/publish")
 async def publish_news(
     post_id: uuid.UUID,
@@ -235,11 +316,13 @@ async def news_stats(
         select(func.count()).select_from(User).where(User.role == "partner", User.is_active.is_(True))
     )
     read = await db.scalar(
-        select(func.count()).select_from(NewsReceipt)
+        select(func.count())
+        .select_from(NewsReceipt)
         .where(NewsReceipt.post_id == post_id, NewsReceipt.read_at.is_not(None))
     )
     acknowledged = await db.scalar(
-        select(func.count()).select_from(NewsReceipt)
+        select(func.count())
+        .select_from(NewsReceipt)
         .where(NewsReceipt.post_id == post_id, NewsReceipt.acknowledged_at.is_not(None))
     )
     return {"total": total or 0, "read": read or 0, "acknowledged": acknowledged or 0}

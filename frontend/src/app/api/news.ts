@@ -4,6 +4,7 @@ export interface NewsPost {
   id: string;
   title: string;
   body: string;
+  image_url: string | null;
   category: 'announcement' | 'update' | 'instruction';
   important: boolean;
   pinned: boolean;
@@ -54,6 +55,20 @@ export async function createNews(input: NewsInput): Promise<NewsPost> {
 
 export async function updateNews(id: string, input: NewsInput): Promise<NewsPost> {
   const { data } = await apiClient.patch(`/admin/news/${id}`, input);
+  return data;
+}
+
+export async function uploadNewsImage(id: string, file: File): Promise<NewsPost> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const { data } = await apiClient.post<NewsPost>(`/admin/news/${id}/image`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return data;
+}
+
+export async function deleteNewsImage(id: string): Promise<NewsPost> {
+  const { data } = await apiClient.delete<NewsPost>(`/admin/news/${id}/image`);
   return data;
 }
 

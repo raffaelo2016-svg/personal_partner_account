@@ -89,3 +89,69 @@ async def test_news_publication_read_and_acknowledgement(client: AsyncClient, se
     archived = await client.post(f"/api/v1/admin/news/{post_id}/archive", headers=auth(admin_token))
     assert archived.status_code == 200
     assert (await client.get(f"/api/v1/news/{post_id}", headers=auth(partner_token))).status_code == 404
+
+
+async def test_news_cover_upload_replace_and_remove(client: AsyncClient, setup_db):
+    admin_token, partner_token = await setup_users(client)
+    draft = await client.post(
+        "/api/v1/admin/news",
+        json={"title": "Новость с обложкой", "body": "Текст новости"},
+        headers=auth(admin_token),
+    )
+    assert draft.status_code == 201
+    post_id = draft.json()["id"]
+    image_url = f"/api/v1/admin/news/{post_id}/image"
+    png = b"\x89PNG\r\n\x1a\n" + b"test-image"
+
+    with (
+        patch("app.api.news.upload_file_async", new_callable=AsyncMock) as upload,
+        patch("app.api.news.delete_file_async", new_callable=AsyncMock) as delete,
+        patch("app.api.news.get_presigned_url", return_value="https://assets.test/cover") as presign,
+    ):
+        upload.side_effect = ["uploads/first.png", "uploads/second.png"]
+
+        forbidden = await client.post(
+            image_url, files={"file": ("cover.png", png, "image/png")}, headers=auth(partner_token)
+        )
+        assert forbidden.status_code == 403
+        wrong_type = await client.post(
+            image_url, files={"file": ("cover.svg", b"<svg/>", "image/svg+xml")}, headers=auth(admin_token)
+        )
+        assert wrong_type.status_code == 415
+        mismatched_mime = await client.post(
+            image_url, files={"file": ("cover.png", png, "image/jpeg")}, headers=auth(admin_token)
+        )
+        assert mismatched_mime.status_code == 415
+        invalid_content = await client.post(
+            image_url, files={"file": ("cover.png", b"not-an-image", "image/png")}, headers=auth(admin_token)
+        )
+        assert invalid_content.status_code == 415
+        too_large = await client.post(
+            image_url,
+            files={"file": ("cover.png", png + b"x" * (5 * 1024 * 1024), "image/png")},
+            headers=auth(admin_token),
+        )
+        assert too_large.status_code == 413
+        upload.assert_not_awaited()
+
+        first = await client.post(image_url, files={"file": ("cover.png", png, "image/png")}, headers=auth(admin_token))
+        assert first.status_code == 200
+        assert first.json()["image_url"] == "https://assets.test/cover"
+        presign.assert_called_with("uploads/first.png", expires_in=3600)
+
+        published = await client.post(f"/api/v1/admin/news/{post_id}/publish", headers=auth(admin_token))
+        assert published.status_code == 200
+        visible = await client.get("/api/v1/news", headers=auth(partner_token))
+        assert visible.json()["items"][0]["image_url"] == "https://assets.test/cover"
+
+        second = await client.post(
+            image_url, files={"file": ("cover.png", png, "image/png")}, headers=auth(admin_token)
+        )
+        assert second.status_code == 200
+        delete.assert_awaited_with("uploads/first.png")
+
+        removed = await client.delete(image_url, headers=auth(admin_token))
+        assert removed.status_code == 200
+        assert removed.json()["image_url"] is None
+        delete.assert_awaited_with("uploads/second.png")
+        assert (await client.get(f"/api/v1/news/{post_id}", headers=auth(partner_token))).json()["image_url"] is None

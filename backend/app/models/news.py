@@ -17,6 +17,7 @@ class NewsPost(Base, TimestampMixin):
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
     title: Mapped[str] = mapped_column(String(255))
     body: Mapped[str] = mapped_column(Text)
+    image_s3_key: Mapped[str | None] = mapped_column(String(255), default=None)
     category: Mapped[str] = mapped_column(String(30), default="announcement")
     important: Mapped[bool] = mapped_column(Boolean, default=False)
     pinned: Mapped[bool] = mapped_column(Boolean, default=False)
