@@ -28,7 +28,9 @@ export function PromotionIncentiveBanner({ summary }: { summary?: CourtFeeSummar
           <div>
             <h2 className="text-xl font-semibold">Передайте ещё {summary.free_clients_remaining} клиентов бесплатно</h2>
             <p className="text-sm text-blue-100 mt-1">
-              Предложение действует до {formatDate(summary.promotion_end_date)}. Неиспользованный остаток сгорит.
+              {summary.promotion_end_date
+                ? `Предложение действует до ${formatDate(summary.promotion_end_date)}. Неиспользованный остаток сгорит.`
+                : 'Без ограничения по сроку — до исчерпания лимита.'}
             </p>
           </div>
         </div>
@@ -62,7 +64,9 @@ export function PromotionIncentiveBanner({ summary }: { summary?: CourtFeeSummar
           className="flex items-center gap-2 text-sm font-medium text-white hover:text-blue-100"
         >
           <CalendarClock className="w-4 h-4" />
-          {summary.promotion_days_remaining} дней до окончания
+          {summary.promotion_end_date
+            ? `${summary.promotion_days_remaining} дней до окончания`
+            : 'Без ограничения по сроку'}
         </Link>
       </div>
     </section>

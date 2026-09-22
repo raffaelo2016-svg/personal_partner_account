@@ -141,6 +141,40 @@ class TestCreatePartner:
         assert data["promotion_start_date"] == "2026-09-07"
         assert data["promotion_end_date"] == "2026-10-07"
 
+    async def test_admin_update_preserves_promotion_without_end_date(self, client: AsyncClient, admin_token: str):
+        from app.models.partner import Partner
+        from tests.conftest import async_session_test
+
+        created = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "endless-promo-partner@test.com",
+                "password": "securepass123",
+                "company_name": "Endless Promo Company",
+                "director_name": "Endless Promo Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-44",
+                "free_client_limit": 10,
+                "promotion_start_date": "2026-09-14",
+            },
+            headers=auth_headers(admin_token),
+        )
+        assert created.status_code == 201
+        partner_id = created.json()["id"]
+
+        async with async_session_test() as session:
+            partner = await session.get(Partner, partner_id)
+            partner.promotion_end_date = None
+            await session.commit()
+
+        updated = await client.put(
+            f"/api/v1/admin/partners/{partner_id}",
+            json={"payment_term_days": 12, "promotion_start_date": "2026-09-14"},
+            headers=auth_headers(admin_token),
+        )
+        assert updated.status_code == 200
+        assert updated.json()["promotion_end_date"] is None
+
 
 class TestGetPartner:
     async def test_get_partner_not_found(self, client: AsyncClient, admin_token: str):

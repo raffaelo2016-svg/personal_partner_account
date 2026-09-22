@@ -69,24 +69,26 @@ async def create_court_fee_for_client(
     promotion_active = bool(
         locked_partner.free_client_limit > 0
         and locked_partner.promotion_start_date
-        and locked_partner.promotion_end_date
-        and locked_partner.promotion_start_date <= today <= locked_partner.promotion_end_date
+        and locked_partner.promotion_start_date <= today
+        and (locked_partner.promotion_end_date is None or today <= locked_partner.promotion_end_date)
     )
     free_clients_used = 0
     if promotion_active:
         assert locked_partner.promotion_start_date is not None
-        assert locked_partner.promotion_end_date is not None
-        promotion_start_at, promotion_end_at = _promotion_datetime_bounds(
-            locked_partner.promotion_start_date,
-            locked_partner.promotion_end_date,
-        )
+        promotion_start_at = datetime.combine(locked_partner.promotion_start_date, time.min, tzinfo=UTC)
+        promotion_conditions = [CourtFee.created_at >= promotion_start_at]
+        if locked_partner.promotion_end_date is not None:
+            _, promotion_end_at = _promotion_datetime_bounds(
+                locked_partner.promotion_start_date,
+                locked_partner.promotion_end_date,
+            )
+            promotion_conditions.append(CourtFee.created_at < promotion_end_at)
         free_clients_used = (
             await session.execute(
                 select(func.count(CourtFee.id)).where(
                     CourtFee.partner_id == locked_partner.id,
                     CourtFee.status == "promo_free",
-                    CourtFee.created_at >= promotion_start_at,
-                    CourtFee.created_at < promotion_end_at,
+                    *promotion_conditions,
                     CourtFee.deleted_at.is_(None),
                 )
             )
@@ -227,13 +229,12 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
         & (extract("year", CourtFee.paid_at) == now.year)
     )
     promotion_free_cond = CourtFee.status == "promo_free"
-    if promotion_start_date and promotion_end_date:
-        promotion_start_at, promotion_end_at = _promotion_datetime_bounds(
-            promotion_start_date,
-            promotion_end_date,
-        )
+    if promotion_start_date:
+        promotion_start_at = datetime.combine(promotion_start_date, time.min, tzinfo=UTC)
         promotion_free_cond &= CourtFee.created_at >= promotion_start_at
-        promotion_free_cond &= CourtFee.created_at < promotion_end_at
+        if promotion_end_date:
+            _, promotion_end_at = _promotion_datetime_bounds(promotion_start_date, promotion_end_date)
+            promotion_free_cond &= CourtFee.created_at < promotion_end_at
     else:
         promotion_free_cond &= CourtFee.id.is_(None)
 
@@ -278,8 +279,8 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
     promotion_active = bool(
         free_client_limit > 0
         and promotion_start_date
-        and promotion_end_date
-        and promotion_start_date <= today <= promotion_end_date
+        and promotion_start_date <= today
+        and (promotion_end_date is None or today <= promotion_end_date)
         and r1.free_clients_used < free_client_limit
     )
     promotion_days_remaining = max(0, (promotion_end_date - today).days) if promotion_end_date else 0

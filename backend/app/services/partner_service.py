@@ -342,8 +342,9 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
         raise NotFound("Partner not found")
 
     previous_status = partner.status
+    previous_promotion_start_date = partner.promotion_start_date
+    previous_promotion_end_date = partner.promotion_end_date
     update_data = data.model_dump(exclude_unset=True)
-    promotion_start_was_set = "promotion_start_date" in update_data
     for key, value in update_data.items():
         if hasattr(partner, key):
             setattr(partner, key, value if not hasattr(value, "value") else value.value)
@@ -352,8 +353,14 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
         partner.free_client_limit = 0
         partner.promotion_start_date = None
         partner.promotion_end_date = None
-    elif promotion_start_was_set or partner.promotion_start_date is None:
+    elif partner.promotion_start_date is None:
         partner.promotion_start_date = partner.promotion_start_date or date.today()
+        partner.promotion_end_date = add_calendar_month(partner.promotion_start_date)
+    elif (
+        "promotion_start_date" in update_data
+        and partner.promotion_start_date != previous_promotion_start_date
+        and previous_promotion_end_date is not None
+    ):
         partner.promotion_end_date = add_calendar_month(partner.promotion_start_date)
 
     await session.flush()

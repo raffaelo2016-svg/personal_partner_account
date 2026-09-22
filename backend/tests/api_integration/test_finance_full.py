@@ -98,6 +98,32 @@ class TestCourtFeeSummary:
         assert fees[0]["status"] == "unpaid"
         assert fees[0]["amount"] == fees[0]["base_amount"]
 
+    async def test_promotion_without_end_date_ends_only_after_limit(
+        self,
+        client: AsyncClient,
+        partner_token,
+        partner,
+    ):
+        async with async_session_test() as session:
+            saved_partner = await session.get(type(partner), partner.id)
+            saved_partner.free_client_limit = 2
+            saved_partner.promotion_start_date = date.today() - timedelta(days=90)
+            saved_partner.promotion_end_date = None
+            await session.commit()
+
+        for index in range(3):
+            await create_client(client, partner_token, full_name=f"Клиент без срока {index}")
+
+        fees = (await client.get("/api/v1/finance/court-fees", headers=auth(partner_token))).json()["items"]
+        assert sum(fee["status"] == "promo_free" for fee in fees) == 2
+        assert sum(fee["status"] == "unpaid" for fee in fees) == 1
+
+        summary = (await client.get("/api/v1/finance/court-fees/summary", headers=auth(partner_token))).json()
+        assert summary["free_clients_used"] == 2
+        assert summary["free_clients_remaining"] == 0
+        assert summary["promotion_end_date"] is None
+
+
 
 class TestDebtBanner:
     async def test_structure(self, client: AsyncClient, partner_token):
