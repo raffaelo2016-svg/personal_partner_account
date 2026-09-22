@@ -25,6 +25,8 @@ from app.api.clients import router as clients_router
 from app.api.dashboard import router as dashboard_router
 from app.api.files import router as files_router
 from app.api.finance import router as finance_router
+from app.api.news import admin_router as admin_news_router
+from app.api.news import router as news_router
 from app.api.notifications import router as notifications_router
 from app.api.partner_settings import router as partner_settings_router
 from app.api.tasks import router as tasks_router
@@ -320,6 +322,8 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(files_router, prefix="/api/v1")
 app.include_router(finance_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(news_router, prefix="/api/v1")
+app.include_router(admin_news_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(admin_partners_router, prefix="/api/v1")
 app.include_router(admin_clients_router, prefix="/api/v1")

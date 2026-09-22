@@ -8,6 +8,7 @@ import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { SkeletonCard } from '../components/ui/skeleton';
 import OverdueDebtAlert from '../components/OverdueDebtAlert';
 import { PromotionIncentiveBanner } from '../components/PromotionIncentiveBanner';
+import NewsPreview from '../components/NewsPreview';
 
 export default function Dashboard() {
   const tz = useTimezone();
@@ -78,6 +79,8 @@ export default function Dashboard() {
           Добро пожаловать в систему управления клиентами URITECH Partner
         </p>
       </div>
+
+      <NewsPreview />
 
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -7,6 +7,7 @@ from app.models.client import Client
 from app.models.client_status_log import ClientStatusLog
 from app.models.court_fee import CourtFee
 from app.models.file_upload import FileUpload
+from app.models.news import NewsPost, NewsReceipt
 from app.models.notification import Notification
 from app.models.partner import Partner
 from app.models.settings import LoginHistory, NotificationPreference, SystemSetting
@@ -34,6 +35,8 @@ __all__ = [
     "Instruction",
     "LoginHistory",
     "Notification",
+    "NewsPost",
+    "NewsReceipt",
     "NotificationPreference",
     "Partner",
     "SystemSetting",

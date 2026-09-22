@@ -9,6 +9,7 @@ import {
   Wallet,
   CheckSquare,
   GraduationCap,
+  Newspaper,
   Settings,
   Menu,
   X,
@@ -19,6 +20,7 @@ import NotificationBell from '../components/NotificationBell';
 import { useMe } from '../hooks/useAuth';
 import { useAuthStore } from '../store/authStore';
 import { fetchPartnerUnreadCount } from '../api/chat';
+import { fetchNewsCount } from '../api/news';
 
 function sidebarBadgeLabel(companyName: string | null | undefined): string {
   const t = companyName?.trim();
@@ -43,6 +45,12 @@ export default function Layout() {
     refetchInterval: 15000,
   });
 
+  const { data: newsUnreadCount = 0 } = useQuery({
+    queryKey: ['newsUnreadCount'],
+    queryFn: fetchNewsCount,
+    refetchInterval: 30_000,
+  });
+
   const navigation = [
     { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Клиенты', href: '/dashboard/clients', icon: Users, color: 'text-purple-600', bgColor: 'bg-purple-50' },
@@ -50,6 +58,7 @@ export default function Layout() {
     { name: 'Список задач', href: '/dashboard/tasks', icon: CheckSquare, color: 'text-pink-600', bgColor: 'bg-pink-50' },
     { name: 'Финансы', href: '/dashboard/finance/court-fees', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
     { name: 'Чат', href: '/dashboard/chat', icon: MessageSquare, color: 'text-teal-600', bgColor: 'bg-teal-50', badge: chatUnreadCount },
+    { name: 'Новости', href: '/dashboard/news', icon: Newspaper, color: 'text-blue-600', bgColor: 'bg-blue-50', badge: newsUnreadCount },
     { name: 'Обучение', href: '/dashboard/training', icon: GraduationCap, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
     { name: 'Настройки', href: '/dashboard/settings', icon: Settings, color: 'text-gray-600', bgColor: 'bg-gray-100' },
   ];

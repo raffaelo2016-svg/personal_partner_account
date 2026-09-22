@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
-import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard, Newspaper } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-white.svg';
 import NotificationBell from '../components/NotificationBell';
@@ -51,6 +51,7 @@ export default function AdminLayout() {
     { icon: AlertTriangle, label: 'Требует внимания', path: '/admin/bitrix-attention', badge: attentionData?.total ?? 0 },
     { icon: CreditCard, label: 'Транзакции', path: '/admin/transactions' },
     { icon: MessageSquare, label: 'Чат', path: '/admin/chat', badge: unreadCount },
+    { icon: Newspaper, label: 'Новости', path: '/admin/news' },
     { icon: Settings, label: 'Настройки', path: '/admin/settings' },
   ];
 
