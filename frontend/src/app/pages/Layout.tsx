@@ -105,6 +105,11 @@ export default function Layout() {
                 <span className={`font-medium ${active ? 'text-gray-900' : 'text-gray-700'}`}>
                   {item.name}
                 </span>
+                {item.href === '/dashboard/news' && (
+                  <span className="ml-auto rounded-full bg-orange-600 px-1.5 py-px text-[11px] font-medium uppercase text-white">
+                    Новое
+                  </span>
+                )}
               </Link>
             );
           })}

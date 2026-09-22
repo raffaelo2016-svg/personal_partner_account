@@ -1,4 +1,4 @@
-import { Users, UserCheck, Clock, TrendingUp, AlertCircle, CheckSquare, BarChart3, AlertTriangle, CreditCard } from 'lucide-react';
+import { Users, UserCheck, Clock, TrendingUp, AlertCircle, CheckSquare, BarChart3, AlertTriangle, CreditCard, Newspaper, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboard } from '../api/dashboard';
@@ -79,6 +79,22 @@ export default function Dashboard() {
           Добро пожаловать в систему управления клиентами URITECH Partner
         </p>
       </div>
+
+      <section className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3" aria-labelledby="news-announcement-title">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+          <Newspaper className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 id="news-announcement-title" className="flex flex-wrap items-center gap-2 text-sm font-semibold text-blue-950">
+            <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">Новое</span>
+            Новости для партнёров
+          </h2>
+          <p className="mt-0.5 text-xs text-blue-800">Важные объявления и обновления теперь в отдельном разделе.</p>
+        </div>
+        <Link to="/dashboard/news" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+          Открыть <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      </section>
 
       <NewsPreview />
 
