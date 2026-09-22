@@ -124,7 +124,6 @@ class TestCourtFeeSummary:
         assert summary["promotion_end_date"] is None
 
 
-
 class TestDebtBanner:
     async def test_structure(self, client: AsyncClient, partner_token):
         resp = await client.get("/api/v1/finance/debt-banner", headers=auth(partner_token))
