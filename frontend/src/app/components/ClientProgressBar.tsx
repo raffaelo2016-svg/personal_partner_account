@@ -54,49 +54,78 @@ export default function ClientProgressBar({ currentStatus }: Props) {
   })();
 
   return (
-    <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-6">
-      <div className="relative">
-        <div className="absolute top-8 left-0 right-0 h-1.5 bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200 rounded-full" style={{ zIndex: 0 }} />
-        <div
-          className="absolute top-8 left-0 h-1.5 bg-gradient-to-r from-green-500 via-indigo-500 to-indigo-500 rounded-full transition-all duration-1000 shadow-lg shadow-indigo-300/50"
-          style={{ width: `${progress}%`, zIndex: 0 }}
-        />
-        <div className="relative flex justify-between" style={{ zIndex: 1 }}>
-          {stages.map((stage, index) => {
+    <div className="bg-white rounded-2xl shadow-md border border-gray-200 p-4 sm:p-6">
+      <div className="relative lg:hidden">
+        <div className="absolute left-6 top-6 bottom-6 w-0.5 bg-gray-200" aria-hidden="true" />
+        <ol className="space-y-4" aria-label="Этапы дела">
+          {stages.map((stage) => {
             const StageIcon = stage.icon;
             const isActive = stage.status === 'in-progress';
             const isCompleted = stage.status === 'completed';
 
             return (
-              <div key={stage.key} className="flex flex-col items-center" style={{ width: `${100 / stages.length}%` }}>
-                <div className="relative group cursor-pointer">
-                  {(isActive || isCompleted) && (
-                    <div className={`absolute inset-0 rounded-full ${stage.color.glow} blur-xl opacity-60 group-hover:opacity-80 transition-opacity`} />
-                  )}
-                  <div
-                    className={`relative w-16 h-16 rounded-full bg-gradient-to-br ${stage.color.gradient} flex items-center justify-center transition-all duration-300 shadow-lg ${stage.color.shadow} ${isActive ? 'scale-110 shadow-2xl animate-pulse' : 'scale-100'} group-hover:scale-110 group-hover:shadow-2xl border-2 ${isCompleted ? 'border-white' : isActive ? 'border-white/50' : 'border-gray-300/50'}`}
-                    style={{
-                      boxShadow: `0 4px 14px 0 ${isCompleted ? 'rgba(34,197,94,0.4)' : isActive ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.1)'}, inset 0 -2px 4px rgba(0,0,0,0.2), inset 0 2px 4px rgba(255,255,255,0.5)`,
-                    }}
-                  >
-                    <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/40 via-transparent to-transparent" />
-                    <div className="relative z-10">
-                      {isCompleted ? <CheckCircle className="w-7 h-7 text-white drop-shadow-lg" strokeWidth={2.5} /> : <StageIcon className="w-7 h-7 text-white drop-shadow-lg" strokeWidth={2.5} />}
-                    </div>
-                    <div className="absolute inset-x-2 bottom-1 h-1 bg-black/10 rounded-full blur-sm" />
-                  </div>
+              <li key={stage.key} className="relative flex items-center gap-4 min-w-0" aria-current={isActive ? 'step' : undefined}>
+                <div className={`relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-white bg-gradient-to-br ${stage.color.gradient} shadow-md`}>
+                  {isCompleted ? <CheckCircle className="h-6 w-6 text-white" aria-hidden="true" /> : <StageIcon className="h-6 w-6 text-white" aria-hidden="true" />}
                 </div>
-                <div className="mt-4 text-center px-2 max-w-[120px]">
-                  <p className={`text-xs font-semibold transition-colors leading-tight ${isCompleted ? 'text-green-700' : isActive ? 'text-indigo-700' : 'text-gray-500'}`}>
+                <div className="min-w-0">
+                  <p className={`text-sm font-semibold leading-snug ${isCompleted ? 'text-green-700' : isActive ? 'text-indigo-700' : 'text-gray-600'}`}>
                     {stage.title}
                   </p>
+                  <p className="mt-0.5 text-xs text-gray-500">
+                    {isCompleted ? 'Завершён' : isActive ? 'Текущий этап' : 'Впереди'}
+                  </p>
                 </div>
-                {index < stages.length - 1 && (
-                  <div className="absolute left-1/2 top-8 h-1.5 bg-transparent" style={{ width: `${100 / stages.length}%`, zIndex: -1 }} />
-                )}
-              </div>
+              </li>
             );
           })}
+        </ol>
+      </div>
+
+      <div className="hidden overflow-x-auto lg:block">
+        <div className="relative min-w-[960px] pb-2">
+          <div className="absolute top-8 left-0 right-0 h-1.5 bg-gradient-to-r from-gray-200 via-gray-200 to-gray-200 rounded-full" style={{ zIndex: 0 }} />
+          <div
+            className="absolute top-8 left-0 h-1.5 bg-gradient-to-r from-green-500 via-indigo-500 to-indigo-500 rounded-full transition-all duration-1000 shadow-lg shadow-indigo-300/50"
+            style={{ width: `${progress}%`, zIndex: 0 }}
+          />
+          <div className="relative flex justify-between" style={{ zIndex: 1 }}>
+            {stages.map((stage, index) => {
+              const StageIcon = stage.icon;
+              const isActive = stage.status === 'in-progress';
+              const isCompleted = stage.status === 'completed';
+
+              return (
+                <div key={stage.key} className="flex flex-col items-center" style={{ width: `${100 / stages.length}%` }}>
+                  <div className="relative group cursor-pointer">
+                    {(isActive || isCompleted) && (
+                      <div className={`absolute inset-0 rounded-full ${stage.color.glow} blur-xl opacity-60 group-hover:opacity-80 transition-opacity`} />
+                    )}
+                    <div
+                      className={`relative w-16 h-16 rounded-full bg-gradient-to-br ${stage.color.gradient} flex items-center justify-center transition-all duration-300 shadow-lg ${stage.color.shadow} ${isActive ? 'scale-110 shadow-2xl animate-pulse' : 'scale-100'} group-hover:scale-110 group-hover:shadow-2xl border-2 ${isCompleted ? 'border-white' : isActive ? 'border-white/50' : 'border-gray-300/50'}`}
+                      style={{
+                        boxShadow: `0 4px 14px 0 ${isCompleted ? 'rgba(34,197,94,0.4)' : isActive ? 'rgba(99,102,241,0.4)' : 'rgba(0,0,0,0.1)'}, inset 0 -2px 4px rgba(0,0,0,0.2), inset 0 2px 4px rgba(255,255,255,0.5)`,
+                      }}
+                    >
+                      <div className="absolute inset-0 rounded-full bg-gradient-to-b from-white/40 via-transparent to-transparent" />
+                      <div className="relative z-10">
+                        {isCompleted ? <CheckCircle className="w-7 h-7 text-white drop-shadow-lg" strokeWidth={2.5} /> : <StageIcon className="w-7 h-7 text-white drop-shadow-lg" strokeWidth={2.5} />}
+                      </div>
+                      <div className="absolute inset-x-2 bottom-1 h-1 bg-black/10 rounded-full blur-sm" />
+                    </div>
+                  </div>
+                  <div className="mt-4 text-center px-2 max-w-[120px]">
+                    <p className={`text-xs font-semibold transition-colors leading-tight ${isCompleted ? 'text-green-700' : isActive ? 'text-indigo-700' : 'text-gray-500'}`}>
+                      {stage.title}
+                    </p>
+                  </div>
+                  {index < stages.length - 1 && (
+                    <div className="absolute left-1/2 top-8 h-1.5 bg-transparent" style={{ width: `${100 / stages.length}%`, zIndex: -1 }} />
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       </div>
     </div>
