@@ -71,8 +71,8 @@ export async function fetchPartnerUnreadCount(): Promise<number> {
   return res.data.unread_count;
 }
 
-export async function fetchAdminChatRooms(search?: string): Promise<ChatRoomData[]> {
-  const res = await apiClient.get<ChatRoomData[]>('/admin/chat/rooms', { params: search ? { search } : {} });
+export async function fetchAdminChatRooms(search?: string, roomType: 'admin' | 'tech_support' = 'admin'): Promise<ChatRoomData[]> {
+  const res = await apiClient.get<ChatRoomData[]>('/admin/chat/rooms', { params: { ...(search ? { search } : {}), room_type: roomType } });
   return res.data;
 }
 

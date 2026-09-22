@@ -12,9 +12,9 @@ class TestPartnerRooms:
         resp = await client.get("/api/v1/chat/rooms", headers=auth(partner_token))
         assert resp.status_code == 200
         rooms = resp.json()
-        assert len(rooms) == 4
+        assert len(rooms) == 5
         types = {r["type"] for r in rooms}
-        assert types == {"admin", "arbitration_manager", "assistant", "ai_assistant"}
+        assert types == {"admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"}
 
     async def test_rooms_idempotent(self, client: AsyncClient, partner_token):
         """Повторный запрос не создаёт дубли."""
