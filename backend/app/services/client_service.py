@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFound
 from app.models.client import Client
+from app.models.notification import Notification
 from app.models.partner import Partner
+from app.models.user import User
 from app.schemas.client import ClientCreate, ClientRead, ClientStats, ClientUpdate
 from app.services.audit import audit_log
 
@@ -169,6 +171,20 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     # it explicitly inside the async session so response serialisation does
     # not attempt implicit IO and raise MissingGreenlet.
     await session.refresh(client, ["updated_at"])
+
+    admin_ids = (
+        await session.scalars(select(User.id).where(User.role == "admin", User.is_active.is_(True)))
+    ).all()
+    session.add_all(
+        Notification(
+            user_id=admin_id,
+            type="new_client",
+            title="Новый клиент от партнёра",
+            message=f"Партнёр «{partner.company_name}» передал клиента «{client.full_name}».",
+            link=f"/admin/clients/{client.id}",
+        )
+        for admin_id in admin_ids
+    )
 
     audit_log(action="create_client", target_id=str(client.id), target_type="client")
     logger.info("client_created", client_id=str(client.id), partner_id=partner_id)

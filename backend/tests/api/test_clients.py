@@ -68,6 +68,57 @@ class TestPartnerClients:
         assert data["full_name"] == "Иванов Иван Иванович"
         assert data["status"] in ("new", "documents_collection")
 
+    async def test_create_client_notifies_active_admins(self, client: AsyncClient, setup_db):
+        from sqlalchemy import select
+
+        from app.models.notification import Notification
+        from app.models.user import User
+        from tests.conftest import async_session_test
+
+        partner_token, _ = await _create_partner_user_and_token(client, setup_db)
+        admin_token = await _get_admin_token(client, setup_db)
+        async with async_session_test() as session:
+            second_admin = User(
+                email="second_admin@test.com",
+                hashed_password=hash_password("admin123"),
+                role="admin",
+                is_active=True,
+            )
+            inactive_admin = User(
+                email="inactive_admin@test.com",
+                hashed_password=hash_password("admin123"),
+                role="admin",
+                is_active=False,
+            )
+            session.add_all([second_admin, inactive_admin])
+            await session.commit()
+
+        created = await client.post("/api/v1/clients", json=CLIENT_DATA, headers=auth(partner_token))
+        assert created.status_code == 201
+
+        admin_notifications = await client.get("/api/v1/notifications", headers=auth(admin_token))
+        assert admin_notifications.status_code == 200
+        assert admin_notifications.json()["total"] == 1
+        notification = admin_notifications.json()["items"][0]
+        assert notification["type"] == "new_client"
+        assert notification["title"] == "Новый клиент от партнёра"
+        assert "Test Co" in notification["message"]
+        assert CLIENT_DATA["full_name"] in notification["message"]
+        assert notification["link"] == f"/admin/clients/{created.json()['id']}"
+        assert notification["is_read"] is False
+
+        unread = await client.get("/api/v1/notifications/unread-count", headers=auth(admin_token))
+        assert unread.json()["count"] == 1
+        partner_notifications = await client.get("/api/v1/notifications", headers=auth(partner_token))
+        assert partner_notifications.json()["total"] == 0
+        async with async_session_test() as session:
+            recipients = set(
+                (await session.scalars(select(Notification.user_id).where(Notification.type == "new_client"))).all()
+            )
+        assert len(recipients) == 2
+        assert second_admin.id in recipients
+        assert inactive_admin.id not in recipients
+
     async def test_create_client_with_active_bitrix_projection(self, client: AsyncClient, setup_db):
         """Creating a client must return 201 when Bitrix scheduling updates it."""
         from app.config import settings
