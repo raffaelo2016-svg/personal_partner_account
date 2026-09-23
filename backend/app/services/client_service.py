@@ -172,9 +172,7 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     # not attempt implicit IO and raise MissingGreenlet.
     await session.refresh(client, ["updated_at"])
 
-    admin_ids = (
-        await session.scalars(select(User.id).where(User.role == "admin", User.is_active.is_(True)))
-    ).all()
+    admin_ids = (await session.scalars(select(User.id).where(User.role == "admin", User.is_active.is_(True)))).all()
     session.add_all(
         Notification(
             user_id=admin_id,
