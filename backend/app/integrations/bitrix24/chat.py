@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 
 import httpx
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -39,6 +39,9 @@ BOT_CODE = "uritech_partner_cabinet"
 CHAT_EVENT_SUBSCRIPTION_MAX_AGE = timedelta(hours=24)
 CHAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024
 CHAT_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+PARTNER_CHAT_TITLE_PREFIX = "ЮРИТЕХ — "
+PARTNER_CHAT_DESCRIPTION_PREFIX = "Личный кабинет партнёра ЮРИТЕХ"
+CHAT_POLL_ADVISORY_LOCK_ID = 9_172_401
 
 
 def normalize_dialog_id(value: str) -> str:
@@ -58,6 +61,60 @@ def _dialog_variants(value: str) -> set[str]:
     elif normalized:
         variants.add(f"chat{normalized}")
     return variants
+
+
+def _normalized_partner_text(value: str | None) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def partner_chat_is_excluded(partner: Partner) -> bool:
+    searchable = " ".join(
+        _normalized_partner_text(value)
+        for value in (
+            partner.company_name,
+            partner.director_name,
+            partner.short_name,
+            partner.full_legal_name,
+        )
+        if value
+    )
+    return any(term in searchable for term in settings.bitrix_chat_excluded_partner_terms)
+
+
+def partner_chat_title(partner: Partner) -> str:
+    display_name = partner.company_name.strip() or partner.director_name.strip()
+    return f"{PARTNER_CHAT_TITLE_PREFIX}{display_name}"[:255]
+
+
+def partner_chat_description(partner: Partner) -> str:
+    return f"{PARTNER_CHAT_DESCRIPTION_PREFIX} · partner_cabinet:{partner.id}"
+
+
+def _chat_id_from_result(result: Any) -> int | None:
+    candidate = result
+    if isinstance(result, dict):
+        chat = result.get("chat")
+        candidate = chat.get("id") or chat.get("ID") if isinstance(chat, dict) else result.get("id") or result.get("ID")
+    if isinstance(candidate, bool):
+        return None
+    if isinstance(candidate, int) and candidate > 0:
+        return candidate
+    if isinstance(candidate, str) and candidate.isdigit() and int(candidate) > 0:
+        return int(candidate)
+    return None
+
+
+def _empty_poll_result() -> dict[str, int]:
+    return {
+        "received": 0,
+        "imported": 0,
+        "journaled": 0,
+        "joined": 0,
+        "created": 0,
+        "recovered": 0,
+        "excluded": 0,
+        "failed": 0,
+    }
 
 
 def _chat_delivery_operation(
@@ -638,8 +695,8 @@ async def _create_service_chat(
         {
             "botId": installation.im_bot_id,
             "fields": {
-                "title": f"ЮРИТЕХ — {partner.company_name}"[:255],
-                "description": "Чат поддержки партнёра в личном кабинете ЮРИТЕХ",
+                "title": partner_chat_title(partner),
+                "description": partner_chat_description(partner),
                 "color": "azure",
                 "userIds": support_user_ids,
             },
@@ -662,6 +719,89 @@ async def _create_service_chat(
         retried_messages=queued,
     )
     return True
+
+
+async def _find_partner_chat(client: Bitrix24Client, partner: Partner) -> int | None:
+    title = partner_chat_title(partner)
+    marker = f"partner_cabinet:{partner.id}"
+    result = await client.call(
+        "im.search.chat.list",
+        {"FIND": title, "OFFSET": 0, "LIMIT": 50},
+    )
+    if not isinstance(result, list):
+        return None
+    for item in result:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("name") or "").strip() != title:
+            continue
+        if marker not in str(item.get("description") or ""):
+            continue
+        chat_id = _chat_id_from_result(item)
+        if chat_id is not None:
+            return chat_id
+    return None
+
+
+async def ensure_partner_chats(
+    db: AsyncSession,
+    client: Bitrix24Client,
+    installation: BitrixInstallation,
+    *,
+    limit: int | None = None,
+) -> dict[str, int]:
+    """Create and bind one internal Bitrix chat for every eligible active partner."""
+    partners = list(
+        (
+            await db.scalars(
+                select(Partner)
+                .where(
+                    Partner.status == "active",
+                    Partner.deleted_at.is_(None),
+                    Partner.bitrix_chat_id.is_(None),
+                )
+                .order_by(Partner.created_at, Partner.id)
+            )
+        ).all()
+    )
+    excluded = 0
+    eligible: list[Partner] = []
+    for partner in partners:
+        if partner_chat_is_excluded(partner):
+            excluded += 1
+        else:
+            eligible.append(partner)
+    batch_size = limit if limit is not None else settings.BITRIX_CHAT_PROVISION_BATCH_SIZE
+    eligible = eligible[: max(0, batch_size)]
+    result = {"created": 0, "recovered": 0, "excluded": excluded, "failed": 0}
+    if not eligible:
+        return result
+    if installation.im_bot_id is None or not settings.bitrix_chat_support_user_ids:
+        logger.warning("bitrix_partner_chat_provisioning_not_configured")
+        result["failed"] = len(eligible)
+        return result
+
+    for partner in eligible:
+        try:
+            chat_id = await _find_partner_chat(client, partner)
+            if chat_id is not None:
+                partner.bitrix_chat_id = normalize_dialog_id(str(chat_id))
+                partner.bitrix_chat_bot_joined_at = datetime.now(UTC)
+                await _retry_unsynced_partner_messages(db, partner)
+                result["recovered"] += 1
+            elif await _create_service_chat(db, client, installation, partner):
+                result["created"] += 1
+            else:
+                result["failed"] += 1
+        except Bitrix24Error as exc:
+            result["failed"] += 1
+            logger.warning(
+                "bitrix_partner_chat_provision_failed",
+                partner_id=str(partner.id),
+                error_code=exc.code,
+            )
+    await db.flush()
+    return result
 
 
 async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installation: BitrixInstallation) -> int:
@@ -735,12 +875,17 @@ async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installat
 
 
 async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, int]:
+    lock_acquired = await db.scalar(select(func.pg_try_advisory_xact_lock(CHAT_POLL_ADVISORY_LOCK_ID)))
+    if lock_acquired is not True:
+        logger.info("bitrix_chat_poll_skipped_concurrent_run")
+        return _empty_poll_result()
     installation = await active_installation(db)
     if installation is None:
-        return {"received": 0, "imported": 0, "journaled": 0}
+        return _empty_poll_result()
     token = await _installation_token(db, installation)
     async with Bitrix24Client(installation.client_endpoint, token) as client:
         joined = await ensure_service_bot(db, client, installation)
+        provisioning = await ensure_partner_chats(db, client, installation)
 
         params: dict[str, Any] = {"botId": installation.im_bot_id, "limit": limit}
         if installation.im_bot_event_offset is not None:
@@ -763,4 +908,10 @@ async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, i
     if isinstance(next_offset, int) and not isinstance(next_offset, bool):
         installation.im_bot_event_offset = next_offset
     await db.commit()
-    return {"received": len(events), "imported": imported, "journaled": journaled, "joined": joined}
+    return {
+        "received": len(events),
+        "imported": imported,
+        "journaled": journaled,
+        "joined": joined,
+        **provisioning,
+    }

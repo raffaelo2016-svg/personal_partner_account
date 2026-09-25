@@ -77,6 +77,10 @@ class Settings(BaseSettings):
     BITRIX_PROCESSING_STALE_MINUTES: int = 15
     BITRIX_RECONCILE_AFTER_HOURS: int = 24
     BITRIX_CHAT_SUPPORT_USER_IDS: str = "[]"
+    BITRIX_CHAT_PROVISION_BATCH_SIZE: int = 25
+    BITRIX_CHAT_EXCLUDED_PARTNER_TERMS: str = (
+        '["агейчик","протацкая","ифнс","федеральная налоговая служба","косточкина"]'
+    )
 
     ENVIRONMENT: str = "development"
 
@@ -115,6 +119,16 @@ class Settings(BaseSettings):
         ):
             raise RuntimeError("BITRIX_CHAT_SUPPORT_USER_IDS must be a JSON list of positive integers")
         return value
+
+    @property
+    def bitrix_chat_excluded_partner_terms(self) -> tuple[str, ...]:
+        try:
+            value = json.loads(self.BITRIX_CHAT_EXCLUDED_PARTNER_TERMS)
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"BITRIX_CHAT_EXCLUDED_PARTNER_TERMS is not valid JSON: {err}") from err
+        if not isinstance(value, list) or not all(isinstance(item, str) and item.strip() for item in value):
+            raise RuntimeError("BITRIX_CHAT_EXCLUDED_PARTNER_TERMS must be a JSON list of non-empty strings")
+        return tuple(item.strip().casefold() for item in value)
 
     @property
     def sync_database_url(self) -> str:

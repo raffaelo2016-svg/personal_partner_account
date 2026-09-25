@@ -77,7 +77,16 @@ def poll_bitrix_chat_events() -> dict[str, int]:
         result = _run_async(_poll_chat_events())
     except Exception as exc:
         logger.warning("bitrix_chat_poll_failed", error_type=type(exc).__name__)
-        return {"received": 0, "imported": 0, "journaled": 0, "failed": 1}
+        return {
+            "received": 0,
+            "imported": 0,
+            "journaled": 0,
+            "joined": 0,
+            "created": 0,
+            "recovered": 0,
+            "excluded": 0,
+            "failed": 1,
+        }
     logger.info("bitrix_chat_events_polled", **result)
     return result
 
