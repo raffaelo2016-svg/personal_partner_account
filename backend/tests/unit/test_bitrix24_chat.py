@@ -15,10 +15,13 @@ from app.integrations.bitrix24.chat import (
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
     _reconcile_chat_file_history,
+    ensure_partner_chats,
     ensure_service_bot,
     execute_chat_message,
     import_message_event,
     normalize_dialog_id,
+    partner_chat_description,
+    partner_chat_title,
     record_message_change_event,
     schedule_chat_message,
 )
@@ -159,6 +162,23 @@ async def _partner_room(db_session: AsyncSession) -> ChatRoom:
     return room
 
 
+async def _unlinked_partner(db_session: AsyncSession, name: str) -> Partner:
+    user = User(email=f"partner-{uuid4()}@example.test", hashed_password="hash", role="partner")
+    db_session.add(user)
+    await db_session.flush()
+    partner = Partner(
+        user_id=user.id,
+        company_name=name,
+        director_name=name,
+        inn=str(uuid4().int)[:12],
+        phone="+70000000000",
+        status="active",
+    )
+    db_session.add(partner)
+    await db_session.flush()
+    return partner
+
+
 @pytest.mark.asyncio
 async def test_retry_refreshes_failed_operation_with_current_dialog(db_session: AsyncSession):
     room = await _partner_room(db_session)
@@ -269,6 +289,90 @@ async def test_inaccessible_chat_is_replaced_and_failed_messages_are_retried(
     assert operation.status == "pending"
     assert operation.payload["dialogId"] == "chat777"
     assert message.bitrix_sync_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_partner_chat_provisioning_creates_only_for_eligible_partners(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    eligible = await _unlinked_partner(db_session, "Иванов Иван Иванович")
+    excluded = await _unlinked_partner(db_session, "Косточкина Мария Васильевна")
+    installation = BitrixInstallation(
+        member_id="member-provision",
+        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    db_session.add(installation)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[55,57]")
+
+    async def remote_call(method: str, payload: dict):
+        if method == "im.search.chat.list":
+            assert payload["FIND"] == partner_chat_title(eligible)
+            return []
+        if method == "imbot.v2.Chat.add":
+            assert payload["fields"]["userIds"] == [55, 57]
+            assert payload["fields"]["title"] == partner_chat_title(eligible)
+            assert payload["fields"]["description"] == partner_chat_description(eligible)
+            assert "message" not in payload["fields"]
+            return {"chat": {"id": 40674}}
+        raise AssertionError(method)
+
+    remote = AsyncMock()
+    remote.call.side_effect = remote_call
+    result = await ensure_partner_chats(db_session, remote, installation)
+
+    await db_session.refresh(eligible)
+    await db_session.refresh(excluded)
+    assert result == {"created": 1, "recovered": 0, "excluded": 1, "failed": 0}
+    assert eligible.bitrix_chat_id == "chat40674"
+    assert eligible.bitrix_chat_bot_joined_at is not None
+    assert excluded.bitrix_chat_id is None
+
+
+@pytest.mark.asyncio
+async def test_partner_chat_provisioning_recovers_chat_after_uncertain_response(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    partner = await _unlinked_partner(db_session, "Иванов Иван Иванович")
+    installation = BitrixInstallation(
+        member_id="member-recover",
+        portal_domain=settings.BITRIX_ALLOWED_DOMAIN,
+        client_endpoint="https://example.bitrix24.ru/rest/",
+        server_endpoint="https://oauth.bitrix.info/rest/",
+        access_token_encrypted=b"access",
+        refresh_token_encrypted=b"refresh",
+        im_bot_id=456,
+    )
+    db_session.add(installation)
+    await db_session.commit()
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[55]")
+    remote = AsyncMock()
+    remote.call.return_value = [
+        {
+            "id": 40675,
+            "type": "chat",
+            "name": partner_chat_title(partner),
+            "description": partner_chat_description(partner),
+        }
+    ]
+
+    result = await ensure_partner_chats(db_session, remote, installation)
+
+    await db_session.refresh(partner)
+    assert result == {"created": 0, "recovered": 1, "excluded": 0, "failed": 0}
+    assert partner.bitrix_chat_id == "chat40675"
+    assert partner.bitrix_chat_bot_joined_at is not None
+    remote.call.assert_awaited_once_with(
+        "im.search.chat.list",
+        {"FIND": partner_chat_title(partner), "OFFSET": 0, "LIMIT": 50},
+    )
 
 
 def _message_event(remote_id: int = 5012) -> dict:
