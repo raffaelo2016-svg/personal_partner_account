@@ -41,7 +41,6 @@ FILE_MARKER_PREFIX = "partner-cabinet-file:"
 DISK_FILE_MARKER_PREFIX = "partner-cabinet-disk-file:"
 PARTNERS_FOLDER_NAME = "ПАРТНЕРЫ"
 INITIAL_DOCUMENTS_FOLDER_NAME = "Первоначальные документы"
-SAMSONYUK_TEST_PARTNER_NAME = "Самсонюк Евгений Вячеславович"
 TIMELINE_COMMENT_ADD_EVENT = "ONCRMTIMELINECOMMENTADD"
 TIMELINE_COMMENT_ENTITY_TYPE = "timeline_comment"
 TIMELINE_FILE_REMOTE_ENTITY_TYPE = "crm_timeline_file"
@@ -67,11 +66,23 @@ def disk_file_marker(file_id: str) -> str:
     return f"[{DISK_FILE_MARKER_PREFIX}{file_id}]"
 
 
+def _safe_folder_name(value: str | None, *, fallback: str) -> str:
+    cleaned_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", value or "").strip(" .")
+    cleaned_name = re.sub(r"\s+", " ", cleaned_name) or fallback
+    return cleaned_name[:200]
+
+
 def client_folder_name(client: Client) -> str:
     """Build the exact readable client folder name without persisting PII in the outbox."""
-    cleaned_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", client.full_name).strip(" .")
-    cleaned_name = re.sub(r"\s+", " ", cleaned_name) or "Клиент"
-    return cleaned_name[:200]
+    return _safe_folder_name(client.full_name, fallback="Клиент")
+
+
+def partner_folder_name(partner: Partner) -> str:
+    """Use the partner name displayed in the cabinet for the shared-drive folder."""
+    return _safe_folder_name(
+        partner.company_name or partner.short_name or partner.director_name or partner.full_legal_name,
+        fallback="Партнёр",
+    )
 
 
 def disk_file_name(record: FileUpload) -> str:
@@ -82,12 +93,6 @@ def disk_file_name(record: FileUpload) -> str:
     cleaned_stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", stem).strip(" .") or "document"
     suffix = f" [{record.id.hex[:8]}]{extension}"
     return f"{cleaned_stem[: max(1, 240 - len(suffix))]}{suffix}"
-
-
-def partner_uses_disk_pilot(partner: Partner) -> bool:
-    target = " ".join(SAMSONYUK_TEST_PARTNER_NAME.casefold().split())
-    candidates = (partner.company_name, partner.director_name, partner.short_name, partner.full_legal_name)
-    return any(" ".join((value or "").casefold().split()) == target for value in candidates)
 
 
 def extract_timeline_comment_event_reference(event_name: str, payload: dict[str, Any]) -> str | None:
@@ -202,7 +207,7 @@ async def schedule_file_creation(db: AsyncSession, record: FileUpload, *, retry:
 async def load_file_folder_context(
     db: AsyncSession,
     operation: BitrixOutboxOperation,
-) -> FileFolderContext | None:
+) -> FileFolderContext:
     record = await db.get(FileUpload, operation.local_entity_id)
     if record is None:
         raise Bitrix24Error("LOCAL_FILE_UNAVAILABLE", "Document record was not found")
@@ -212,11 +217,12 @@ async def load_file_folder_context(
     partner = await db.get(Partner, local_client.partner_id)
     if partner is None:
         raise Bitrix24Error("LOCAL_PARTNER_UNAVAILABLE", "Document partner was not found")
-    if not partner_uses_disk_pilot(partner):
-        return None
     return FileFolderContext(
-        partner_root_folder_id=partner.bitrix_root_folder_id,
-        partner_folder_name=SAMSONYUK_TEST_PARTNER_NAME,
+        # Document folders always live under the common ПАРТНЕРЫ directory.
+        # ``bitrix_root_folder_id`` may later be used for a collaboration drive
+        # and must not redirect client documents away from the shared archive.
+        partner_root_folder_id=None,
+        partner_folder_name=partner_folder_name(partner),
         client_folder_name=client_folder_name(local_client),
         remote_file_name=disk_file_name(record),
     )
@@ -388,7 +394,7 @@ async def execute_file_creation(
     client: Bitrix24Client,
     operation: BitrixOutboxOperation,
     *,
-    folder_context: FileFolderContext | None,
+    folder_context: FileFolderContext,
 ) -> str:
     payload = operation.payload
     deal_id = str(payload.get("deal_id") or "")
@@ -416,34 +422,6 @@ async def execute_file_creation(
         data = await download_file_async(str(payload.get("s3_key") or ""))
     except Exception as exc:  # noqa: BLE001
         raise Bitrix24Error("LOCAL_FILE_UNAVAILABLE", "Could not read the queued document") from exc
-
-    if folder_context is None:
-        result = await client.call(
-            FILE_CREATE_METHOD,
-            {
-                "fields": {
-                    "ENTITY_ID": deal_id,
-                    "ENTITY_TYPE": "deal",
-                    "COMMENT": f"Документ из партнёрского кабинета\n{marker}",
-                    "FILES": [
-                        [
-                            str(payload.get("remote_name") or "document"),
-                            base64.b64encode(data).decode("ascii"),
-                        ]
-                    ],
-                }
-            },
-        )
-        comment_id = result if isinstance(result, str | int) else None
-        if not comment_id:
-            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return a timeline comment ID")
-        created = await client.call("crm.timeline.comment.get", {"id": comment_id})
-        if not isinstance(created, dict):
-            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return the created document")
-        reference = _comment_reference(created)
-        if not reference:
-            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an attached Disk file ID")
-        return reference
 
     remote_name = folder_context.remote_file_name
     disk_file = await _upload_to_initial_documents(

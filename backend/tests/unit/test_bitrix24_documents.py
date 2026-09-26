@@ -22,7 +22,8 @@ from app.integrations.bitrix24.documents import (
     extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
     file_marker,
-    partner_uses_disk_pilot,
+    load_file_folder_context,
+    partner_folder_name,
     process_crm_activity_add_event,
     process_timeline_comment_add_event,
 )
@@ -280,8 +281,23 @@ async def test_missing_partner_and_nested_folders_are_created_on_first_upload():
 
 
 @pytest.mark.asyncio
-async def test_non_pilot_partner_keeps_timeline_attachment_flow():
+async def test_all_partners_use_shared_document_folder_flow():
     record = _record()
+    client = Client(
+        id=record.client_id,
+        partner_id=uuid4(),
+        type="before_court",
+        full_name="Петров Пётр Петрович",
+        bitrix_deal_id="456",
+    )
+    partner = Partner(
+        id=client.partner_id,
+        user_id=uuid4(),
+        company_name="ООО Другой партнёр",
+        director_name="Петров Пётр Петрович",
+        inn="7701234567",
+        phone="+79990000002",
+    )
     operation = BitrixOutboxOperation(
         member_id="member",
         operation_key=f"file:create:{record.id}:v1",
@@ -290,18 +306,15 @@ async def test_non_pilot_partner_keeps_timeline_attachment_flow():
         bitrix_method="crm.timeline.comment.add",
         payload=build_file_operation_payload(record, deal_id="456"),
     )
-    remote = AsyncMock()
-    remote.list_all.return_value = []
-    remote.call.side_effect = ["90", {"ID": "90", "FILES": [{"ID": "700"}]}]
+    db = AsyncMock()
+    db.get.side_effect = [record, client, partner]
 
-    with patch("app.integrations.bitrix24.documents.download_file_async", new=AsyncMock(return_value=b"%PDF-1.7")):
-        result = await execute_file_creation(remote, operation, folder_context=None)
+    context = await load_file_folder_context(db, operation)
 
-    assert result == "90:700"
-    method, payload = remote.call.await_args_list[0].args
-    assert method == "crm.timeline.comment.add"
-    assert payload["fields"]["FILES"][0][0] == f"document_{record.id}.pdf"
-    assert all(not call.args[0].startswith("disk.folder.") for call in remote.call.await_args_list)
+    assert context.partner_root_folder_id is None
+    assert context.partner_folder_name == "ООО Другой партнёр"
+    assert context.client_folder_name == "Петров Пётр Петрович"
+    assert context.remote_file_name == disk_file_name(record)
 
 
 def test_client_folder_name_is_readable_and_safe():
@@ -326,26 +339,17 @@ def test_disk_file_name_keeps_original_name_and_stable_id_suffix():
     assert result == f"personal-name [{record.id.hex[:8]}].pdf"
 
 
-def test_disk_folder_pilot_is_limited_to_samsonyuk():
-    enabled = Partner(
+def test_partner_folder_name_uses_cabinet_name_and_sanitizes_it():
+    partner = Partner(
         id=uuid4(),
         user_id=uuid4(),
-        company_name="Самсонюк Евгений Вячеславович",
+        company_name='ООО "Право / Партнёры"',
         director_name="Самсонюк Евгений Вячеславович",
         inn="123456789012",
         phone="+79990000001",
     )
-    disabled = Partner(
-        id=uuid4(),
-        user_id=uuid4(),
-        company_name="Другой партнёр",
-        director_name="Петров Пётр Петрович",
-        inn="7701234567",
-        phone="+79990000002",
-    )
 
-    assert partner_uses_disk_pilot(enabled) is True
-    assert partner_uses_disk_pilot(disabled) is False
+    assert partner_folder_name(partner) == "ООО -Право - Партнёры-"
 
 
 @pytest.mark.parametrize(
