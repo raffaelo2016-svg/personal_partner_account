@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 from uuid import uuid4
 
 import pytest
@@ -308,6 +308,9 @@ async def test_all_partners_use_shared_document_folder_flow():
     )
     db = AsyncMock()
     db.get.side_effect = [record, client, partner]
+    partner_rows = Mock()
+    partner_rows.all.return_value = [(partner.id, partner.company_name)]
+    db.execute.return_value = partner_rows
 
     context = await load_file_folder_context(db, operation)
 
@@ -350,6 +353,43 @@ def test_partner_folder_name_uses_cabinet_name_and_sanitizes_it():
     )
 
     assert partner_folder_name(partner) == "ООО -Право - Партнёры-"
+
+
+@pytest.mark.asyncio
+async def test_duplicate_partner_folder_name_gets_stable_identifier():
+    record = _record()
+    client = Client(
+        id=record.client_id,
+        partner_id=uuid4(),
+        type="before_court",
+        full_name="Клиент Один",
+        bitrix_deal_id="456",
+    )
+    partner = Partner(
+        id=client.partner_id,
+        user_id=uuid4(),
+        company_name="Одинаковое имя",
+        director_name="Партнёр Второй",
+        inn="123456789012",
+        phone="+79990000001",
+    )
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"file:create:{record.id}:v1",
+        local_entity_type=FILE_ENTITY_TYPE,
+        local_entity_id=record.id,
+        bitrix_method="crm.timeline.comment.add",
+        payload=build_file_operation_payload(record, deal_id="456"),
+    )
+    db = AsyncMock()
+    db.get.side_effect = [record, client, partner]
+    partner_rows = Mock()
+    partner_rows.all.return_value = [(uuid4(), "Одинаковое имя"), (partner.id, "Одинаковое имя")]
+    db.execute.return_value = partner_rows
+
+    context = await load_file_folder_context(db, operation)
+
+    assert context.partner_folder_name == f"Одинаковое имя [{str(partner.id).split('-')[0]}]"
 
 
 @pytest.mark.parametrize(

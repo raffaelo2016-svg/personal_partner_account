@@ -77,12 +77,32 @@ def client_folder_name(client: Client) -> str:
     return _safe_folder_name(client.full_name, fallback="Клиент")
 
 
-def partner_folder_name(partner: Partner) -> str:
+def partner_folder_name(partner: Partner, *, include_identifier: bool = False) -> str:
     """Use the partner name displayed in the cabinet for the shared-drive folder."""
-    return _safe_folder_name(
+    base_name = _safe_folder_name(
         partner.company_name or partner.short_name or partner.director_name or partner.full_legal_name,
         fallback="Партнёр",
     )
+    if not include_identifier:
+        return base_name
+    suffix = f" [{str(partner.id).split('-')[0]}]"
+    return f"{base_name[: 200 - len(suffix)]}{suffix}"
+
+
+async def _partner_folder_needs_identifier(db: AsyncSession, partner: Partner) -> bool:
+    rows = (
+        await db.execute(
+            select(Partner.id, Partner.company_name)
+            .where(Partner.deleted_at.is_(None))
+            .order_by(Partner.created_at.asc(), Partner.id.asc())
+        )
+    ).all()
+    folder_name = partner_folder_name(partner)
+    for partner_id, company_name in rows:
+        if _safe_folder_name(company_name, fallback="Партнёр") != folder_name:
+            continue
+        return partner_id != partner.id
+    return False
 
 
 def disk_file_name(record: FileUpload) -> str:
@@ -217,12 +237,13 @@ async def load_file_folder_context(
     partner = await db.get(Partner, local_client.partner_id)
     if partner is None:
         raise Bitrix24Error("LOCAL_PARTNER_UNAVAILABLE", "Document partner was not found")
+    include_partner_identifier = await _partner_folder_needs_identifier(db, partner)
     return FileFolderContext(
         # Document folders always live under the common ПАРТНЕРЫ directory.
         # ``bitrix_root_folder_id`` may later be used for a collaboration drive
         # and must not redirect client documents away from the shared archive.
         partner_root_folder_id=None,
-        partner_folder_name=partner_folder_name(partner),
+        partner_folder_name=partner_folder_name(partner, include_identifier=include_partner_identifier),
         client_folder_name=client_folder_name(local_client),
         remote_file_name=disk_file_name(record),
     )
