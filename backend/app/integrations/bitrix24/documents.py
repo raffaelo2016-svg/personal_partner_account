@@ -299,7 +299,14 @@ async def _find_disk_file(client: Bitrix24Client, folder_id: str, name: str) -> 
 
 
 async def _find_partners_folder(client: Bitrix24Client) -> dict[str, Any]:
-    storages = await client.list_all("disk.storage.getlist", {}, max_pages=20)
+    # The portal may expose hundreds of personal drives. The shared ``ПАРТНЕРЫ``
+    # directory can only live in the company (common) storage, so do not page
+    # through every user storage.
+    storages = await client.list_all(
+        "disk.storage.getlist",
+        {"filter": {"ENTITY_TYPE": "common"}},
+        max_pages=5,
+    )
     for storage in storages:
         storage_id = _object_id(storage)
         if not storage_id:

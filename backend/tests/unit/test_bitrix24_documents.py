@@ -260,6 +260,11 @@ async def test_missing_partner_and_nested_folders_are_created_on_first_upload():
         result = await execute_file_creation(remote, operation, folder_context=context)
 
     assert result == "90:700"
+    assert remote.list_all.await_args_list[1].args == (
+        "disk.storage.getlist",
+        {"filter": {"ENTITY_TYPE": "common"}},
+    )
+    assert remote.list_all.await_args_list[1].kwargs == {"max_pages": 5}
     assert remote.call.await_args_list[0].args == (
         "disk.folder.addsubfolder",
         {"id": "20", "data": {"NAME": "Самсонюк Евгений Вячеславович"}},
