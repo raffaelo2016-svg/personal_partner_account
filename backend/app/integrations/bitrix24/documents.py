@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import re
 import uuid
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import PurePosixPath
 from typing import Any
+from urllib.parse import urljoin, urlparse
 
 from sqlalchemy import or_, select
 from sqlalchemy.dialects.postgresql import insert
@@ -21,6 +24,7 @@ from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
 from app.models.file_upload import FileUpload
+from app.models.partner import Partner
 from app.services.audit import audit_log
 from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
 from app.validation.files import (
@@ -34,6 +38,10 @@ from app.validation.files import (
 FILE_ENTITY_TYPE = "file"
 FILE_CREATE_METHOD = "crm.timeline.comment.add"
 FILE_MARKER_PREFIX = "partner-cabinet-file:"
+DISK_FILE_MARKER_PREFIX = "partner-cabinet-disk-file:"
+PARTNERS_FOLDER_NAME = "ПАРТНЕРЫ"
+INITIAL_DOCUMENTS_FOLDER_NAME = "Первоначальные документы"
+SAMSONYUK_TEST_PARTNER_NAME = "Самсонюк Евгений Вячеславович"
 TIMELINE_COMMENT_ADD_EVENT = "ONCRMTIMELINECOMMENTADD"
 TIMELINE_COMMENT_ENTITY_TYPE = "timeline_comment"
 TIMELINE_FILE_REMOTE_ENTITY_TYPE = "crm_timeline_file"
@@ -43,8 +51,43 @@ CRM_ACTIVITY_ENTITY_TYPE = "crm_activity"
 CRM_ACTIVITY_FILE_REMOTE_ENTITY_TYPE = "crm_activity_file"
 
 
+@dataclass(frozen=True)
+class FileFolderContext:
+    partner_root_folder_id: str | None
+    partner_folder_name: str
+    client_folder_name: str
+    remote_file_name: str
+
+
 def file_marker(file_id: uuid.UUID) -> str:
     return f"[{FILE_MARKER_PREFIX}{file_id}]"
+
+
+def disk_file_marker(file_id: str) -> str:
+    return f"[{DISK_FILE_MARKER_PREFIX}{file_id}]"
+
+
+def client_folder_name(client: Client) -> str:
+    """Build the exact readable client folder name without persisting PII in the outbox."""
+    cleaned_name = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", client.full_name).strip(" .")
+    cleaned_name = re.sub(r"\s+", " ", cleaned_name) or "Клиент"
+    return cleaned_name[:200]
+
+
+def disk_file_name(record: FileUpload) -> str:
+    """Keep the original name recognizable and add a stable suffix for safe retries."""
+    source_name = PurePosixPath(record.original_name.replace("\\", "/")).name
+    extension = PurePosixPath(record.s3_key).suffix.lower() or PurePosixPath(source_name).suffix.lower()
+    stem = source_name[: -len(extension)] if extension and source_name.lower().endswith(extension) else source_name
+    cleaned_stem = re.sub(r'[\\/:*?"<>|\x00-\x1f]', "-", stem).strip(" .") or "document"
+    suffix = f" [{record.id.hex[:8]}]{extension}"
+    return f"{cleaned_stem[: max(1, 240 - len(suffix))]}{suffix}"
+
+
+def partner_uses_disk_pilot(partner: Partner) -> bool:
+    target = " ".join(SAMSONYUK_TEST_PARTNER_NAME.casefold().split())
+    candidates = (partner.company_name, partner.director_name, partner.short_name, partner.full_legal_name)
+    return any(" ".join((value or "").casefold().split()) == target for value in candidates)
 
 
 def extract_timeline_comment_event_reference(event_name: str, payload: dict[str, Any]) -> str | None:
@@ -114,7 +157,6 @@ async def schedule_file_creation(db: AsyncSession, record: FileUpload, *, retry:
         record.bitrix_sync_requested_at = datetime.now(UTC)
         await db.flush()
         return False
-
     operation_key = f"file:create:{record.id}:v1"
     operation = await db.scalar(
         select(BitrixOutboxOperation).where(
@@ -157,8 +199,35 @@ async def schedule_file_creation(db: AsyncSession, record: FileUpload, *, retry:
     return True
 
 
+async def load_file_folder_context(
+    db: AsyncSession,
+    operation: BitrixOutboxOperation,
+) -> FileFolderContext | None:
+    record = await db.get(FileUpload, operation.local_entity_id)
+    if record is None:
+        raise Bitrix24Error("LOCAL_FILE_UNAVAILABLE", "Document record was not found")
+    local_client = await db.get(Client, record.client_id)
+    if local_client is None:
+        raise Bitrix24Error("LOCAL_CLIENT_UNAVAILABLE", "Document client was not found")
+    partner = await db.get(Partner, local_client.partner_id)
+    if partner is None:
+        raise Bitrix24Error("LOCAL_PARTNER_UNAVAILABLE", "Document partner was not found")
+    if not partner_uses_disk_pilot(partner):
+        return None
+    return FileFolderContext(
+        partner_root_folder_id=partner.bitrix_root_folder_id,
+        partner_folder_name=SAMSONYUK_TEST_PARTNER_NAME,
+        client_folder_name=client_folder_name(local_client),
+        remote_file_name=disk_file_name(record),
+    )
+
+
 def _comment_reference(comment: dict[str, Any]) -> str | None:
     comment_id = comment.get("ID") or comment.get("id")
+    comment_text = str(comment.get("COMMENT") or comment.get("comment") or "")
+    disk_marker = re.search(rf"\[{re.escape(DISK_FILE_MARKER_PREFIX)}([^\]]+)\]", comment_text)
+    if comment_id and disk_marker:
+        return f"{comment_id}:{disk_marker.group(1)}"
     raw_files = comment.get("FILES") or comment.get("files") or []
     if isinstance(raw_files, dict):
         files = list(raw_files.values())
@@ -173,7 +242,147 @@ def _comment_reference(comment: dict[str, Any]) -> str | None:
     return f"{comment_id}:{file_id}" if file_id else None
 
 
-async def execute_file_creation(client: Bitrix24Client, operation: BitrixOutboxOperation) -> str:
+def _object_id(value: Any) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    candidate = value.get("ID") or value.get("id")
+    return str(candidate).strip() if candidate is not None and str(candidate).strip() else None
+
+
+async def _find_folder_child(client: Bitrix24Client, parent_id: str, name: str) -> dict[str, Any] | None:
+    children = await client.list_all(
+        "disk.folder.getchildren",
+        {"id": parent_id, "filter": {"NAME": name}},
+        max_pages=20,
+    )
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        if str(child.get("TYPE") or child.get("type") or "").lower() != "folder":
+            continue
+        if str(child.get("NAME") or child.get("name") or "") == name and _object_id(child):
+            return child
+    return None
+
+
+async def _ensure_subfolder(client: Bitrix24Client, parent_id: str, name: str) -> dict[str, Any]:
+    existing = await _find_folder_child(client, parent_id, name)
+    if existing is not None:
+        return existing
+    try:
+        created = await client.call("disk.folder.addsubfolder", {"id": parent_id, "data": {"NAME": name}})
+    except Bitrix24Error:
+        # A parallel worker may have created the same deterministic folder.
+        existing = await _find_folder_child(client, parent_id, name)
+        if existing is not None:
+            return existing
+        raise
+    if not isinstance(created, dict) or not _object_id(created):
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return the created folder")
+    return created
+
+
+async def _find_disk_file(client: Bitrix24Client, folder_id: str, name: str) -> dict[str, Any] | None:
+    children = await client.list_all(
+        "disk.folder.getchildren",
+        {"id": folder_id, "filter": {"NAME": name}},
+        max_pages=20,
+    )
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        if str(child.get("TYPE") or child.get("type") or "").lower() != "file":
+            continue
+        if str(child.get("NAME") or child.get("name") or "") == name and _object_id(child):
+            return child
+    return None
+
+
+async def _find_partners_folder(client: Bitrix24Client) -> dict[str, Any]:
+    storages = await client.list_all("disk.storage.getlist", {}, max_pages=20)
+    for storage in storages:
+        storage_id = _object_id(storage)
+        if not storage_id:
+            continue
+        children = await client.list_all(
+            "disk.storage.getchildren",
+            {"id": storage_id, "filter": {"NAME": PARTNERS_FOLDER_NAME}},
+            max_pages=20,
+        )
+        for child in children:
+            if not isinstance(child, dict):
+                continue
+            if str(child.get("TYPE") or child.get("type") or "").lower() != "folder":
+                continue
+            if str(child.get("NAME") or child.get("name") or "") == PARTNERS_FOLDER_NAME and _object_id(child):
+                return child
+    raise Bitrix24Error("PARTNERS_FOLDER_NOT_FOUND", "Shared Drive folder ПАРТНЕРЫ was not found")
+
+
+def _absolute_detail_url(client: Bitrix24Client, item: dict[str, Any]) -> str | None:
+    detail_url = str(item.get("DETAIL_URL") or item.get("detailUrl") or "").strip()
+    if not detail_url:
+        return None
+    parsed = urlparse(detail_url)
+    if parsed.scheme and parsed.netloc:
+        portal_host = (urlparse(client.client_endpoint).hostname or "").lower()
+        if parsed.scheme != "https" or (parsed.hostname or "").lower() != portal_host:
+            return None
+        return detail_url
+    absolute = urljoin(client.client_endpoint, f"/{detail_url.lstrip('/')}")
+    return absolute if urlparse(absolute).scheme == "https" else None
+
+
+async def _upload_to_initial_documents(
+    client: Bitrix24Client,
+    *,
+    context: FileFolderContext,
+    remote_name: str,
+    data: bytes,
+) -> dict[str, Any]:
+    partner_folder_id = context.partner_root_folder_id
+    if not partner_folder_id:
+        partners_folder = await _find_partners_folder(client)
+        partners_folder_id = _object_id(partners_folder)
+        if not partners_folder_id:
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 partners folder has no ID")
+        partner_folder = await _ensure_subfolder(client, partners_folder_id, context.partner_folder_name)
+        partner_folder_id = _object_id(partner_folder)
+        if not partner_folder_id:
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 partner folder has no ID")
+
+    client_folder = await _ensure_subfolder(client, partner_folder_id, context.client_folder_name)
+    client_folder_id = _object_id(client_folder)
+    if not client_folder_id:
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 client folder has no ID")
+    documents_folder = await _ensure_subfolder(client, client_folder_id, INITIAL_DOCUMENTS_FOLDER_NAME)
+    documents_folder_id = _object_id(documents_folder)
+    if not documents_folder_id:
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 documents folder has no ID")
+
+    existing = await _find_disk_file(client, documents_folder_id, remote_name)
+    if existing is not None:
+        return existing
+    uploaded = await client.call(
+        "disk.folder.uploadfile",
+        {
+            "id": documents_folder_id,
+            "data": {"NAME": remote_name},
+            "fileContent": [remote_name, base64.b64encode(data).decode("ascii")],
+            "generateUniqueName": False,
+        },
+    )
+    if not isinstance(uploaded, dict) or not _object_id(uploaded):
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return the uploaded document")
+    return uploaded
+
+
+async def execute_file_creation(
+    client: Bitrix24Client,
+    operation: BitrixOutboxOperation,
+    *,
+    folder_context: FileFolderContext | None,
+) -> str:
     payload = operation.payload
     deal_id = str(payload.get("deal_id") or "")
     marker = str(payload.get("marker") or "")
@@ -200,27 +409,71 @@ async def execute_file_creation(client: Bitrix24Client, operation: BitrixOutboxO
         data = await download_file_async(str(payload.get("s3_key") or ""))
     except Exception as exc:  # noqa: BLE001
         raise Bitrix24Error("LOCAL_FILE_UNAVAILABLE", "Could not read the queued document") from exc
+
+    if folder_context is None:
+        result = await client.call(
+            FILE_CREATE_METHOD,
+            {
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": f"Документ из партнёрского кабинета\n{marker}",
+                    "FILES": [
+                        [
+                            str(payload.get("remote_name") or "document"),
+                            base64.b64encode(data).decode("ascii"),
+                        ]
+                    ],
+                }
+            },
+        )
+        comment_id = result if isinstance(result, str | int) else None
+        if not comment_id:
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return a timeline comment ID")
+        created = await client.call("crm.timeline.comment.get", {"id": comment_id})
+        if not isinstance(created, dict):
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return the created document")
+        reference = _comment_reference(created)
+        if not reference:
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an attached Disk file ID")
+        return reference
+
+    remote_name = folder_context.remote_file_name
+    disk_file = await _upload_to_initial_documents(
+        client,
+        context=folder_context,
+        remote_name=remote_name,
+        data=data,
+    )
+    disk_file_id = _object_id(disk_file)
+    if not disk_file_id:
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an uploaded Disk file ID")
+    detail_url = _absolute_detail_url(client, disk_file)
+    if detail_url is None:
+        refreshed = await client.call("disk.file.get", {"id": disk_file_id})
+        if isinstance(refreshed, dict):
+            detail_url = _absolute_detail_url(client, refreshed)
+    if detail_url is None:
+        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return a document link")
+
     result = await client.call(
         FILE_CREATE_METHOD,
         {
             "fields": {
                 "ENTITY_ID": deal_id,
                 "ENTITY_TYPE": "deal",
-                "COMMENT": f"Документ из партнёрского кабинета\n{marker}",
-                "FILES": [[str(payload.get("remote_name") or "document"), base64.b64encode(data).decode("ascii")]],
+                "COMMENT": (
+                    "Документ из партнёрского кабинета\n"
+                    f"Папка: {folder_context.client_folder_name} / {INITIAL_DOCUMENTS_FOLDER_NAME}\n"
+                    f"Файл: {detail_url}\n{marker}\n{disk_file_marker(disk_file_id)}"
+                ),
             }
         },
     )
     comment_id = result if isinstance(result, str | int) else None
     if not comment_id:
         raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return a timeline comment ID")
-    created = await client.call("crm.timeline.comment.get", {"id": comment_id})
-    if not isinstance(created, dict):
-        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return the created document")
-    reference = _comment_reference(created)
-    if not reference:
-        raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an attached Disk file ID")
-    return reference
+    return f"{comment_id}:{disk_file_id}"
 
 
 def _mark_inbound_failure(receipt: BitrixInboundEvent, code: str) -> bool:

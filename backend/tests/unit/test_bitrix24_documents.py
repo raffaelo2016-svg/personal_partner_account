@@ -13,11 +13,16 @@ from app.integrations.bitrix24.documents import (
     CRM_ACTIVITY_ENTITY_TYPE,
     FILE_ENTITY_TYPE,
     TIMELINE_COMMENT_ENTITY_TYPE,
+    FileFolderContext,
     build_file_operation_payload,
+    client_folder_name,
+    disk_file_marker,
+    disk_file_name,
     execute_file_creation,
     extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
     file_marker,
+    partner_uses_disk_pilot,
     process_crm_activity_add_event,
     process_timeline_comment_add_event,
 )
@@ -38,6 +43,15 @@ def _record() -> FileUpload:
         s3_key=f"uploads/{uuid4()}.pdf",
         size=12,
         mime_type="application/pdf",
+    )
+
+
+def _folder_context() -> FileFolderContext:
+    return FileFolderContext(
+        partner_root_folder_id="300",
+        partner_folder_name="Самсонюк Евгений Вячеславович",
+        client_folder_name="Иванов Иван Иванович",
+        remote_file_name="паспорт [test].pdf",
     )
 
 
@@ -82,7 +96,7 @@ async def test_existing_timeline_marker_prevents_duplicate_upload():
     remote = AsyncMock()
     remote.list_all.return_value = [{"ID": "90", "COMMENT": marker, "FILES": {"1": {"id": "700"}}}]
 
-    result = await execute_file_creation(remote, operation)
+    result = await execute_file_creation(remote, operation, folder_context=_folder_context())
 
     assert result == "90:700"
     remote.list_all.assert_awaited_once()
@@ -90,7 +104,28 @@ async def test_existing_timeline_marker_prevents_duplicate_upload():
 
 
 @pytest.mark.asyncio
-async def test_new_document_is_uploaded_without_original_filename():
+async def test_existing_timeline_disk_marker_prevents_duplicate_upload():
+    record = _record()
+    marker = file_marker(record.id)
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"file:create:{record.id}:v1",
+        local_entity_type=FILE_ENTITY_TYPE,
+        local_entity_id=record.id,
+        bitrix_method="crm.timeline.comment.add",
+        payload={"deal_id": "456", "s3_key": record.s3_key, "remote_name": "document.pdf", "marker": marker},
+    )
+    remote = AsyncMock()
+    remote.list_all.return_value = [{"ID": "90", "COMMENT": f"{marker}\n{disk_file_marker('700')}", "FILES": []}]
+
+    result = await execute_file_creation(remote, operation, folder_context=_folder_context())
+
+    assert result == "90:700"
+    remote.call.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_new_document_is_uploaded_to_partner_client_documents_folder():
     record = _record()
     payload = build_file_operation_payload(record, deal_id="456")
     operation = BitrixOutboxOperation(
@@ -102,16 +137,210 @@ async def test_new_document_is_uploaded_without_original_filename():
         payload=payload,
     )
     remote = AsyncMock()
+    remote.client_endpoint = "https://bitrix.uriteh.ru/rest/"
+    remote.list_all.side_effect = [[], [], [], []]
+    remote.call.side_effect = [
+        {"ID": "500", "TYPE": "folder", "NAME": _folder_context().client_folder_name},
+        {"ID": "600", "TYPE": "folder", "NAME": "Первоначальные документы"},
+        {
+            "ID": "700",
+            "TYPE": "file",
+            "NAME": _folder_context().remote_file_name,
+            "DETAIL_URL": "https://bitrix.uriteh.ru/company/personal/user/1/disk/file/700/",
+        },
+        "90",
+    ]
+
+    with patch("app.integrations.bitrix24.documents.download_file_async", new=AsyncMock(return_value=b"%PDF-1.7")):
+        result = await execute_file_creation(remote, operation, folder_context=_folder_context())
+
+    assert result == "90:700"
+    client_folder_call = remote.call.await_args_list[0]
+    assert client_folder_call.args == (
+        "disk.folder.addsubfolder",
+        {"id": "300", "data": {"NAME": _folder_context().client_folder_name}},
+    )
+    documents_folder_call = remote.call.await_args_list[1]
+    assert documents_folder_call.args == (
+        "disk.folder.addsubfolder",
+        {"id": "500", "data": {"NAME": "Первоначальные документы"}},
+    )
+    upload_method, upload_payload = remote.call.await_args_list[2].args
+    assert upload_method == "disk.folder.uploadfile"
+    assert upload_payload["id"] == "600"
+    assert upload_payload["data"]["NAME"] == _folder_context().remote_file_name
+    assert record.original_name not in str(upload_payload)
+    timeline_method, timeline_payload = remote.call.await_args_list[3].args
+    assert timeline_method == "crm.timeline.comment.add"
+    assert "FILES" not in timeline_payload["fields"]
+    assert disk_file_marker("700") in timeline_payload["fields"]["COMMENT"]
+    assert "https://bitrix.uriteh.ru/" in timeline_payload["fields"]["COMMENT"]
+
+
+@pytest.mark.asyncio
+async def test_existing_folder_tree_and_file_are_reused():
+    record = _record()
+    remote_name = _folder_context().remote_file_name
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"file:create:{record.id}:v1",
+        local_entity_type=FILE_ENTITY_TYPE,
+        local_entity_id=record.id,
+        bitrix_method="crm.timeline.comment.add",
+        payload=build_file_operation_payload(record, deal_id="456"),
+    )
+    remote = AsyncMock()
+    remote.client_endpoint = "https://bitrix.uriteh.ru/rest/"
+    remote.list_all.side_effect = [
+        [],
+        [{"ID": "500", "TYPE": "folder", "NAME": _folder_context().client_folder_name}],
+        [{"ID": "600", "TYPE": "folder", "NAME": "Первоначальные документы"}],
+        [
+            {
+                "ID": "700",
+                "TYPE": "file",
+                "NAME": remote_name,
+                "DETAIL_URL": "/company/personal/user/1/disk/file/700/",
+            }
+        ],
+    ]
+    remote.call.return_value = "90"
+
+    with patch("app.integrations.bitrix24.documents.download_file_async", new=AsyncMock(return_value=b"%PDF-1.7")):
+        result = await execute_file_creation(remote, operation, folder_context=_folder_context())
+
+    assert result == "90:700"
+    remote.call.assert_awaited_once()
+    assert remote.call.await_args.args[0] == "crm.timeline.comment.add"
+    assert "https://bitrix.uriteh.ru/company/" in remote.call.await_args.args[1]["fields"]["COMMENT"]
+
+
+@pytest.mark.asyncio
+async def test_missing_partner_and_nested_folders_are_created_on_first_upload():
+    record = _record()
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"file:create:{record.id}:v1",
+        local_entity_type=FILE_ENTITY_TYPE,
+        local_entity_id=record.id,
+        bitrix_method="crm.timeline.comment.add",
+        payload=build_file_operation_payload(record, deal_id="456"),
+    )
+    context = FileFolderContext(
+        partner_root_folder_id=None,
+        partner_folder_name="Самсонюк Евгений Вячеславович",
+        client_folder_name="Иванов Иван Иванович",
+        remote_file_name="паспорт [test].pdf",
+    )
+    remote = AsyncMock()
+    remote.client_endpoint = "https://bitrix.uriteh.ru/rest/"
+    remote.list_all.side_effect = [
+        [],
+        [{"ID": "10", "NAME": "Общий диск"}],
+        [{"ID": "20", "TYPE": "folder", "NAME": "ПАРТНЕРЫ"}],
+        [],
+        [],
+        [],
+        [],
+    ]
+    remote.call.side_effect = [
+        {"ID": "300", "TYPE": "folder", "NAME": context.partner_folder_name},
+        {"ID": "500", "TYPE": "folder", "NAME": context.client_folder_name},
+        {"ID": "600", "TYPE": "folder", "NAME": "Первоначальные документы"},
+        {
+            "ID": "700",
+            "TYPE": "file",
+            "NAME": context.remote_file_name,
+            "DETAIL_URL": "https://bitrix.uriteh.ru/company/personal/user/1/disk/file/700/",
+        },
+        "90",
+    ]
+
+    with patch("app.integrations.bitrix24.documents.download_file_async", new=AsyncMock(return_value=b"%PDF-1.7")):
+        result = await execute_file_creation(remote, operation, folder_context=context)
+
+    assert result == "90:700"
+    assert remote.call.await_args_list[0].args == (
+        "disk.folder.addsubfolder",
+        {"id": "20", "data": {"NAME": "Самсонюк Евгений Вячеславович"}},
+    )
+    assert remote.call.await_args_list[1].args == (
+        "disk.folder.addsubfolder",
+        {"id": "300", "data": {"NAME": "Иванов Иван Иванович"}},
+    )
+    assert remote.call.await_args_list[2].args == (
+        "disk.folder.addsubfolder",
+        {"id": "500", "data": {"NAME": "Первоначальные документы"}},
+    )
+
+
+@pytest.mark.asyncio
+async def test_non_pilot_partner_keeps_timeline_attachment_flow():
+    record = _record()
+    operation = BitrixOutboxOperation(
+        member_id="member",
+        operation_key=f"file:create:{record.id}:v1",
+        local_entity_type=FILE_ENTITY_TYPE,
+        local_entity_id=record.id,
+        bitrix_method="crm.timeline.comment.add",
+        payload=build_file_operation_payload(record, deal_id="456"),
+    )
+    remote = AsyncMock()
     remote.list_all.return_value = []
     remote.call.side_effect = ["90", {"ID": "90", "FILES": [{"ID": "700"}]}]
 
     with patch("app.integrations.bitrix24.documents.download_file_async", new=AsyncMock(return_value=b"%PDF-1.7")):
-        result = await execute_file_creation(remote, operation)
+        result = await execute_file_creation(remote, operation, folder_context=None)
 
     assert result == "90:700"
-    add_payload = remote.call.await_args_list[0].args[1]
-    assert record.original_name not in str(add_payload)
-    assert add_payload["fields"]["FILES"][0][0] == f"document_{record.id}.pdf"
+    method, payload = remote.call.await_args_list[0].args
+    assert method == "crm.timeline.comment.add"
+    assert payload["fields"]["FILES"][0][0] == f"document_{record.id}.pdf"
+    assert all(not call.args[0].startswith("disk.folder.") for call in remote.call.await_args_list)
+
+
+def test_client_folder_name_is_readable_and_safe():
+    client = Client(
+        id=uuid4(),
+        partner_id=uuid4(),
+        type="before_court",
+        full_name='Иванов / Иван: "Тест"',
+        bitrix_deal_id="456",
+    )
+
+    result = client_folder_name(client)
+
+    assert result == "Иванов - Иван- -Тест-"
+
+
+def test_disk_file_name_keeps_original_name_and_stable_id_suffix():
+    record = _record()
+
+    result = disk_file_name(record)
+
+    assert result == f"personal-name [{record.id.hex[:8]}].pdf"
+
+
+def test_disk_folder_pilot_is_limited_to_samsonyuk():
+    enabled = Partner(
+        id=uuid4(),
+        user_id=uuid4(),
+        company_name="Самсонюк Евгений Вячеславович",
+        director_name="Самсонюк Евгений Вячеславович",
+        inn="123456789012",
+        phone="+79990000001",
+    )
+    disabled = Partner(
+        id=uuid4(),
+        user_id=uuid4(),
+        company_name="Другой партнёр",
+        director_name="Петров Пётр Петрович",
+        inn="7701234567",
+        phone="+79990000002",
+    )
+
+    assert partner_uses_disk_pilot(enabled) is True
+    assert partner_uses_disk_pilot(disabled) is False
 
 
 @pytest.mark.parametrize(

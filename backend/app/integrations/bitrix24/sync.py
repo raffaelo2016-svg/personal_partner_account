@@ -27,6 +27,7 @@ from app.integrations.bitrix24.documents import (
     execute_file_creation,
     extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
+    load_file_folder_context,
     schedule_file_creation,
 )
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
@@ -260,13 +261,13 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
         access_token = await _access_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, access_token) as client:
             try:
-                result = await _execute_operation(client, operation)
+                result = await _execute_operation(client, operation, db=db)
             except Bitrix24Error as exc:
                 if exc.code.lower() not in {"expired_token", "invalid_token"}:
                     raise
                 access_token = await refresh_installation_tokens(db, installation)
                 async with Bitrix24Client(installation.client_endpoint, access_token) as retry_client:
-                    result = await _execute_operation(retry_client, operation)
+                    result = await _execute_operation(retry_client, operation, db=db)
     except Bitrix24Error as exc:
         operation.attempts += 1
         operation.error_code = exc.code[:100]
@@ -308,10 +309,18 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     return True
 
 
-async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOperation) -> Any:
+async def _execute_operation(
+    client: Bitrix24Client,
+    operation: BitrixOutboxOperation,
+    *,
+    db: AsyncSession | None = None,
+) -> Any:
     """Use CRM origin keys to make create operations safe after an uncertain response."""
     if operation.local_entity_type == FILE_ENTITY_TYPE:
-        return await execute_file_creation(client, operation)
+        if db is None:
+            raise RuntimeError("File synchronization requires a database session")
+        folder_context = await load_file_folder_context(db, operation)
+        return await execute_file_creation(client, operation, folder_context=folder_context)
     if operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
         return await execute_chat_message(client, operation)
     list_method = None
