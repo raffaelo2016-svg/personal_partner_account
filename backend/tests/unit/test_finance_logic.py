@@ -2,6 +2,7 @@
 
 from datetime import date, timedelta
 
+from app.services.finance_service import calculate_court_fee_due_date
 from app.services.partner_service import add_calendar_month
 
 
@@ -31,6 +32,20 @@ class TestDueDateCalculation:
 
     def test_cross_month(self):
         assert self.calc_due_date(date(2026, 1, 25), 10) == date(2026, 2, 4)
+
+    def test_uses_court_date_instead_of_creation_date(self):
+        assert calculate_court_fee_due_date(
+            date(2026, 5, 14),
+            10,
+            today=date(2026, 9, 10),
+        ) == date(2026, 5, 24)
+
+    def test_falls_back_to_creation_date_before_court_date_is_known(self):
+        assert calculate_court_fee_due_date(
+            None,
+            10,
+            today=date(2026, 9, 10),
+        ) == date(2026, 9, 20)
 
 
 class TestOverdueDetection:

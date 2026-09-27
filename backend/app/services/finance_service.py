@@ -24,6 +24,18 @@ from app.services.audit import audit_log
 logger = structlog.get_logger()
 
 
+def calculate_court_fee_due_date(
+    court_procedure_date: date | None,
+    payment_term_days: int | None,
+    *,
+    today: date | None = None,
+) -> date:
+    """Calculate a fee deadline from the court date when it is known."""
+    reference_date = court_procedure_date or today or moscow_today()
+    term_days = 10 if payment_term_days is None else payment_term_days
+    return reference_date + timedelta(days=term_days)
+
+
 def _promotion_datetime_bounds(start: date, end: date) -> tuple[datetime, datetime]:
     return moscow_date_bounds_utc(start, end)
 
@@ -57,13 +69,17 @@ async def create_court_fee_for_client(
     partner: Partner,
 ) -> CourtFee:
     today = moscow_today()
-    due = today + timedelta(days=partner.payment_term_days or 10)
 
     # Serialise promotion allocation per partner so concurrent client creates
     # cannot consume the same final free slot.
     locked_partner = (
         await session.execute(select(Partner).where(Partner.id == partner.id).with_for_update())
     ).scalar_one()
+    due = calculate_court_fee_due_date(
+        client.court_procedure_date,
+        locked_partner.payment_term_days,
+        today=today,
+    )
     promotion_active = bool(
         locked_partner.free_client_limit > 0
         and locked_partner.promotion_start_date
@@ -94,6 +110,7 @@ async def create_court_fee_for_client(
 
     base_amount = locked_partner.court_fee_per_client or 1_500_000
     is_promo_free = promotion_active and free_clients_used < locked_partner.free_client_limit
+    fee_status = "promo_free" if is_promo_free else ("overdue" if due < today else "unpaid")
 
     fee = CourtFee(
         client_id=client.id,
@@ -101,7 +118,7 @@ async def create_court_fee_for_client(
         base_amount=base_amount,
         discount_amount=base_amount if is_promo_free else 0,
         amount=0 if is_promo_free else base_amount,
-        status="promo_free" if is_promo_free else "unpaid",
+        status=fee_status,
         due_date=due,
     )
     session.add(fee)
@@ -132,22 +149,96 @@ async def recalculate_due_date(
     client: Client,
     partner: Partner,
 ) -> None:
-    """Пересчитать due_date неоплаченных court_fee при изменении court_procedure_date."""
+    """Привести открытые начисления к условиям партнёра после изменения даты суда."""
     if not client.court_procedure_date:
         return
 
-    new_due = client.court_procedure_date + timedelta(days=partner.payment_term_days or 10)
+    new_due = calculate_court_fee_due_date(client.court_procedure_date, partner.payment_term_days)
 
     fees_q = select(CourtFee).where(
         CourtFee.client_id == client.id,
-        CourtFee.status.in_(["unpaid", "overdue"]),
+        CourtFee.status.in_(["unpaid", "overdue", "promo_free"]),
         CourtFee.deleted_at.is_(None),
     )
     fees = (await session.execute(fees_q)).scalars().all()
     for fee in fees:
         fee.due_date = new_due
+        fee.base_amount = partner.court_fee_per_client
+        if fee.status == "promo_free":
+            fee.discount_amount = partner.court_fee_per_client
+            fee.amount = 0
+        else:
+            fee.discount_amount = 0
+            fee.amount = partner.court_fee_per_client
+            fee.status = "overdue" if new_due < moscow_today() else "unpaid"
     await session.flush()
     logger.info("due_date_recalculated", client_id=str(client.id), new_due=str(new_due))
+
+
+async def sync_open_court_fees_with_partner_terms(
+    session: AsyncSession,
+    partner: Partner,
+    *,
+    sync_amount: bool,
+    sync_due_date: bool,
+) -> int:
+    """Apply submitted partner terms to fees that have not been paid yet."""
+    if not sync_amount and not sync_due_date:
+        return 0
+
+    fees = (
+        (
+            await session.execute(
+                select(CourtFee)
+                .where(
+                    CourtFee.partner_id == partner.id,
+                    CourtFee.status.in_(["unpaid", "overdue", "promo_free"]),
+                    CourtFee.deleted_at.is_(None),
+                )
+                .options(selectinload(CourtFee.client))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    today = moscow_today()
+    changed = 0
+    for fee in fees:
+        fee_changed = False
+        if sync_amount:
+            if fee.status == "promo_free":
+                fee.base_amount = partner.court_fee_per_client
+                fee.discount_amount = partner.court_fee_per_client
+                fee.amount = 0
+            else:
+                fee.base_amount = partner.court_fee_per_client
+                fee.discount_amount = 0
+                fee.amount = partner.court_fee_per_client
+            fee_changed = True
+
+        if sync_due_date and fee.client and fee.client.court_procedure_date:
+            fee.due_date = calculate_court_fee_due_date(
+                fee.client.court_procedure_date,
+                partner.payment_term_days,
+                today=today,
+            )
+            if fee.status != "promo_free":
+                fee.status = "overdue" if fee.due_date < today else "unpaid"
+            fee_changed = True
+
+        if fee_changed:
+            changed += 1
+
+    if changed:
+        await session.flush()
+        logger.info(
+            "open_court_fees_synced_with_partner_terms",
+            partner_id=str(partner.id),
+            fees_updated=changed,
+            amount_updated=sync_amount,
+            due_date_updated=sync_due_date,
+        )
+    return changed
 
 
 async def list_court_fees(

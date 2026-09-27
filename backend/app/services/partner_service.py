@@ -346,6 +346,8 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
     previous_promotion_start_date = partner.promotion_start_date
     previous_promotion_end_date = partner.promotion_end_date
     update_data = data.model_dump(exclude_unset=True)
+    court_fee_submitted = "court_fee_per_client" in update_data
+    payment_term_submitted = "payment_term_days" in update_data
     for key, value in update_data.items():
         if hasattr(partner, key):
             setattr(partner, key, value if not hasattr(value, "value") else value.value)
@@ -365,6 +367,15 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
         partner.promotion_end_date = add_calendar_month(partner.promotion_start_date)
 
     await session.flush()
+    if court_fee_submitted or payment_term_submitted:
+        from app.services.finance_service import sync_open_court_fees_with_partner_terms
+
+        await sync_open_court_fees_with_partner_terms(
+            session,
+            partner,
+            sync_amount=court_fee_submitted,
+            sync_due_date=payment_term_submitted,
+        )
     if previous_status != "active" and partner.status == "active":
         from app.integrations.bitrix24.partners import schedule_partner_creation
 

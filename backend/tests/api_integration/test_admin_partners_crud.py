@@ -1,8 +1,11 @@
 """Admin partners: update, delete, фильтрация, поиск."""
 
+from datetime import date
+
 from httpx import AsyncClient
 
 from tests.api_integration.conftest import auth
+from tests.conftest import async_session_test
 
 
 class TestAdminPartnersCRUD:
@@ -28,6 +31,47 @@ class TestAdminPartnersCRUD:
         )
         assert resp.status_code == 200
         assert resp.json()["company_name"] == "Новое название"
+
+    async def test_update_financial_terms_repairs_open_fee(self, client: AsyncClient, admin_token, partner):
+        from app.models.client import Client
+        from app.models.court_fee import CourtFee
+
+        async with async_session_test() as session:
+            debtor = Client(
+                partner_id=partner.id,
+                type="in_court",
+                status="realization",
+                full_name="Тестовый должник",
+                court_procedure_date=date(2026, 5, 14),
+            )
+            session.add(debtor)
+            await session.flush()
+            fee = CourtFee(
+                client_id=debtor.id,
+                partner_id=partner.id,
+                base_amount=500_000,
+                discount_amount=0,
+                amount=500_000,
+                status="unpaid",
+                due_date=date(2026, 11, 10),
+            )
+            session.add(fee)
+            await session.commit()
+            fee_id = fee.id
+
+        response = await client.put(
+            f"/api/v1/admin/partners/{partner.id}",
+            json={"court_fee_per_client": 1_700_000, "payment_term_days": 10},
+            headers=auth(admin_token),
+        )
+
+        assert response.status_code == 200
+        async with async_session_test() as session:
+            updated_fee = await session.get(CourtFee, fee_id)
+            assert updated_fee.base_amount == 1_700_000
+            assert updated_fee.amount == 1_700_000
+            assert updated_fee.due_date == date(2026, 5, 24)
+            assert updated_fee.status == "overdue"
 
     async def test_delete_partner(self, client: AsyncClient, admin_token, partner):
         resp = await client.delete(f"/api/v1/admin/partners/{partner.id}", headers=auth(admin_token))
