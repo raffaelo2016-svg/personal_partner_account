@@ -437,6 +437,37 @@ async def test_removing_partner_from_existing_deal_returns_it_to_attention(db_se
 
 
 @pytest.mark.asyncio
+async def test_unmapped_deal_update_without_partner_is_ignored(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name=CLIENT_DEAL_UPDATE_EVENT,
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="909",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {"ID": "909", "CATEGORY_ID": "3"}
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    assert completed is True
+    assert receipt.status == "ignored"
+    assert receipt.error_code is None
+    assert receipt.processed_at is not None
+    assert receipt.attempts == 1
+
+
+@pytest.mark.asyncio
 async def test_external_deal_without_partner_link_waits_for_manual_review(db_session: AsyncSession):
     await _saved_entities(db_session)
     receipt = BitrixInboundEvent(
