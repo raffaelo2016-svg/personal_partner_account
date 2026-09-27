@@ -227,9 +227,7 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
     unpaid_cond = CourtFee.status.in_(["unpaid", "overdue"])
     overdue_cond = unpaid_cond & (CourtFee.due_date < today)
     paid_month_cond = (
-        (CourtFee.status == "paid")
-        & (CourtFee.paid_at >= paid_month_start)
-        & (CourtFee.paid_at < paid_month_end)
+        (CourtFee.status == "paid") & (CourtFee.paid_at >= paid_month_start) & (CourtFee.paid_at < paid_month_end)
     )
     promotion_free_cond = CourtFee.status == "promo_free"
     if promotion_start_date:
