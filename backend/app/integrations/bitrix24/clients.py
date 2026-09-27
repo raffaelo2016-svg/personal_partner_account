@@ -317,6 +317,17 @@ async def _supersede_failed_receipts(
     )
 
 
+async def _ignore_current_state(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
+    """Close this receipt and any obsolete warnings for the same remote deal."""
+    now = datetime.now(UTC)
+    await _supersede_failed_receipts(db, receipt, processed_at=now)
+    receipt.status = "ignored"
+    receipt.error_code = None
+    receipt.processed_at = now
+    receipt.attempts += 1
+    return True
+
+
 async def _mark_current_state_failure(
     db: AsyncSession,
     receipt: BitrixInboundEvent,
@@ -392,22 +403,18 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
     installation = await db.get(BitrixInstallation, receipt.member_id)
     if installation is None:
         return _mark_inbound_failure(receipt, "INSTALLATION_NOT_FOUND")
+    deal_loaded = False
     try:
         token = await _installation_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, token) as remote:
             deal = await remote.call("crm.deal.get", {"ID": receipt.remote_entity_id})
             if not isinstance(deal, dict):
                 return _mark_inbound_failure(receipt, "INVALID_DEAL_RESPONSE")
+            deal_loaded = True
             if str(deal.get("CATEGORY_ID") or "") != str(CLIENT_DEAL_CATEGORY_ID):
-                receipt.status = "ignored"
-                receipt.processed_at = datetime.now(UTC)
-                receipt.attempts += 1
-                return True
+                return await _ignore_current_state(db, receipt)
             if existing_client is None and str(deal.get("ORIGINATOR_ID") or "").lower() == SELF_ORIGINATOR_ID:
-                receipt.status = "ignored"
-                receipt.processed_at = datetime.now(UTC)
-                receipt.attempts += 1
-                return True
+                return await _ignore_current_state(db, receipt)
 
             partner_remote_id = deal.get(f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}")
             if not partner_remote_id:
@@ -460,6 +467,13 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
             if not isinstance(contact, dict):
                 return _mark_inbound_failure(receipt, "INVALID_CONTACT_RESPONSE")
     except Bitrix24Error as exc:
+        if (
+            not deal_loaded
+            and exc.status_code in {400, 404}
+            and not exc.code.strip()
+            and exc.description.strip().casefold() == "not found"
+        ):
+            return await _ignore_current_state(db, receipt)
         return _mark_inbound_failure(receipt, exc.code)
 
     full_name = _remote_full_name(contact)

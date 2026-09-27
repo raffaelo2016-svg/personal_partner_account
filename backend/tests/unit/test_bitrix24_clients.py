@@ -9,6 +9,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.integrations.bitrix24.client import Bitrix24Error
 from app.integrations.bitrix24.client_setup_cli import ENTITY_ID, FIELD_DEFINITIONS, _provision_field
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
@@ -465,6 +466,81 @@ async def test_unmapped_deal_update_without_partner_is_ignored(db_session: Async
     assert receipt.error_code is None
     assert receipt.processed_at is not None
     assert receipt.attempts == 1
+
+
+@pytest.mark.asyncio
+async def test_deal_moved_out_of_client_funnel_resolves_old_warning(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    old_receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="910",
+        status="failed",
+        error_code="PARTNER_NOT_LINKED",
+        attempts=1,
+    )
+    update_receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name=CLIENT_DEAL_UPDATE_EVENT,
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="910",
+    )
+    db_session.add_all([old_receipt, update_receipt])
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {"ID": "910", "CATEGORY_ID": "18"}
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_client_deal_add_event(db_session, update_receipt)
+
+    await db_session.refresh(old_receipt)
+    assert completed is True
+    assert update_receipt.status == "ignored"
+    assert old_receipt.status == "ignored"
+    assert old_receipt.error_code is None
+
+
+@pytest.mark.asyncio
+async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="911",
+        status="failed",
+        error_code="PARTNER_NOT_LINKED",
+        attempts=1,
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.side_effect = Bitrix24Error("", "Not found", status_code=400)
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    assert completed is True
+    assert receipt.status == "ignored"
+    assert receipt.error_code is None
+    assert receipt.processed_at is not None
 
 
 @pytest.mark.asyncio
