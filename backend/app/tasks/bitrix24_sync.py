@@ -16,6 +16,7 @@ from app.database import engine as async_engine
 from app.integrations.bitrix24.chat import poll_chat_events, reconcile_chat_file_history
 from app.integrations.bitrix24.clients import retry_client_deal_events
 from app.integrations.bitrix24.documents import retry_document_events
+from app.integrations.bitrix24.partners import reconcile_remote_partner_profiles
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
 from app.integrations.bitrix24.tasks import reconcile_remote_tasks, retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
@@ -132,12 +133,18 @@ async def _retry_document_events() -> tuple[int, int]:
         return await retry_document_events(db)
 
 
+async def _reconcile_partner_profiles() -> dict[str, int]:
+    async with async_session() as db:
+        return await reconcile_remote_partner_profiles(db, limit=settings.BITRIX_OUTBOX_BATCH_SIZE)
+
+
 async def _recover_interrupted_sync() -> tuple[
     int,
     tuple[int, int],
     dict[str, int],
     tuple[int, int],
     tuple[int, int],
+    dict[str, int],
 ]:
     """Run recovery steps on one event loop before disposing the shared async pool."""
     released = await _release_stale()
@@ -145,13 +152,16 @@ async def _recover_interrupted_sync() -> tuple[
     task_reconcile = await _reconcile_remote_tasks()
     client_events = await _retry_client_events()
     document_events = await _retry_document_events()
-    return released, task_events, task_reconcile, client_events, document_events
+    partner_profiles = await _reconcile_partner_profiles()
+    return released, task_events, task_reconcile, client_events, document_events, partner_profiles
 
 
 @celery.task(name="app.tasks.bitrix24_sync.reconcile_bitrix_sync")
 def reconcile_bitrix_sync() -> dict[str, int]:
     """Recover interrupted work and report stale mappings without exposing data."""
-    released, task_events, task_reconcile, client_events, document_events = _run_async(_recover_interrupted_sync())
+    released, task_events, task_reconcile, client_events, document_events, partner_profiles = _run_async(
+        _recover_interrupted_sync()
+    )
     task_events_claimed, task_events_completed = task_events
     client_events_claimed, client_events_completed = client_events
     document_events_claimed, document_events_completed = document_events
@@ -178,6 +188,10 @@ def reconcile_bitrix_sync() -> dict[str, int]:
         "client_events_completed": client_events_completed,
         "document_events_claimed": document_events_claimed,
         "document_events_completed": document_events_completed,
+        "partner_profiles_claimed": partner_profiles["claimed"],
+        "partner_profiles_synced": partner_profiles["synced"],
+        "partner_profiles_conflicts": partner_profiles["conflicts"],
+        "partner_profiles_failed": partner_profiles["failed"],
     }
     logger.info("bitrix_sync_reconciled", **result)
     return result
