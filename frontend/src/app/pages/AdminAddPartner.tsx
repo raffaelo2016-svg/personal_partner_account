@@ -11,14 +11,9 @@ import {
   validateInnForPartnerType,
   validateKpp,
 } from '@/app/utils/innKpp';
+import { todayInMoscow } from '@/app/utils/formatDate';
 
 const PRICE_PRESETS = [10_000, 15_000, 17_000];
-
-function todayForDateInput() {
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
-  return local.toISOString().slice(0, 10);
-}
 
 function addCalendarMonthForDisplay(value: string) {
   if (!value) return '';
@@ -64,7 +59,7 @@ export default function AdminAddPartner() {
   const [paymentTermDays, setPaymentTermDays] = useState('');
   const [promotionEnabled, setPromotionEnabled] = useState(false);
   const [freeClientLimit, setFreeClientLimit] = useState('10');
-  const [promotionStartDate, setPromotionStartDate] = useState(todayForDateInput);
+  const [promotionStartDate, setPromotionStartDate] = useState(todayInMoscow);
   const [courtFeeError, setCourtFeeError] = useState('');
   const [paymentTermError, setPaymentTermError] = useState('');
 

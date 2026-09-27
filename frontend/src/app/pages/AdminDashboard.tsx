@@ -41,7 +41,7 @@ import {
 } from 'recharts';
 import { fetchAdminDashboard } from '../api/adminDashboard';
 import DateInput from '../components/ui/DateInput';
-import { formatDateShort } from '@/app/utils/formatDate';
+import { formatDateShort, todayInMoscow } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 
 type PeriodKey = 'month' | 'quarter' | 'year' | 'custom';
@@ -63,13 +63,13 @@ const TONE_STYLES: Record<Tone, { icon: string; value: string }> = {
   slate: { icon: 'bg-slate-100 text-slate-700', value: 'text-gray-950' },
 };
 
-const MONTH_FORMATTER = new Intl.DateTimeFormat('ru-RU', { month: 'short' });
+const MONTH_FORMATTER = new Intl.DateTimeFormat('ru-RU', { month: 'short', timeZone: 'UTC' });
 const MONEY_FORMATTER = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
 
 function toIsoDate(value: Date): string {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
+  const year = value.getUTCFullYear();
+  const month = String(value.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(value.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
@@ -78,17 +78,16 @@ function getPeriodRange(
   customFrom: string,
   customTo: string,
 ): { date_from?: string; date_to?: string } {
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
+  const today = new Date(`${todayInMoscow()}T00:00:00Z`);
 
   if (period === 'custom') {
     return customFrom && customTo ? { date_from: customFrom, date_to: customTo } : {};
   }
 
   const start = new Date(today);
-  if (period === 'month') start.setDate(1);
-  if (period === 'quarter') start.setMonth(Math.floor(today.getMonth() / 3) * 3, 1);
-  if (period === 'year') start.setMonth(0, 1);
+  if (period === 'month') start.setUTCDate(1);
+  if (period === 'quarter') start.setUTCMonth(Math.floor(today.getUTCMonth() / 3) * 3, 1);
+  if (period === 'year') start.setUTCMonth(0, 1);
 
   return { date_from: toIsoDate(start), date_to: toIsoDate(today) };
 }

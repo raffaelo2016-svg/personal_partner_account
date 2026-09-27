@@ -2,6 +2,7 @@ import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Newspaper, Pin } from 'lucide-react';
 import { fetchNews } from '../api/news';
+import { formatDateTime } from '../utils/formatDate';
 
 const categoryLabel = { announcement: 'Объявление', update: 'Обновление', instruction: 'Инструкция' };
 
@@ -33,7 +34,7 @@ export default function News() {
             )}
             <h2 className="text-xl font-semibold text-gray-900 mt-3">{post.title}</h2>
             <p className="text-gray-600 mt-2 line-clamp-2 whitespace-pre-line">{post.body}</p>
-            <p className="text-xs text-gray-400 mt-4">{post.published_at ? new Date(post.published_at).toLocaleDateString('ru-RU') : ''}</p>
+            <p className="text-xs text-gray-400 mt-4">{post.published_at ? `${formatDateTime(post.published_at)} МСК` : ''}</p>
           </Link>
         ))}
       </div>

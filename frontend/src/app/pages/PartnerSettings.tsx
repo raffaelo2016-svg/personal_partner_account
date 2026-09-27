@@ -3,13 +3,10 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Settings as SettingsIcon, Bell, Lock, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
-  fetchTimezone,
-  updateTimezone,
   fetchPartnerNotificationPreferences,
   updatePartnerNotificationPreferences,
   changePartnerPassword,
 } from '../api/partnerSettings';
-import TimezoneSelect from '../components/ui/TimezoneSelect';
 
 export default function PartnerSettings() {
   const queryClient = useQueryClient();
@@ -17,21 +14,6 @@ export default function PartnerSettings() {
   const [showPasswordForm, setShowPasswordForm] = useState(false);
   const [currentPwd, setCurrentPwd] = useState('');
   const [newPwd, setNewPwd] = useState('');
-
-  const { data: tzData, isLoading: tzLoading } = useQuery({
-    queryKey: ['partnerTimezone'],
-    queryFn: fetchTimezone,
-  });
-
-  const updateTzMutation = useMutation({
-    mutationFn: (tz: string) => updateTimezone(tz),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['partnerTimezone'] });
-      queryClient.invalidateQueries({ queryKey: ['appTimezone'] });
-      toast.success('Часовой пояс обновлён');
-    },
-    onError: () => toast.error('Ошибка при обновлении'),
-  });
 
   const { data: notifPrefs, isLoading } = useQuery({
     queryKey: ['partnerNotifPrefs'],
@@ -62,7 +44,7 @@ export default function PartnerSettings() {
     updateNotifMutation.mutate({ [field]: value });
   }
 
-  if (isLoading || tzLoading) {
+  if (isLoading) {
     return (
       <div className="flex items-center justify-center py-20">
         <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
@@ -87,12 +69,8 @@ export default function PartnerSettings() {
         </div>
         <div className="py-3">
           <p className="font-medium text-gray-900 mb-2">Часовой пояс</p>
-          <div className="max-w-sm">
-            <TimezoneSelect
-              value={tzData?.timezone ?? 'Europe/Moscow'}
-              onChange={(tz) => updateTzMutation.mutate(tz)}
-            />
-          </div>
+          <p className="text-sm font-medium text-gray-900">Москва (МСК, UTC+3)</p>
+          <p className="mt-1 text-xs text-gray-500">Единый часовой пояс для всех пользователей кабинета</p>
         </div>
       </div>
 

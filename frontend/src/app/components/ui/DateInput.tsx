@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { Calendar as CalendarIcon, ChevronLeft, ChevronRight } from 'lucide-react';
+import { getMoscowDateParts, todayInMoscow } from '../../utils/formatDate';
 
 interface DateInputProps {
   value: string;
@@ -69,11 +70,11 @@ export default function DateInput({
   const [showCalendar, setShowCalendar] = useState(false);
   const [calYear, setCalYear] = useState(() => {
     if (value) return parseInt(value.split('-')[0], 10);
-    return new Date().getFullYear();
+    return getMoscowDateParts().year;
   });
   const [calMonth, setCalMonth] = useState(() => {
     if (value) return parseInt(value.split('-')[1], 10) - 1;
-    return new Date().getMonth();
+    return getMoscowDateParts().month - 1;
   });
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -147,15 +148,14 @@ export default function DateInput({
     return -1;
   })();
 
-  const today = new Date();
+  const today = getMoscowDateParts();
   const isToday = (day: number) =>
-    today.getFullYear() === calYear && today.getMonth() === calMonth && today.getDate() === day;
+    today.year === calYear && today.month === calMonth + 1 && today.day === day;
 
   const isBeforeMin = (day: number): boolean => {
     if (!min) return false;
-    const d = new Date(calYear, calMonth, day);
-    const minDate = new Date(min);
-    return d < minDate;
+    const candidate = `${calYear}-${String(calMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    return candidate < min.slice(0, 10);
   };
 
   return (
@@ -269,10 +269,12 @@ export default function DateInput({
             <button
               type="button"
               onClick={() => {
-                const t = new Date();
-                setCalYear(t.getFullYear());
-                setCalMonth(t.getMonth());
-                handleDayClick(t.getDate());
+                const value = todayInMoscow();
+                const [year, month] = value.split('-').map(Number);
+                setCalYear(year);
+                setCalMonth(month - 1);
+                onChange(value);
+                close();
               }}
               className="text-xs text-blue-600 hover:text-blue-700 font-medium px-2 py-1 rounded-lg hover:bg-blue-50 transition-colors"
             >

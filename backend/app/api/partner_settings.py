@@ -3,8 +3,9 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.exceptions import BadRequest
+from app.core.time import MOSCOW_TIMEZONE
 from app.database import get_db
-from app.models.settings import SystemSetting
 from app.models.user import User
 from app.schemas.settings import (
     ChangePasswordRequest,
@@ -26,26 +27,21 @@ class TimezoneUpdate(BaseModel):
 
 @router.get("/timezone", response_model=TimezoneResponse)
 async def get_timezone(
-    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _db: AsyncSession = Depends(get_db),  # noqa: B008
     _current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    row = await db.get(SystemSetting, "timezone")
-    return TimezoneResponse(timezone=row.value if row else "Europe/Moscow")
+    return TimezoneResponse(timezone=MOSCOW_TIMEZONE)
 
 
 @router.put("/timezone", response_model=TimezoneResponse)
 async def update_timezone(
     body: TimezoneUpdate,
-    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _db: AsyncSession = Depends(get_db),  # noqa: B008
     _current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    row = await db.get(SystemSetting, "timezone")
-    if row:
-        row.value = body.timezone
-    else:
-        db.add(SystemSetting(key="timezone", value=body.timezone))
-    await db.commit()
-    return TimezoneResponse(timezone=body.timezone)
+    if body.timezone != MOSCOW_TIMEZONE:
+        raise BadRequest("Часовой пояс кабинета зафиксирован: Москва (МСК, UTC+3)")
+    return TimezoneResponse(timezone=MOSCOW_TIMEZONE)
 
 
 @router.get("/notifications", response_model=NotificationPreferenceRead)

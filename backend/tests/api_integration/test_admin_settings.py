@@ -36,21 +36,17 @@ class TestSystemSettings:
         keys = {s["key"] for s in resp.json()}
         assert {"system_name", "language", "timezone"}.issubset(keys)
 
-    async def test_update_persists(self, client: AsyncClient, admin_token):
+    async def test_timezone_is_locked_to_moscow(self, client: AsyncClient, admin_token):
         resp = await client.put(
             BASE,
             headers=auth(admin_token),
             json={"settings": {"timezone": "Europe/London"}},
         )
-        assert resp.status_code == 200
-        body = resp.json()
-        tz = next(s for s in body if s["key"] == "timezone")
-        assert tz["value"] == "Europe/London"
+        assert resp.status_code == 400
 
-        # Повторный GET возвращает сохранённое значение
         resp2 = await client.get(BASE, headers=auth(admin_token))
         tz2 = next(s for s in resp2.json() if s["key"] == "timezone")
-        assert tz2["value"] == "Europe/London"
+        assert tz2["value"] == "Europe/Moscow"
 
     async def test_update_multiple_keys(self, client: AsyncClient, admin_token):
         resp = await client.put(

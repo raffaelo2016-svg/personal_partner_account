@@ -1,15 +1,5 @@
 import apiClient from './client';
 
-export async function fetchTimezone(): Promise<{ timezone: string }> {
-  const { data } = await apiClient.get('/settings/timezone');
-  return data;
-}
-
-export async function updateTimezone(timezone: string): Promise<{ timezone: string }> {
-  const { data } = await apiClient.put('/settings/timezone', { timezone });
-  return data;
-}
-
 export interface NotificationPreferenceData {
   user_id: string;
   email_notifications: boolean;

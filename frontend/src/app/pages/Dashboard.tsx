@@ -3,7 +3,7 @@ import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboard } from '../api/dashboard';
 import { fetchCourtFeeSummary } from '../api/finance';
-import { formatDateShort } from '@/app/utils/formatDate';
+import { daysUntilMoscowDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { SkeletonCard } from '../components/ui/skeleton';
 import OverdueDebtAlert from '../components/OverdueDebtAlert';
@@ -55,7 +55,7 @@ export default function Dashboard() {
     clientId: t.id,
     dueDate: formatDateShort(t.due_date, tz),
     priority: t.priority,
-    daysLeft: Math.max(0, Math.ceil((new Date(t.due_date).getTime() - Date.now()) / 86400000)),
+    daysLeft: Math.max(0, daysUntilMoscowDate(t.due_date)),
   }));
 
   const recentClients = (d?.recent_clients ?? []).map((c) => ({

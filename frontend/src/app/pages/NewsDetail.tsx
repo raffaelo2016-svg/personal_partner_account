@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { acknowledgeNews, fetchNewsPost, readNews } from '../api/news';
+import { formatDateTime } from '../utils/formatDate';
 
 export default function NewsDetail() {
   const { id = '' } = useParams();
@@ -41,7 +42,7 @@ export default function NewsDetail() {
             {post.pinned && <span className="bg-blue-50 text-blue-700 rounded-full px-3 py-1">Закреплено</span>}
           </div>
           <h1 className="text-3xl font-semibold text-gray-900">{post.title}</h1>
-          <p className="text-sm text-gray-500 mt-3">{post.published_at ? new Date(post.published_at).toLocaleDateString('ru-RU') : ''}</p>
+          <p className="text-sm text-gray-500 mt-3">{post.published_at ? `${formatDateTime(post.published_at)} МСК` : ''}</p>
           {post.image_url && (
             <img src={post.image_url} alt={`Обложка новости «${post.title}»`} className="mt-6 w-full aspect-video rounded-xl object-cover" />
           )}
