@@ -544,7 +544,7 @@ async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_external_deal_without_partner_link_waits_for_manual_review(db_session: AsyncSession):
+async def test_external_deal_without_partner_link_waits_silently_for_qualification(db_session: AsyncSession):
     await _saved_entities(db_session)
     receipt = BitrixInboundEvent(
         member_id="member-stage-4",
@@ -566,9 +566,10 @@ async def test_external_deal_without_partner_link_waits_for_manual_review(db_ses
     ):
         completed = await process_client_deal_add_event(db_session, receipt)
 
-    assert completed is False
-    assert receipt.status == "failed"
-    assert receipt.error_code == "PARTNER_NOT_LINKED"
+    assert completed is True
+    assert receipt.status == "ignored"
+    assert receipt.error_code is None
+    assert receipt.processed_at is not None
 
 
 @pytest.mark.asyncio

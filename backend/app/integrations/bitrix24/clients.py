@@ -418,17 +418,12 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
 
             partner_remote_id = deal.get(f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}")
             if not partner_remote_id:
-                # A deal moved into the Arbitration funnel also emits ONCRMDEALUPDATE.
-                # Until a partner is selected it is not an inbound cabinet client, so
-                # routine funnel moves must not create an administrator warning.  Keep
-                # the warning for newly created deals and for already imported clients
-                # whose partner link was removed.
-                if existing_client is None and receipt.event_name.upper() == CLIENT_DEAL_UPDATE_EVENT:
-                    receipt.status = "ignored"
-                    receipt.error_code = None
-                    receipt.processed_at = datetime.now(UTC)
-                    receipt.attempts += 1
-                    return True
+                # An unlinked Bitrix deal is not a cabinet client yet.  Whether it was
+                # created directly in this funnel or moved here, wait silently until a
+                # partner is selected; that update will trigger the import.  Removing
+                # the link from an already imported client remains actionable.
+                if existing_client is None:
+                    return await _ignore_current_state(db, receipt)
                 return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_LINKED")
             partner_mapping = await db.scalar(
                 select(BitrixEntityMap).where(
