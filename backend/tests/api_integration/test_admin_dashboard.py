@@ -17,12 +17,29 @@ class TestAdminDashboard:
         assert "main_stats" in data
         assert "movement_stats" in data
         assert "finance_stats" in data
+        assert "comparison_stats" in data
+        assert "risk_stats" in data
+        assert "activity_trend" in data
         assert "top_partners" in data
 
     async def test_main_stats_fields(self, client: AsyncClient, admin_token, partner_token):
         resp = await client.get("/api/v1/admin/dashboard", headers=auth(admin_token))
         stats = resp.json()["main_stats"]
-        assert "partners_count" in stats or "total_partners" in stats or isinstance(stats, dict)
+        for key in (
+            "partners_count",
+            "total_partners",
+            "transmitting_partners",
+            "activation_rate",
+            "clients_per_active_partner",
+        ):
+            assert key in stats
+
+    async def test_analytics_sections_have_expected_fields(self, client: AsyncClient, admin_token):
+        data = (await client.get("/api/v1/admin/dashboard", headers=auth(admin_token))).json()
+        assert len(data["activity_trend"]) == 6
+        assert "collection_rate" in data["finance_stats"]
+        assert "without_movement" in data["movement_stats"]
+        assert "partners_without_first_client" in data["risk_stats"]
 
     async def test_partner_forbidden(self, client: AsyncClient, partner_token):
         resp = await client.get("/api/v1/admin/dashboard", headers=auth(partner_token))

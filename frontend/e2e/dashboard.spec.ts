@@ -32,6 +32,14 @@ test.describe('Partner Dashboard', () => {
 test.describe('Admin Dashboard', () => {
   test.beforeEach(async ({ page }) => { await loginAdmin(page); });
 
+  test('shows analytics sections', async ({ page }) => {
+    await expect(page.getByRole('heading', { name: 'Управленческие показатели' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Клиентский поток' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Финансовые показатели' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Риски и внимание' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Рейтинг партнёров' })).toBeVisible();
+  });
+
   test('shows admin sidebar', async ({ page }) => {
     await expect(page.locator('text=Партнеры').first()).toBeVisible();
     await expect(page.locator('text=Все клиенты').first()).toBeVisible();
