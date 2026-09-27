@@ -1,7 +1,7 @@
 """Lock the cabinet timezone to Moscow.
 
 Revision ID: a8f31d6c209e
-Revises: f4c2a9d8e701
+Revises: 6f2a9c8d1b30
 """
 
 from collections.abc import Sequence
@@ -9,7 +9,7 @@ from collections.abc import Sequence
 from alembic import op
 
 revision: str = "a8f31d6c209e"
-down_revision: str | None = "f4c2a9d8e701"
+down_revision: str | None = "6f2a9c8d1b30"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
