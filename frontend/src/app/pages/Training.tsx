@@ -236,7 +236,7 @@ export default function Training() {
     (activeTab === 'important' && importantLoading) ||
     (activeTab === 'instructions' && instructionsLoading);
 
-  const displayVideos = videos.length > 0 ? videos : PLACEHOLDER_VIDEOS;
+  const displayVideos = videos.length > 0 ? [...videos, ...PLACEHOLDER_VIDEOS] : PLACEHOLDER_VIDEOS;
   const displayFaqItems = faqItems.length > 0 ? faqItems : PLACEHOLDER_FAQ;
   const displayImportantItems = importantItems.length > 0 ? importantItems : PLACEHOLDER_IMPORTANT;
   const displayInstructions = instructions.length > 0 ? instructions : PLACEHOLDER_INSTRUCTIONS;
