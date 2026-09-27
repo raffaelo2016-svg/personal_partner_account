@@ -221,6 +221,12 @@ def _phone(value: Any) -> str:
     return digits
 
 
+def _address(value: Any) -> str:
+    # Bitrix24 address user fields append coordinates and a location id:
+    # ``text address|latitude;longitude|location_id``.
+    return _text(value).partition("|")[0].strip()
+
+
 def _integer(value: Any) -> int | None:
     text = _text(value)
     if not text:
@@ -268,8 +274,8 @@ async def partner_profile_differences(
             _text(_remote_value(remote_item, PARTNER_FIELDS["email"])).casefold(),
         ),
         "legal_address": (
-            _text(partner.legal_address),
-            _text(_remote_value(remote_item, PARTNER_FIELDS["legal_address"])),
+            _address(partner.legal_address),
+            _address(_remote_value(remote_item, PARTNER_FIELDS["legal_address"])),
         ),
         "partner_type": (
             _text(partner.partner_type).casefold(),

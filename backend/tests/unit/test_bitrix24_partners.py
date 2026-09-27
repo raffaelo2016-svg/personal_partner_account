@@ -204,6 +204,7 @@ async def test_remote_non_profile_update_does_not_create_false_conflict(db_sessi
     remote_item = _remote_item(partner)
     remote_item["title"] = "Служебное изменение роботом"
     remote_item[PARTNER_FIELDS["phone"]] = "8 (999) 000-00-00"
+    remote_item[PARTNER_FIELDS["legal_address"]] = f"{partner.legal_address}|55.75;37.62|123"
     remote_item[PARTNER_FIELDS["court_fee"]] = "RUB|15000"
     remote_item[PARTNER_FIELDS["payment_days"]] = "10"
 
