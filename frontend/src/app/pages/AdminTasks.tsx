@@ -14,6 +14,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import { daysUntilMoscowDate, isBeforeMoscowToday } from '../utils/formatDate';
 
 export default function AdminTasks() {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -205,9 +206,7 @@ export default function AdminTasks() {
   const isTaskOverdue = (task: { status: string; dueDate: string }) => {
     if (task.status === 'completed') return false;
     if (task.status === 'overdue') return true;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return new Date(task.dueDate) < today;
+    return isBeforeMoscowToday(task.dueDate);
   };
 
   const filteredTasks = [...tasks]
@@ -239,9 +238,7 @@ export default function AdminTasks() {
   };
 
   const getDaysRemaining = (dueDate: string) => {
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    const diff = daysUntilMoscowDate(dueDate);
     if (diff < 0) return `Просрочено на ${Math.abs(diff)} дн.`;
     if (diff === 0) return 'Сегодня';
     if (diff === 1) return 'Завтра';

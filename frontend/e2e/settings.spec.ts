@@ -18,8 +18,20 @@ test.describe('Partner Settings', () => {
   test('contains timezone section', async ({ page }) => {
     await page.goto('/dashboard/settings');
     await page.waitForTimeout(1500);
-    const hasTz = await page.locator('text=/часовой пояс|timezone|Москва/i').first().isVisible().catch(() => false);
-    expect(typeof hasTz).toBe('boolean');
+    await expect(page.getByText('Москва (МСК, UTC+3)', { exact: true })).toBeVisible();
+    await expect(page.getByText('Единый часовой пояс для всех пользователей кабинета')).toBeVisible();
+  });
+
+  test('timezone stays Moscow in a browser configured for New York', async ({ browser }) => {
+    const context = await browser.newContext({
+      baseURL: 'http://localhost:5173',
+      timezoneId: 'America/New_York',
+    });
+    const newYorkPage = await context.newPage();
+    await loginPartner(newYorkPage);
+    await newYorkPage.goto('/dashboard/settings');
+    await expect(newYorkPage.getByText('Москва (МСК, UTC+3)', { exact: true })).toBeVisible();
+    await context.close();
   });
 
   test('contains password section', async ({ page }) => {

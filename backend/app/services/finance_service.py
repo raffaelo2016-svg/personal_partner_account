@@ -1,12 +1,13 @@
-from datetime import UTC, date, datetime, time, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 import structlog
-from sqlalchemy import case, extract, func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.config import settings
 from app.core.exceptions import AppException, NotFound
+from app.core.time import moscow_date_bounds_utc, moscow_date_start_utc, moscow_today
 from app.models.client import Client
 from app.models.court_fee import CourtFee
 from app.models.partner import Partner
@@ -24,10 +25,7 @@ logger = structlog.get_logger()
 
 
 def _promotion_datetime_bounds(start: date, end: date) -> tuple[datetime, datetime]:
-    return (
-        datetime.combine(start, time.min, tzinfo=UTC),
-        datetime.combine(end + timedelta(days=1), time.min, tzinfo=UTC),
-    )
+    return moscow_date_bounds_utc(start, end)
 
 
 def _fee_to_read(
@@ -58,7 +56,7 @@ async def create_court_fee_for_client(
     client: Client,
     partner: Partner,
 ) -> CourtFee:
-    today = date.today()
+    today = moscow_today()
     due = today + timedelta(days=partner.payment_term_days or 10)
 
     # Serialise promotion allocation per partner so concurrent client creates
@@ -75,7 +73,7 @@ async def create_court_fee_for_client(
     free_clients_used = 0
     if promotion_active:
         assert locked_partner.promotion_start_date is not None
-        promotion_start_at = datetime.combine(locked_partner.promotion_start_date, time.min, tzinfo=UTC)
+        promotion_start_at = moscow_date_start_utc(locked_partner.promotion_start_date)
         promotion_conditions = [CourtFee.created_at >= promotion_start_at]
         if locked_partner.promotion_end_date is not None:
             _, promotion_end_at = _promotion_datetime_bounds(
@@ -163,7 +161,7 @@ async def list_court_fees(
     limit: int = 20,
 ) -> tuple[list[CourtFeeRead], int]:
     base = select(CourtFee).where(CourtFee.deleted_at.is_(None))
-    today = date.today()
+    today = moscow_today()
     if partner_id:
         base = base.where(CourtFee.partner_id == partner_id)
     if client_id:
@@ -218,19 +216,24 @@ async def get_court_fee_summary(session: AsyncSession, partner_id: str) -> Court
     free_client_limit = partner.free_client_limit if partner else 0
     promotion_start_date = partner.promotion_start_date if partner else None
     promotion_end_date = partner.promotion_end_date if partner else None
-    today = date.today()
-    now = datetime.now(UTC)
+    today = moscow_today()
+    month_start = today.replace(day=1)
+    next_month = (month_start.replace(day=28) + timedelta(days=4)).replace(day=1)
+    paid_month_start, paid_month_end = moscow_date_bounds_utc(
+        month_start,
+        next_month - timedelta(days=1),
+    )
 
     unpaid_cond = CourtFee.status.in_(["unpaid", "overdue"])
     overdue_cond = unpaid_cond & (CourtFee.due_date < today)
     paid_month_cond = (
         (CourtFee.status == "paid")
-        & (extract("month", CourtFee.paid_at) == now.month)
-        & (extract("year", CourtFee.paid_at) == now.year)
+        & (CourtFee.paid_at >= paid_month_start)
+        & (CourtFee.paid_at < paid_month_end)
     )
     promotion_free_cond = CourtFee.status == "promo_free"
     if promotion_start_date:
-        promotion_start_at = datetime.combine(promotion_start_date, time.min, tzinfo=UTC)
+        promotion_start_at = moscow_date_start_utc(promotion_start_date)
         promotion_free_cond &= CourtFee.created_at >= promotion_start_at
         if promotion_end_date:
             _, promotion_end_at = _promotion_datetime_bounds(promotion_start_date, promotion_end_date)
@@ -341,7 +344,7 @@ async def get_debt_banner(session: AsyncSession, partner_id: str) -> DebtBanner:
 
     days_until = None
     if row.next_due:
-        delta = row.next_due - date.today()
+        delta = row.next_due - moscow_today()
         days_until = max(0, delta.days)
 
     return DebtBanner(
@@ -499,7 +502,7 @@ async def create_yookassa_payment_for_fees(
     if not yookassa_service.is_configured():
         raise PaymentError("Платежи не настроены", code="PAYMENTS_DISABLED")
 
-    today = date.today()
+    today = moscow_today()
     base_q = select(CourtFee).where(
         CourtFee.partner_id == partner_id,
         CourtFee.deleted_at.is_(None),

@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { MOSCOW_TIME_ZONE } from '../utils/formatDate';
 
 describe('password validation', () => {
   function validatePassword(pw: string): string | null {
@@ -23,11 +24,8 @@ describe('password match', () => {
   it('empty both', () => expect(passwordsMatch('', '')).toBe(true));
 });
 
-describe('timezone list', () => {
-  const TIMEZONES = ['Europe/Moscow', 'Asia/Tokyo', 'UTC', 'America/New_York'];
-
-  it('includes Moscow', () => expect(TIMEZONES).toContain('Europe/Moscow'));
-  it('no duplicates', () => expect(new Set(TIMEZONES).size).toBe(TIMEZONES.length));
+describe('cabinet timezone', () => {
+  it('is fixed to Moscow', () => expect(MOSCOW_TIME_ZONE).toBe('Europe/Moscow'));
 });
 
 describe('notification preferences', () => {

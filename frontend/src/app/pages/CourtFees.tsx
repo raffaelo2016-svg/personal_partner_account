@@ -2,7 +2,7 @@ import { AlertCircle, Users, TrendingUp, DollarSign, Loader2, Clock, Filter, Gif
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { fetchCourtFees, fetchCourtFeeSummary, payCourtFee } from '../api/finance';
-import { formatDateShort } from '@/app/utils/formatDate';
+import { formatDateShort, todayInMoscow } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import PaymentModal from '../components/PaymentModal';
 import CustomSelect from '../components/ui/CustomSelect';
@@ -37,8 +37,7 @@ function PromotionTimeline({ summary }: { summary: CourtFeeSummary }) {
 
   const start = parseDateOnly(summary.promotion_start_date);
   const end = summary.promotion_end_date ? parseDateOnly(summary.promotion_end_date) : null;
-  const now = new Date();
-  const today = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  const today = parseDateOnly(todayInMoscow());
   const scheduled = today < start;
   const totalDays = end === null ? 0 : Math.max(1, Math.round((end - start) / 86_400_000));
   const elapsedDays = end === null ? 0 : Math.max(0, totalDays - summary.promotion_days_remaining);

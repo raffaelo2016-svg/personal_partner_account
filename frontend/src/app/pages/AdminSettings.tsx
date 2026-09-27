@@ -10,7 +10,6 @@ import {
   changeAdminPassword,
 } from '../api/adminSettings';
 import type { SystemSettingData } from '../api/adminSettings';
-import TimezoneSelect from '../components/ui/TimezoneSelect';
 
 const SETTING_LABELS: Record<string, { label: string; description: string }> = {
   system_name: { label: 'Название системы', description: '' },
@@ -40,11 +39,8 @@ export default function AdminSettings() {
 
   const updateSettingsMutation = useMutation({
     mutationFn: (updates: Record<string, string>) => updateSystemSettings(updates),
-    onSuccess: (_data, variables) => {
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['adminSettings'] });
-      if ('timezone' in variables) {
-        queryClient.invalidateQueries({ queryKey: ['appTimezone'] });
-      }
       setEditingKey(null);
       toast.success('Настройка обновлена');
     },
@@ -153,12 +149,8 @@ export default function AdminSettings() {
           })}
           <div className="py-3">
             <p className="font-medium text-gray-900 mb-2">Часовой пояс</p>
-            <div className="max-w-sm">
-              <TimezoneSelect
-                value={settingsMap['timezone']?.value || 'Europe/Moscow'}
-                onChange={(tz) => updateSettingsMutation.mutate({ timezone: tz })}
-              />
-            </div>
+            <p className="text-sm font-medium text-gray-900">Москва (МСК, UTC+3)</p>
+            <p className="mt-1 text-xs text-gray-500">Единый часовой пояс для всех пользователей кабинета</p>
           </div>
         </div>
       </div>

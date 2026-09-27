@@ -5,6 +5,7 @@ import {
   archiveNews, createNews, deleteNewsImage, fetchAdminNews, fetchNewsStats, publishNews, updateNews, uploadNewsImage,
   type NewsInput, type NewsPost,
 } from '../api/news';
+import { formatDateTime } from '../utils/formatDate';
 
 const emptyForm: NewsInput = {
   title: '', body: '', category: 'announcement', important: false, pinned: false, requires_acknowledgement: false,
@@ -175,7 +176,7 @@ export default function AdminNews() {
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 {post.image_url && <img src={post.image_url} alt="" loading="lazy" className="mb-3 h-20 w-36 rounded-lg object-cover" />}
-                <p className="text-sm text-gray-500">{statusLabel[post.status]} · {post.published_at ? new Date(post.published_at).toLocaleDateString('ru-RU') : 'Не опубликовано'}</p>
+                <p className="text-sm text-gray-500">{statusLabel[post.status]} · {post.published_at ? `${formatDateTime(post.published_at)} МСК` : 'Не опубликовано'}</p>
                 <h2 className="text-xl font-semibold text-gray-900 mt-1">{post.title}</h2>
                 <p className="text-gray-600 mt-2 line-clamp-2 whitespace-pre-line">{post.body}</p>
               </div>

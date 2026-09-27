@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from app.core.dependencies import require_role
+from app.core.time import moscow_today
 from app.database import get_db
 from app.models.client import Client
 from app.models.court_fee import CourtFee
@@ -40,7 +41,7 @@ async def admin_dashboard(
 ):
     # Snapshot-дата для текущих/просроченных долгов: верхняя граница
     # периода или сегодня, если не задана.
-    snapshot_date = date_to or date.today()
+    snapshot_date = date_to or moscow_today()
     # Верхняя граница для фильтра «событий в периоде» — открытая
     # (< upper), чтобы date_to попал в диапазон целиком.
     upper_bound = snapshot_date + timedelta(days=1)

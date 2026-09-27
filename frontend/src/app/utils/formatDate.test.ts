@@ -5,6 +5,10 @@ import {
   formatDateTime,
   formatRelative,
   formatTime,
+  daysUntilMoscowDate,
+  getMoscowDateParts,
+  isBeforeMoscowToday,
+  todayInMoscow,
 } from './formatDate';
 
 const ISO = '2026-04-13T14:30:00Z';
@@ -65,6 +69,21 @@ describe('timezone handling', () => {
     const naive = '2026-04-13T14:30:00';
     expect(formatTime(naive, 'Europe/Moscow')).toBe(formatTime(ISO, 'Europe/Moscow'));
     expect(formatDateTime(naive, 'Europe/Moscow')).toBe(formatDateTime(ISO, 'Europe/Moscow'));
+  });
+});
+
+describe('Moscow calendar day', () => {
+  const afterMoscowMidnight = new Date('2026-04-13T21:30:00Z');
+
+  it('uses the Moscow date at the UTC day boundary', () => {
+    expect(todayInMoscow(afterMoscowMidnight)).toBe('2026-04-14');
+    expect(getMoscowDateParts(afterMoscowMidnight)).toEqual({ year: 2026, month: 4, day: 14 });
+  });
+
+  it('calculates overdue dates from the Moscow calendar day', () => {
+    expect(isBeforeMoscowToday('2026-04-13', afterMoscowMidnight)).toBe(true);
+    expect(isBeforeMoscowToday('2026-04-14', afterMoscowMidnight)).toBe(false);
+    expect(daysUntilMoscowDate('2026-04-15', afterMoscowMidnight)).toBe(1);
   });
 });
 

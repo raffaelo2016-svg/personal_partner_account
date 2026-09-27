@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import DuplicateEmail, NotFound
 from app.core.security import hash_password
+from app.core.time import moscow_today
 from app.models.client import Client
 from app.models.court_fee import CourtFee
 from app.models.partner import Partner
@@ -155,7 +156,7 @@ async def _get_partner_finance_batch(session: AsyncSession, partner_ids: list) -
     """Batch: 2 queries for all partners (one plain, one with Client join)."""
     if not partner_ids:
         return {}
-    today = date.today()
+    today = moscow_today()
 
     # Query 1: total_cost, overdue, paid per partner
     q1 = (
@@ -298,7 +299,7 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
     await session.flush()
 
     free_client_limit = data.free_client_limit or 0
-    promotion_start_date = (data.promotion_start_date or date.today()) if free_client_limit > 0 else None
+    promotion_start_date = (data.promotion_start_date or moscow_today()) if free_client_limit > 0 else None
 
     partner = Partner(
         user_id=user.id,
@@ -354,7 +355,7 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
         partner.promotion_start_date = None
         partner.promotion_end_date = None
     elif partner.promotion_start_date is None:
-        partner.promotion_start_date = partner.promotion_start_date or date.today()
+        partner.promotion_start_date = partner.promotion_start_date or moscow_today()
         partner.promotion_end_date = add_calendar_month(partner.promotion_start_date)
     elif (
         "promotion_start_date" in update_data

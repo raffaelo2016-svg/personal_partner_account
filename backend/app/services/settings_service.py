@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import BadRequest, NotFound
 from app.core.security import hash_password, verify_password
+from app.core.time import MOSCOW_TIMEZONE
 from app.models.settings import LoginHistory, NotificationPreference, SystemSetting
 from app.models.user import User
 
@@ -14,7 +15,7 @@ logger = structlog.get_logger()
 DEFAULT_SETTINGS = {
     "system_name": "URITECH Partner Cabinet",
     "language": "ru",
-    "timezone": "Europe/Moscow",
+    "timezone": MOSCOW_TIMEZONE,
 }
 
 
@@ -27,6 +28,9 @@ async def get_all_settings(db: AsyncSession) -> list[SystemSetting]:
             rows.append(
                 SystemSetting(key=key, value=value),
             )
+    for row in rows:
+        if row.key == "timezone":
+            row.value = MOSCOW_TIMEZONE
     return rows
 
 
@@ -34,12 +38,21 @@ async def update_settings(
     db: AsyncSession,
     updates: dict[str, str],
 ) -> list[SystemSetting]:
+    requested_timezone = updates.get("timezone")
+    if requested_timezone is not None and requested_timezone != MOSCOW_TIMEZONE:
+        raise BadRequest("Часовой пояс кабинета зафиксирован: Москва (МСК, UTC+3)")
+
     for key, value in updates.items():
         existing = await db.get(SystemSetting, key)
         if existing:
             existing.value = value
         else:
             db.add(SystemSetting(key=key, value=value))
+    timezone_setting = await db.get(SystemSetting, "timezone")
+    if timezone_setting:
+        timezone_setting.value = MOSCOW_TIMEZONE
+    else:
+        db.add(SystemSetting(key="timezone", value=MOSCOW_TIMEZONE))
     await db.commit()
     logger.info("system_settings_updated", keys=list(updates.keys()))
     return await get_all_settings(db)

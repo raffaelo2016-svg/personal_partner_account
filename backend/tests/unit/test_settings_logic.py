@@ -1,6 +1,6 @@
 """Unit-тесты: Settings — валидация паролей, timezone."""
 
-import pytest
+from app.core.time import MOSCOW_TIMEZONE
 
 
 class TestPasswordValidation:
@@ -29,15 +29,7 @@ class TestPasswordValidation:
 
 
 class TestTimezoneValidation:
-    """Валидация часовых поясов."""
+    """Единый часовой пояс кабинета."""
 
-    VALID_TIMEZONES = ["Europe/Moscow", "Asia/Tokyo", "UTC", "America/New_York"]
-    INVALID_TIMEZONES = ["Invalid/Zone", "", "123"]
-
-    @pytest.mark.parametrize("tz", VALID_TIMEZONES)
-    def test_valid_timezone_format(self, tz):
-        # Просто проверяем что строка не пустая и содержит /
-        assert len(tz) > 0
-
-    def test_default_timezone(self):
-        assert "Europe/Moscow" in self.VALID_TIMEZONES
+    def test_timezone_is_moscow(self):
+        assert MOSCOW_TIMEZONE == "Europe/Moscow"

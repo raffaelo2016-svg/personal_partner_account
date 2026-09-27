@@ -1,10 +1,9 @@
-from datetime import date
-
 import structlog
 from sqlalchemy import update
 
 from app.celery_app import celery
 from app.config import settings
+from app.core.time import moscow_today
 from app.models.court_fee import CourtFee
 
 logger = structlog.get_logger()
@@ -22,7 +21,7 @@ def check_overdue_court_fees():
         result = session.execute(
             update(CourtFee)
             .where(
-                CourtFee.due_date < date.today(),
+                CourtFee.due_date < moscow_today(),
                 CourtFee.status == "unpaid",
                 CourtFee.deleted_at.is_(None),
             )

@@ -11,10 +11,15 @@ class TestPartnerTimezone:
         assert resp.status_code == 200
         assert "timezone" in resp.json()
 
-    async def test_set_and_get(self, client: AsyncClient, partner_token):
-        await client.put("/api/v1/settings/timezone", json={"timezone": "Asia/Tokyo"}, headers=auth(partner_token))
+    async def test_timezone_is_locked_to_moscow(self, client: AsyncClient, partner_token):
+        response = await client.put(
+            "/api/v1/settings/timezone",
+            json={"timezone": "Asia/Tokyo"},
+            headers=auth(partner_token),
+        )
+        assert response.status_code == 400
         data = (await client.get("/api/v1/settings/timezone", headers=auth(partner_token))).json()
-        assert data["timezone"] == "Asia/Tokyo"
+        assert data["timezone"] == "Europe/Moscow"
 
 
 class TestPartnerNotifications:

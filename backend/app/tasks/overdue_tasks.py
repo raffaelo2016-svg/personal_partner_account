@@ -1,10 +1,9 @@
-from datetime import date
-
 import structlog
 from sqlalchemy import update
 
 from app.celery_app import celery
 from app.config import settings
+from app.core.time import moscow_today
 from app.models.task import Task
 
 logger = structlog.get_logger()
@@ -21,7 +20,7 @@ def check_overdue_tasks():
     with Session(engine) as session:
         result = session.execute(
             update(Task)
-            .where(Task.due_date < date.today(), Task.status.in_(["pending", "in_progress"]))
+            .where(Task.due_date < moscow_today(), Task.status.in_(["pending", "in_progress"]))
             .values(status="overdue")
             .returning(Task.id)
         )
