@@ -1,9 +1,9 @@
 import {
   ArrowLeft, Mail, Phone, Calendar, Users, Briefcase,
   Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
-  WalletCards, CircleDollarSign, Clock3, Gift, CalendarClock,
+  WalletCards, CircleDollarSign, Clock3, Gift, CalendarClock, Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useDeferredValue, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import {
   useBindPartnerBitrixCollab,
@@ -12,7 +12,9 @@ import {
   useRetryPartnerBitrixSync,
   useUpdatePartner,
 } from '@/app/hooks/usePartners';
-import { formatDate } from '@/app/utils/formatDate';
+import { useAdminClients } from '@/app/hooks/useClients';
+import { getStatusBadgeClass, getStatusLabel } from '@/app/data/clientStatuses';
+import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { toast } from 'sonner';
 import type { Partner, PartnerUpdate } from '@/app/types';
@@ -404,6 +406,21 @@ export default function AdminPartnerDetails() {
   const [collabId, setCollabId] = useState('');
   const [chatId, setChatId] = useState('');
   const [rootFolderId, setRootFolderId] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientPage, setClientPage] = useState(1);
+  const deferredClientSearch = useDeferredValue(clientSearch.trim());
+  const {
+    data: partnerClients,
+    isLoading: areClientsLoading,
+    isFetching: areClientsFetching,
+    isError: areClientsError,
+    refetch: refetchClients,
+  } = useAdminClients({
+    partner_id: id,
+    search: deferredClientSearch || undefined,
+    page: clientPage,
+    page_size: 10,
+  });
 
   if (isLoading) {
     return (
@@ -788,6 +805,167 @@ export default function AdminPartnerDetails() {
           </div>
         </div>
       </div>
+
+      {/* Клиенты партнёра */}
+      <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">Клиенты партнёра</h2>
+              <span className="inline-flex min-w-6 h-6 items-center justify-center rounded-md bg-blue-50 px-2 text-xs font-semibold text-blue-700">
+                {partner.clients_count ?? partnerClients?.total ?? 0}
+              </span>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative sm:w-72">
+                <label htmlFor="partner-clients-search" className="sr-only">
+                  Поиск по клиентам партнёра
+                </label>
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  id="partner-clients-search"
+                  type="search"
+                  value={clientSearch}
+                  onChange={(event) => {
+                    setClientSearch(event.target.value);
+                    setClientPage(1);
+                  }}
+                  placeholder="Поиск по клиентам"
+                  className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <Link
+                to={`/admin/clients?partner=${partner.id}`}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline whitespace-nowrap"
+              >
+                Все клиенты
+              </Link>
+            </div>
+          </div>
+          {deferredClientSearch ? (
+            <p className="mt-3 text-xs text-gray-500">
+              Найдено: {partnerClients?.total ?? 0}
+            </p>
+          ) : null}
+        </div>
+
+        {areClientsLoading ? (
+          <div className="flex items-center justify-center gap-2 px-6 py-12 text-sm text-gray-500">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            Загрузка клиентов...
+          </div>
+        ) : areClientsError ? (
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <AlertCircle className="mb-3 h-9 w-9 text-red-400" />
+            <p className="text-sm font-medium text-gray-900">Не удалось загрузить клиентов</p>
+            <button
+              type="button"
+              onClick={() => refetchClients()}
+              className="mt-3 text-sm font-medium text-blue-600 hover:underline"
+            >
+              Повторить
+            </button>
+          </div>
+        ) : partnerClients?.items.length ? (
+          <>
+            <div className={`overflow-x-auto transition-opacity ${areClientsFetching ? 'opacity-60' : ''}`}>
+              <table className="w-full min-w-[900px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-600">Клиент</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Телефон</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Статус</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Тип</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Стоимость</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Дата добавления</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-600">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {partnerClients.items.map((client) => (
+                    <tr key={client.id} className="hover:bg-blue-50/40 transition-colors">
+                      <td className="px-6 py-4">
+                        <Link
+                          to={`/admin/clients/${client.id}`}
+                          className="text-sm font-medium text-gray-900 hover:text-blue-700 hover:underline"
+                        >
+                          {client.full_name}
+                        </Link>
+                        <p className="mt-0.5 text-xs text-gray-500">{client.case_number || 'Дело не указано'}</p>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">{client.phone || '—'}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(client.status)}`}>
+                          {getStatusLabel(client.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {client.type === 'before_court' ? 'До суда' : 'В суде'}
+                      </td>
+                      <td className="px-4 py-4 text-sm font-medium text-gray-900">
+                        {client.court_fee_per_client == null
+                          ? '—'
+                          : `${(client.court_fee_per_client / 100).toLocaleString('ru-RU')} ₽`}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {formatDateShort(client.created_at, tz)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Link
+                          to={`/admin/clients/${client.id}`}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          Открыть
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {partnerClients.pages > 1 ? (
+              <div className="flex items-center justify-between gap-4 border-t border-gray-200 px-6 py-4">
+                <p className="text-xs text-gray-500">
+                  Страница {partnerClients.page} из {partnerClients.pages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClientPage((page) => Math.max(1, page - 1))}
+                    disabled={partnerClients.page <= 1 || areClientsFetching}
+                    aria-label="Предыдущая страница клиентов"
+                    className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClientPage((page) => Math.min(partnerClients.pages, page + 1))}
+                    disabled={partnerClients.page >= partnerClients.pages || areClientsFetching}
+                    aria-label="Следующая страница клиентов"
+                    className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <Users className="mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm font-medium text-gray-900">
+              {deferredClientSearch ? 'Клиенты не найдены' : 'У партнёра пока нет клиентов'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {deferredClientSearch
+                ? 'Попробуйте изменить поисковый запрос.'
+                : 'Новые клиенты появятся здесь после добавления.'}
+            </p>
+          </div>
+        )}
+      </section>
 
       {showConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
