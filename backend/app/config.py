@@ -67,7 +67,10 @@ class Settings(BaseSettings):
     BITRIX_CLIENT_ID: str = ""
     BITRIX_CLIENT_SECRET: str = ""
     BITRIX_SMART_PROCESS_ENTITY_TYPE_ID: int = 1070
+    # Clients already in court go to the Arbitration deal pipeline.
     BITRIX_DEAL_CATEGORY_ID: int = 3
+    # Clients transferred before filing go to the Support department pipeline.
+    BITRIX_SUPPORT_DEAL_CATEGORY_ID: int = 7
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"
     BITRIX_TOKEN_ENCRYPTION_KEY: str = ""
     BITRIX_OUTBOX_BATCH_SIZE: int = 25

@@ -17,6 +17,8 @@ from app.integrations.bitrix24.clients import (
     CLIENT_DEAL_FIELDS,
     CLIENT_DEAL_STAGE_ID,
     CLIENT_DEAL_UPDATE_EVENT,
+    CLIENT_SUPPORT_DEAL_CATEGORY_ID,
+    CLIENT_SUPPORT_DEAL_STAGE_ID,
     build_client_contact_payload,
     build_client_deal_payload,
     extract_client_deal_event_reference,
@@ -69,16 +71,26 @@ def test_contact_payload_excludes_sensitive_identity_data():
     assert client.registration_address not in serialized
 
 
-def test_deal_payload_links_contact_and_partner_without_changing_workflow():
+def test_before_court_deal_routes_to_support_department():
     client = _client()
+
+    payload = build_client_deal_payload(client, "321", "654")["fields"]
+
+    assert payload["CATEGORY_ID"] == CLIENT_SUPPORT_DEAL_CATEGORY_ID == 7
+    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == "C7:NEW"
+    assert payload["CONTACT_ID"] == "654"
+    assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
+    assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
+
+
+def test_in_court_deal_routes_to_arbitration():
+    client = _client()
+    client.type = "in_court"
 
     payload = build_client_deal_payload(client, "321", "654")["fields"]
 
     assert payload["CATEGORY_ID"] == CLIENT_DEAL_CATEGORY_ID == 3
     assert payload["STAGE_ID"] == CLIENT_DEAL_STAGE_ID == "C3:NEW"
-    assert payload["CONTACT_ID"] == "654"
-    assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
-    assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
 
 
 @pytest.mark.parametrize(
@@ -189,7 +201,7 @@ async def test_create_recovers_existing_remote_contact_before_retrying_add():
 
 
 @pytest.mark.asyncio
-async def test_external_arbitration_deal_creates_linked_client(db_session: AsyncSession):
+async def test_external_support_deal_creates_linked_client(db_session: AsyncSession):
     partner, _ = await _saved_entities(db_session)
     db_session.add(
         BitrixEntityMap(
@@ -215,7 +227,7 @@ async def test_external_arbitration_deal_creates_linked_client(db_session: Async
     remote.call.side_effect = [
         {
             "ID": "900",
-            "CATEGORY_ID": "3",
+            "CATEGORY_ID": "7",
             "CONTACT_ID": "901",
             f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": "321",
             CLIENT_DEAL_FIELDS["client_type"]: "before_court",
