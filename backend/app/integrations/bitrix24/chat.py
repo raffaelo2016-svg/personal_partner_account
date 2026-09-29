@@ -4,6 +4,7 @@ import asyncio
 import base64
 import html
 import mimetypes
+import re
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -42,6 +43,12 @@ CHAT_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
 PARTNER_CHAT_TITLE_PREFIX = "ЮРИТЕХ — "
 PARTNER_CHAT_DESCRIPTION_PREFIX = "Личный кабинет партнёра ЮРИТЕХ"
 CHAT_POLL_ADVISORY_LOCK_ID = 9_172_401
+REQUIRED_PARTNER_CHAT_USERS = (
+    "Протацкая Тамара",
+    "Швецова Тамара",
+    "Агейчик Нина",
+    "Самсонюк Евгений",
+)
 
 
 def normalize_dialog_id(value: str) -> str:
@@ -65,6 +72,57 @@ def _dialog_variants(value: str) -> set[str]:
 
 def _normalized_partner_text(value: str | None) -> str:
     return " ".join((value or "").casefold().split())
+
+
+def _normalized_person_name(value: str | None) -> str:
+    return " ".join(re.findall(r"[\w-]+", (value or "").casefold().replace("ё", "е")))
+
+
+def _bitrix_user_name(user: dict[str, Any]) -> str:
+    return _normalized_person_name(
+        " ".join(
+            str(user.get(key) or "")
+            for key in (
+                "FULL_NAME",
+                "fullName",
+                "LAST_NAME",
+                "lastName",
+                "NAME",
+                "name",
+                "SECOND_NAME",
+                "secondName",
+            )
+        )
+    )
+
+
+async def _active_support_user_ids(client: Bitrix24Client) -> list[int]:
+    users = await client.list_all("user.get", {"FILTER": {"ACTIVE": True}})
+    active_users = {
+        int(value): user
+        for user in users
+        if isinstance(user, dict)
+        and (value := str(user.get("ID") or user.get("id") or "")).isdigit()
+        and int(value) > 0
+    }
+    result = [user_id for user_id in settings.bitrix_chat_support_user_ids if user_id in active_users]
+    unresolved_names: list[str] = []
+    for required_name in REQUIRED_PARTNER_CHAT_USERS:
+        required_tokens = set(_normalized_person_name(required_name).split())
+        matches = [
+            user_id
+            for user_id, user in active_users.items()
+            if required_tokens.issubset(set(_bitrix_user_name(user).split()))
+        ]
+        if len(matches) != 1:
+            unresolved_names.append(required_name)
+            continue
+        if matches[0] not in result:
+            result.append(matches[0])
+    if unresolved_names:
+        logger.error("bitrix_partner_chat_required_users_unresolved", names=unresolved_names)
+        return []
+    return result
 
 
 def partner_chat_is_excluded(partner: Partner) -> bool:
@@ -686,8 +744,10 @@ async def _create_service_chat(
     client: Bitrix24Client,
     installation: BitrixInstallation,
     partner: Partner,
+    support_user_ids: list[int] | None = None,
 ) -> bool:
-    support_user_ids = settings.bitrix_chat_support_user_ids
+    if support_user_ids is None:
+        support_user_ids = await _active_support_user_ids(client)
     if installation.im_bot_id is None or not support_user_ids:
         return False
     result = await client.call(
@@ -776,11 +836,12 @@ async def ensure_partner_chats(
     result = {"created": 0, "recovered": 0, "excluded": excluded, "failed": 0}
     if not eligible:
         return result
-    if installation.im_bot_id is None or not settings.bitrix_chat_support_user_ids:
+    if installation.im_bot_id is None:
         logger.warning("bitrix_partner_chat_provisioning_not_configured")
         result["failed"] = len(eligible)
         return result
 
+    support_user_ids: list[int] | None = None
     for partner in eligible:
         try:
             chat_id = await _find_partner_chat(client, partner)
@@ -789,10 +850,19 @@ async def ensure_partner_chats(
                 partner.bitrix_chat_bot_joined_at = datetime.now(UTC)
                 await _retry_unsynced_partner_messages(db, partner)
                 result["recovered"] += 1
-            elif await _create_service_chat(db, client, installation, partner):
-                result["created"] += 1
             else:
-                result["failed"] += 1
+                if support_user_ids is None:
+                    support_user_ids = await _active_support_user_ids(client)
+                if support_user_ids and await _create_service_chat(
+                    db,
+                    client,
+                    installation,
+                    partner,
+                    support_user_ids,
+                ):
+                    result["created"] += 1
+                else:
+                    result["failed"] += 1
         except Bitrix24Error as exc:
             result["failed"] += 1
             logger.warning(

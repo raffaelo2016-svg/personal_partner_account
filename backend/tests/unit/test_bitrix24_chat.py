@@ -14,6 +14,7 @@ from app.integrations.bitrix24.chat import (
     BOT_MESSAGE_METHOD,
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
+    _active_support_user_ids,
     _reconcile_chat_file_history,
     ensure_partner_chats,
     ensure_service_bot,
@@ -275,10 +276,19 @@ async def test_inaccessible_chat_is_replaced_and_failed_messages_are_retried(
         if method == "im.chat.user.add":
             raise Bitrix24Error("ACCESS_ERROR", "No permission")
         assert method == "imbot.v2.Chat.add"
-        assert payload["fields"]["userIds"] == [55, 57, 2461]
+        assert payload["fields"]["userIds"] == [55, 57, 2461, 101, 102, 103, 104]
         return {"chat": {"id": 777}}
 
     remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "55"},
+        {"ID": "57"},
+        {"ID": "2461"},
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара"},
+        {"ID": "103", "LAST_NAME": "Агейчик", "NAME": "Нина"},
+        {"ID": "104", "LAST_NAME": "Самсонюк", "NAME": "Евгений"},
+    ]
     remote.call.side_effect = remote_call
 
     joined = await ensure_service_bot(db_session, remote, installation)
@@ -316,7 +326,7 @@ async def test_partner_chat_provisioning_creates_only_for_eligible_partners(
             assert payload["FIND"] == partner_chat_title(eligible)
             return []
         if method == "imbot.v2.Chat.add":
-            assert payload["fields"]["userIds"] == [55, 57]
+            assert payload["fields"]["userIds"] == [55, 57, 101, 102, 103, 104]
             assert payload["fields"]["title"] == partner_chat_title(eligible)
             assert payload["fields"]["description"] == partner_chat_description(eligible)
             assert "message" not in payload["fields"]
@@ -324,6 +334,14 @@ async def test_partner_chat_provisioning_creates_only_for_eligible_partners(
         raise AssertionError(method)
 
     remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "55"},
+        {"ID": "57"},
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара"},
+        {"ID": "103", "LAST_NAME": "Агейчик", "NAME": "Нина"},
+        {"ID": "104", "LAST_NAME": "Самсонюк", "NAME": "Евгений"},
+    ]
     remote.call.side_effect = remote_call
     result = await ensure_partner_chats(db_session, remote, installation)
 
@@ -373,6 +391,33 @@ async def test_partner_chat_provisioning_recovers_chat_after_uncertain_response(
         "im.search.chat.list",
         {"FIND": partner_chat_title(partner), "OFFSET": 0, "LIMIT": 50},
     )
+
+
+@pytest.mark.asyncio
+async def test_support_users_include_required_employees(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[]")
+    remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара", "SECOND_NAME": "Игоревна"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара", "SECOND_NAME": "Петровна"},
+        {"ID": "103", "FULL_NAME": "Нина Александровна Агейчик"},
+        {"ID": "104", "lastName": "Самсонюк", "name": "Евгений"},
+    ]
+
+    assert await _active_support_user_ids(remote) == [101, 102, 103, 104]
+
+
+@pytest.mark.asyncio
+async def test_missing_required_employee_prevents_incomplete_chat(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[]")
+    remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара"},
+        {"ID": "103", "LAST_NAME": "Агейчик", "NAME": "Нина"},
+    ]
+
+    assert await _active_support_user_ids(remote) == []
 
 
 def _message_event(remote_id: int = 5012) -> dict:
