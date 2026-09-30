@@ -10,9 +10,19 @@ for spec in db:5432 redis:6379 minio:9000 minio:9001; do
   service="${spec%:*}"
   port="${spec#*:}"
   mappings="$($COMPOSE port "$service" "$port" 2>/dev/null || true)"
+  require_loopback=0
+  valid_loopback=0
+  if [ "$spec" = "minio:9000" ]; then
+    require_loopback=1
+  fi
 
   if [ -z "$mappings" ]; then
-    echo "  OK: $service:$port is not published"
+    if [ "$require_loopback" = 1 ]; then
+      echo "  FAIL: minio:9000 is not published on loopback; file downloads would return 502" >&2
+      fail=1
+    else
+      echo "  OK: $service:$port is not published"
+    fi
     continue
   fi
 
@@ -20,10 +30,16 @@ for spec in db:5432 redis:6379 minio:9000 minio:9001; do
     [ -z "$mapping" ] && continue
     case "$mapping" in
       *:0 | *]:0)
-        echo "  OK: $service:$port is not published"
+        if [ "$require_loopback" = 1 ]; then
+          echo "  FAIL: minio:9000 has no usable loopback mapping" >&2
+          fail=1
+        else
+          echo "  OK: $service:$port is not published"
+        fi
         ;;
       127.0.0.1:* | \[::1\]:*)
         echo "  OK: $service:$port -> $mapping"
+        valid_loopback=1
         ;;
       *)
         echo "  FAIL: $service:$port is published on $mapping" >&2
@@ -31,6 +47,11 @@ for spec in db:5432 redis:6379 minio:9000 minio:9001; do
         ;;
     esac
   done <<< "$mappings"
+
+  if [ "$require_loopback" = 1 ] && [ "$valid_loopback" != 1 ]; then
+    echo "  FAIL: minio:9000 has no valid loopback mapping" >&2
+    fail=1
+  fi
 done
 
 if command -v ss >/dev/null 2>&1; then

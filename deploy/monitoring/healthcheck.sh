@@ -14,7 +14,12 @@ touch "$LOG"
 now() { date -u +"%Y-%m-%dT%H:%M:%SZ"; }
 prev_fails=$(cat "$FAIL_FILE" 2>/dev/null || echo 0)
 
-if curl -fsS --max-time 10 http://127.0.0.1:8000/health >/dev/null 2>&1; then
+backend_ok=0
+storage_ok=0
+curl -fsS --max-time 10 http://127.0.0.1:8000/health >/dev/null 2>&1 && backend_ok=1
+curl -fsS --max-time 10 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1 && storage_ok=1
+
+if [ "$backend_ok" = 1 ] && [ "$storage_ok" = 1 ]; then
   if [ "$prev_fails" -gt 0 ]; then
     echo "$(now) RECOVERED after $prev_fails fails" >> "$LOG"
   fi
@@ -24,10 +29,17 @@ fi
 
 fails=$((prev_fails + 1))
 echo "$fails" > "$FAIL_FILE"
-echo "$(now) FAIL #$fails /health not responding" >> "$LOG"
+echo "$(now) FAIL #$fails backend_ok=$backend_ok storage_ok=$storage_ok" >> "$LOG"
 
 if [ "$fails" -ge "$RESTART_THRESHOLD" ]; then
-  echo "$(now) ATTEMPT restart backend (fails=$fails)" >> "$LOG"
-  cd "$APP_DIR" && $COMPOSE restart backend >> "$LOG" 2>&1 || true
+  cd "$APP_DIR" || exit 1
+  if [ "$backend_ok" != 1 ]; then
+    echo "$(now) ATTEMPT restart backend (fails=$fails)" >> "$LOG"
+    $COMPOSE restart backend >> "$LOG" 2>&1 || true
+  fi
+  if [ "$storage_ok" != 1 ]; then
+    echo "$(now) ATTEMPT restart minio (fails=$fails)" >> "$LOG"
+    $COMPOSE restart minio >> "$LOG" 2>&1 || true
+  fi
   echo 0 > "$FAIL_FILE"
 fi

@@ -95,7 +95,11 @@ certbot certonly --webroot -w /var/www/letsencrypt \
 Postgres (`5432`) и Redis (`6379`) не публикуются на host-порты вообще. MinIO
 слушает только `127.0.0.1:9000`, чтобы локальный nginx мог проксировать
 presigned URL по `/partner-cabinet/`; консоль MinIO (`9001`) не публикуется.
-DB, Redis и MinIO также вынесены в приватную Docker-сеть `internal: true`.
+DB и Redis полностью вынесены в приватную Docker-сеть `internal: true`. MinIO
+остаётся в этой сети для backend-запросов и дополнительно подключён к обычной
+Docker-сети: без неё Docker не создаёт рабочий loopback-маршрут
+`127.0.0.1:9000`, необходимый host-nginx. Сам порт по-прежнему публикуется
+только на loopback.
 Дополнительно `deploy/firewall-lockdown.sh` ставит idempotent-правила `iptables`
 и `ip6tables` для `INPUT` и `DOCKER-USER`: внешние подключения к
 `5432/6379/9000/9001` блокируются даже при ошибке в облачном firewall или
@@ -108,7 +112,10 @@ bash deploy/security-check.sh
 ```
 
 Скрипт валит деплой, если `5432`, `6379`, `9000` или `9001` оказываются
-опубликованы на внешний интерфейс. Ручная проверка на сервере:
+опубликованы на внешний интерфейс, а также если у MinIO отсутствует обязательный
+loopback-маршрут. `deploy.sh` дополнительно проверяет MinIO health endpoint через
+`127.0.0.1:9000`, чтобы не выпустить конфигурацию со скачиванием файлов через
+`502 Bad Gateway`. Ручная проверка на сервере:
 
 ```bash
 cd /srv/personal_partner_account
@@ -129,6 +136,9 @@ ss -ltnp | grep -E ':(5432|6379|9000|9001)\b' || true
   `localhost` должен быть в `ALLOWED_HOSTS`.
 - `deploy.sh` делает `curl http://127.0.0.1:8000/health` 20 раз × 2 сек после
   recreate. `127.0.0.1` тоже должен быть в `ALLOWED_HOSTS`.
+- Перед миграциями `deploy.sh` проверяет
+  `http://127.0.0.1:9000/minio/health/live`; периодический мониторинг следит и за
+  backend, и за этим файловым маршрутом.
 - Автобэкап БД перед каждой миграцией: `/srv/backups/YYYY-MM-DD_HH-MM-SS.sql.gz`,
   ротация — последние 7 файлов.
 - Внешний мониторинг: `deploy/monitoring/` — systemd-таймер для `healthcheck.sh`.

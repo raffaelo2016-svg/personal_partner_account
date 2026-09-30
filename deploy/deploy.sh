@@ -25,6 +25,22 @@ echo "[2/6] Ensure DB/Redis/MinIO are up"
 $COMPOSE up -d --force-recreate db redis minio
 COMPOSE="$COMPOSE" bash deploy/security-check.sh
 
+echo "[storage] MinIO loopback endpoint"
+storage_ok=0
+for i in {1..15}; do
+  if curl -fsS --max-time 5 http://127.0.0.1:9000/minio/health/live >/dev/null 2>&1; then
+    echo "  OK (attempt $i)"
+    storage_ok=1
+    break
+  fi
+  sleep 2
+done
+if [ "$storage_ok" != "1" ]; then
+  echo "MinIO loopback endpoint failed — file downloads through nginx would return 502." >&2
+  $COMPOSE logs --tail=80 minio >&2 || true
+  exit 1
+fi
+
 echo "[3/6] Backup database before migrations"
 mkdir -p "$BACKUP_DIR"
 BACKUP_FILE="$BACKUP_DIR/$(date -u +%Y-%m-%d_%H-%M-%S).sql.gz"

@@ -45,6 +45,9 @@ services:
       - miniodata:/data
     networks:
       - private
+      # A routable bridge is required for Docker to publish 127.0.0.1:9000.
+      # The port remains loopback-only; this network does not expose MinIO.
+      - public
     restart: always
 
   backend:
@@ -144,8 +147,8 @@ volumes:
   miniodata:
 
 networks:
-  # DB, Redis and MinIO live only on this Docker network. The host can still
-  # reach MinIO through 127.0.0.1:9000 for nginx presigned URL proxying.
+  # DB and Redis live only on this Docker network. MinIO also uses it for
+  # backend traffic, while its second network makes the loopback port routable.
   private:
     internal: true
   # Backend/worker also need outbound internet access for external APIs.
