@@ -2,11 +2,13 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import ClientStatus, ClientType
+from app.models.enums import ClientStatus, ClientType, DocumentPreparationMode
 
 
 class ClientCreate(BaseModel):
     type: ClientType
+    document_preparation_mode: DocumentPreparationMode = DocumentPreparationMode.URITECH
+    document_generation_data: dict[str, object] = Field(default_factory=dict)
     full_name: str = Field(min_length=1, max_length=255)
     date_of_birth: date | None = None
     passport_series: str | None = Field(None, max_length=4)
@@ -25,6 +27,8 @@ class ClientCreate(BaseModel):
 
 class ClientUpdate(BaseModel):
     type: ClientType | None = None
+    document_preparation_mode: DocumentPreparationMode | None = None
+    document_generation_data: dict[str, object] | None = None
     status: ClientStatus | None = None
     full_name: str | None = Field(None, max_length=255)
     date_of_birth: date | None = None
@@ -48,6 +52,8 @@ class ClientRead(BaseModel):
     partner_id: str
     partner_name: str | None = None
     type: str
+    document_preparation_mode: str
+    document_generation_data: dict[str, object] = Field(default_factory=dict)
     status: str
     full_name: str
     date_of_birth: date | None = None

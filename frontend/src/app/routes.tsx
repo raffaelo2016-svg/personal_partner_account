@@ -45,6 +45,7 @@ export const router = createBrowserRouter([
           { path: 'clients/new', lazy: lazyPage(() => import('./pages/ClientForm')) },
           { path: 'clients/:id', lazy: lazyPage(() => import('./pages/ClientDetails')) },
           { path: 'clients/:id/edit', lazy: lazyPage(() => import('./pages/ClientForm')) },
+          { path: 'clients/:id/documents', lazy: lazyPage(() => import('./pages/ClientDocuments')) },
           { path: 'clients/:id/progress', lazy: lazyPage(() => import('./pages/ClientProgress')) },
           { path: 'chat', lazy: lazyPage(() => import('./pages/Chat')) },
           { path: 'news', lazy: lazyPage(() => import('./pages/News')) },

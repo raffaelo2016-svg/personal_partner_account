@@ -35,6 +35,32 @@ class TestCreateValidation:
         )
         assert resp.status_code == 201
         assert resp.json()["status"] == "documents_collection"
+        assert resp.json()["document_preparation_mode"] == "uritech"
+
+    async def test_create_with_partner_document_preparation(self, client: AsyncClient, partner_token):
+        resp = await client.post(
+            "/api/v1/clients",
+            json={
+                "type": "before_court",
+                "full_name": "Самостоятельная подготовка",
+                "document_preparation_mode": "partner",
+            },
+            headers=auth(partner_token),
+        )
+        assert resp.status_code == 201
+        assert resp.json()["document_preparation_mode"] == "partner"
+
+    async def test_create_rejects_invalid_document_preparation_mode(self, client: AsyncClient, partner_token):
+        resp = await client.post(
+            "/api/v1/clients",
+            json={
+                "type": "before_court",
+                "full_name": "Тест",
+                "document_preparation_mode": "invalid",
+            },
+            headers=auth(partner_token),
+        )
+        assert resp.status_code == 422
 
     async def test_create_success_full(self, client: AsyncClient, partner_token):
         resp = await client.post(
@@ -121,6 +147,46 @@ class TestCreateValidation:
 
 
 class TestUpdateClient:
+    async def test_update_document_preparation_mode(self, client: AsyncClient, partner_token):
+        cid = await _create_and_get_id(client, partner_token)
+        resp = await client.put(
+            f"/api/v1/clients/{cid}",
+            json={"document_preparation_mode": "partner"},
+            headers=auth(partner_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["document_preparation_mode"] == "partner"
+
+    async def test_update_document_generation_data(self, client: AsyncClient, partner_token):
+        cid = await _create_and_get_id(client, partner_token)
+        questionnaire = {
+            "general": {"birth_place": "г. Москва"},
+            "creditors": [{"name": "ПАО «Банк»", "total_amount": "500000"}],
+        }
+        resp = await client.put(
+            f"/api/v1/clients/{cid}",
+            json={"document_generation_data": questionnaire},
+            headers=auth(partner_token),
+        )
+        assert resp.status_code == 200
+        assert resp.json()["document_generation_data"] == questionnaire
+
+    @pytest.mark.parametrize("kind", ["application", "creditors", "inventory"])
+    async def test_download_generated_document(self, client: AsyncClient, partner_token, kind):
+        cid = await _create_and_get_id(client, partner_token)
+        await client.put(
+            f"/api/v1/clients/{cid}",
+            json={"document_preparation_mode": "partner"},
+            headers=auth(partner_token),
+        )
+        resp = await client.get(f"/api/v1/clients/{cid}/documents/{kind}", headers=auth(partner_token))
+
+        assert resp.status_code == 200
+        assert resp.content.startswith(b"PK")
+        assert resp.headers["content-type"].startswith(
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        )
+
     async def test_update_single_field(self, client: AsyncClient, partner_token):
         cid = await _create_and_get_id(client, partner_token)
         resp = await client.put(f"/api/v1/clients/{cid}", json={"full_name": "Новое Имя"}, headers=auth(partner_token))

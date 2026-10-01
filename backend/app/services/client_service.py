@@ -24,6 +24,8 @@ def _client_to_read(
         partner_id=str(c.partner_id),
         partner_name=partner_name,
         type=c.type,
+        document_preparation_mode=c.document_preparation_mode,
+        document_generation_data=c.document_generation_data or {},
         status=c.status,
         full_name=c.full_name,
         date_of_birth=c.date_of_birth,
@@ -138,6 +140,8 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     client = Client(
         partner_id=partner_id,
         type=data.type.value,
+        document_preparation_mode=data.document_preparation_mode.value,
+        document_generation_data=data.document_generation_data,
         status="documents_collection",
         full_name=data.full_name,
         date_of_birth=data.date_of_birth,
@@ -219,6 +223,10 @@ async def update_client(
         raise NotFound("Client not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if preparation_mode := update_data.get("document_preparation_mode"):
+        update_data["document_preparation_mode"] = preparation_mode.value
+    if client_type := update_data.get("type"):
+        update_data["type"] = client_type.value
     court_date_changed = "court_procedure_date" in update_data
     for key, value in update_data.items():
         if hasattr(client, key):

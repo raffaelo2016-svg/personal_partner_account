@@ -38,6 +38,7 @@ import { uploadAllSettled } from '@/app/utils/files';
 import { formatDateShort, formatDateTime as fmtDateTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import ClientDocumentPreparation from '../components/ClientDocumentPreparation';
 
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return Image;
@@ -298,6 +299,10 @@ export default function ClientDetails() {
         {/* Progress Bar */}
         <ClientProgressBar currentStatus={client.status} />
       </div>
+
+      {apiClient?.type === 'before_court' ? (
+        <ClientDocumentPreparation client={apiClient} files={clientFiles} />
+      ) : null}
       
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Info */}
@@ -469,7 +474,7 @@ export default function ClientDetails() {
           </div>
           
           {/* Documents */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div id="client-files" className="bg-white rounded-xl border border-gray-200 p-6">
             <input
               ref={fileInputRef}
               type="file"

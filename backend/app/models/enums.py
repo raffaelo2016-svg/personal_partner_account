@@ -11,6 +11,11 @@ class ClientType(StrEnum):
     IN_COURT = "in_court"
 
 
+class DocumentPreparationMode(StrEnum):
+    URITECH = "uritech"
+    PARTNER = "partner"
+
+
 class ClientStatus(StrEnum):
     DOCUMENTS_COLLECTION = "documents_collection"
     DOCUMENTS_FORMATION = "documents_formation"

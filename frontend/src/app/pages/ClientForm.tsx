@@ -1,6 +1,17 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Save, Upload, X, FileText, Check, Loader2, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Upload,
+  X,
+  FileText,
+  Check,
+  Loader2,
+  Trash2,
+  Building2,
+  WandSparkles,
+} from 'lucide-react';
 import { Link } from 'react-router';
 import { useCreateClient, useClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
 import { useQueryClient } from '@tanstack/react-query';
@@ -27,6 +38,7 @@ interface DocumentUploads {
 
 const EMPTY_FORM = {
   type: 'before_court',
+  documentPreparationMode: 'uritech' as 'uritech' | 'partner',
   caseNumber: '',
   fullName: '',
   dateOfBirth: '',
@@ -81,6 +93,7 @@ export default function ClientForm() {
     if (isEditMode && existingClient && !formInitialized) {
       setFormData({
         type: existingClient.type || 'before_court',
+        documentPreparationMode: existingClient.document_preparation_mode || 'uritech',
         caseNumber: existingClient.case_number || '',
         fullName: existingClient.full_name || '',
         dateOfBirth: existingClient.date_of_birth?.split('T')[0] || '',
@@ -168,6 +181,8 @@ export default function ClientForm() {
 
     const payload: Record<string, unknown> = {
       type: formData.type,
+      document_preparation_mode:
+        formData.type === 'before_court' ? formData.documentPreparationMode : 'uritech',
       full_name: formData.fullName,
       phone: normalizePhoneForApi(formData.phone),
       email: emailTrim || null,
@@ -219,7 +234,11 @@ export default function ClientForm() {
           } else {
             toast.success('Клиент создан');
           }
-          navigate(`/dashboard/clients/${data.id}`);
+          navigate(
+            formData.type === 'before_court' && formData.documentPreparationMode === 'partner'
+              ? `/dashboard/clients/${data.id}/documents`
+              : `/dashboard/clients/${data.id}`,
+          );
         },
         onError: (err) => {
           captureError(err, { context: 'client_create' });
@@ -386,6 +405,66 @@ export default function ClientForm() {
             </label>
           </div>
         </div>
+
+        {formData.type === 'before_court' ? (
+          <div id="document-preparation" className="bg-white rounded-xl border border-gray-200 p-6 mb-6 scroll-mt-6">
+            <div className="mb-5">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Кто подготовит документы для подачи в суд
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                В обоих вариантах сначала создаётся карточка клиента и загружается базовый комплект файлов.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="relative flex cursor-pointer items-start gap-4 rounded-xl border-2 border-gray-200 p-5 transition-colors hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                <input
+                  type="radio"
+                  name="documentPreparationMode"
+                  value="uritech"
+                  checked={formData.documentPreparationMode === 'uritech'}
+                  onChange={handleChange}
+                  className="sr-only"
+                />
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                  <Building2 className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block pr-6 font-semibold text-gray-900">Документы готовит ЮРИТЕХ</span>
+                  <span className="mt-1 block text-sm leading-5 text-gray-600">
+                    Партнёр загружает базовые документы. Команда ЮРИТЕХ формирует комплект и передаёт его в суд.
+                  </span>
+                </span>
+                {formData.documentPreparationMode === 'uritech' ? (
+                  <Check className="absolute right-4 top-4 h-5 w-5 text-blue-600" aria-hidden="true" />
+                ) : null}
+              </label>
+
+              <label className="relative flex cursor-pointer items-start gap-4 rounded-xl border-2 border-gray-200 p-5 transition-colors hover:border-violet-400 has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50">
+                <input
+                  type="radio"
+                  name="documentPreparationMode"
+                  value="partner"
+                  checked={formData.documentPreparationMode === 'partner'}
+                  onChange={handleChange}
+                  className="sr-only"
+                />
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                  <WandSparkles className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block pr-6 font-semibold text-gray-900">Партнёр формирует документы сам</span>
+                  <span className="mt-1 block text-sm leading-5 text-gray-600">
+                    После создания карточки партнёр заполняет расширенные сведения и формирует три документа в кабинете.
+                  </span>
+                </span>
+                {formData.documentPreparationMode === 'partner' ? (
+                  <Check className="absolute right-4 top-4 h-5 w-5 text-violet-600" aria-hidden="true" />
+                ) : null}
+              </label>
+            </div>
+          </div>
+        ) : null}
         
         {/* Форма для клиента УЖЕ в суде */}
         {formData.type === 'in_court' && (
@@ -719,7 +798,7 @@ export default function ClientForm() {
             </div>
 
             {/* Document Upload for Before Court */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+            <div id="client-files" className="bg-white rounded-xl border border-gray-200 p-6 mb-6 scroll-mt-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Загрузка документов
@@ -878,7 +957,9 @@ export default function ClientForm() {
                 ? 'Сохранение...'
                 : isEditMode
                   ? 'Сохранить изменения'
-                  : 'Создать карточку клиента'}
+                  : formData.type === 'before_court' && formData.documentPreparationMode === 'partner'
+                    ? 'Создать и перейти к документам'
+                    : 'Создать карточку клиента'}
           </button>
           <Link
             to={isEditMode ? `/dashboard/clients/${id}` : '/dashboard/clients'}

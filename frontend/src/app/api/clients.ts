@@ -1,5 +1,9 @@
 import apiClient from './client';
 
+export type DocumentPreparationMode = 'uritech' | 'partner';
+export type GeneratedDocumentKind = 'application' | 'creditors' | 'inventory';
+export type DocumentGenerationData = Record<string, unknown>;
+
 export interface ClientFilters {
   search?: string;
   type?: string;
@@ -15,6 +19,8 @@ export interface ClientData {
   partner_id: string;
   partner_name?: string | null;
   type: string;
+  document_preparation_mode: DocumentPreparationMode;
+  document_generation_data: DocumentGenerationData;
   status: string;
   full_name: string;
   date_of_birth?: string | null;
@@ -62,6 +68,8 @@ export interface PaginatedClients {
 
 export interface ClientCreatePayload {
   type: string;
+  document_preparation_mode?: DocumentPreparationMode;
+  document_generation_data?: DocumentGenerationData;
   full_name: string;
   date_of_birth?: string | null;
   passport_series?: string | null;
@@ -80,6 +88,8 @@ export interface ClientCreatePayload {
 
 export interface ClientUpdatePayload {
   type?: string;
+  document_preparation_mode?: DocumentPreparationMode;
+  document_generation_data?: DocumentGenerationData;
   status?: string;
   full_name?: string;
   date_of_birth?: string | null;
@@ -128,6 +138,23 @@ export async function updateClient(id: string, data: ClientUpdatePayload): Promi
 
 export async function deleteClient(id: string): Promise<void> {
   await apiClient.delete(`/clients/${id}`);
+}
+
+export async function downloadGeneratedDocument(id: string, kind: GeneratedDocumentKind): Promise<void> {
+  const names: Record<GeneratedDocumentKind, string> = {
+    application: 'Заявление в суд.docx',
+    creditors: 'Список кредиторов и должников.docx',
+    inventory: 'Опись имущества.docx',
+  };
+  const response = await apiClient.get<Blob>(`/clients/${id}/documents/${kind}`, { responseType: 'blob' });
+  const url = URL.createObjectURL(response.data);
+  const anchor = window.document.createElement('a');
+  anchor.href = url;
+  anchor.download = names[kind];
+  window.document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export async function fetchClientStats(): Promise<ClientStats> {
