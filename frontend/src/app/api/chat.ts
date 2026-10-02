@@ -108,3 +108,7 @@ export async function fetchAdminUnreadCount(): Promise<number> {
   const res = await apiClient.get<{ unread_count: number }>('/admin/chat/unread-count');
   return res.data.unread_count;
 }
+
+export async function deleteAdminChatMessage(roomId: string, messageId: string): Promise<void> {
+  await apiClient.delete(`/admin/chat/rooms/${roomId}/messages/${messageId}`);
+}

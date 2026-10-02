@@ -100,6 +100,20 @@ class ConnectionManager:
         else:
             await self.broadcast(payload, exclude_user_id=exclude_user_id)
 
+    async def broadcast_message_deleted(
+        self,
+        room_id: str,
+        message_id: str,
+        *,
+        target_user_ids: set[str] | None = None,
+        exclude_user_id: str | None = None,
+    ) -> None:
+        payload = {"type": "message_deleted", "room_id": room_id, "message_id": message_id}
+        if target_user_ids:
+            await self.send_to_users(target_user_ids, payload, exclude_user_id=exclude_user_id)
+        else:
+            await self.broadcast(payload, exclude_user_id=exclude_user_id)
+
 
 manager = ConnectionManager()
 
@@ -151,6 +165,13 @@ async def broadcast_status_update(
 ) -> None:
     targets = await get_room_participant_ids(room_id) if room_id else None
     await manager.broadcast_status_update(message_ids, status, target_user_ids=targets, exclude_user_id=exclude_user_id)
+
+
+async def broadcast_message_deleted(room_id: str, message_id: str, exclude_user_id: str | None = None) -> None:
+    targets = await get_room_participant_ids(room_id)
+    await manager.broadcast_message_deleted(
+        room_id, message_id, target_user_ids=targets, exclude_user_id=exclude_user_id
+    )
 
 
 # ── Auth ──

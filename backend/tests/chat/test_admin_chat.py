@@ -219,3 +219,76 @@ class TestAdminUnreadCount:
 
         resp = await client.get("/api/v1/admin/chat/unread-count", headers=auth(admin_token))
         assert resp.json()["unread_count"] >= 1
+
+
+class TestAdminDeleteMessage:
+    """DELETE /api/v1/admin/chat/rooms/{room_id}/messages/{message_id}"""
+
+    async def _get_admin_room(self, client, admin_token, partner_with_rooms):
+        """Хелпер: получить admin-комнату первого партнёра."""
+        rooms = (await client.get("/api/v1/admin/chat/rooms", headers=auth(admin_token))).json()
+        return rooms[0]["id"] if rooms else None
+
+    async def _post_message(self, client, admin_token, room_id, text):
+        resp = await client.post(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages",
+            json={"text": text},
+            headers=auth(admin_token),
+        )
+        assert resp.status_code == 201
+        return resp.json()["id"]
+
+    async def test_admin_can_delete_message(self, client: AsyncClient, admin_token, partner_with_rooms):
+        room_id = await self._get_admin_room(client, admin_token, partner_with_rooms)
+        assert room_id
+        message_id = await self._post_message(client, admin_token, room_id, "Сообщение для удаления")
+
+        resp = await client.delete(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages/{message_id}",
+            headers=auth(admin_token),
+        )
+        assert resp.status_code == 204
+
+        msgs = await client.get(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages",
+            headers=auth(admin_token),
+        )
+        assert all(m["id"] != message_id for m in msgs.json())
+
+    async def test_delete_removes_for_partner_too(self, client: AsyncClient, admin_token, partner_with_rooms):
+        room_id = await self._get_admin_room(client, admin_token, partner_with_rooms)
+        assert room_id
+        message_id = await self._post_message(client, admin_token, room_id, "Увидит ли партнёр?")
+
+        resp = await client.delete(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages/{message_id}",
+            headers=auth(admin_token),
+        )
+        assert resp.status_code == 204
+
+        partner_msgs = await client.get(
+            f"/api/v1/chat/rooms/{room_id}/messages",
+            headers=auth(partner_with_rooms),
+        )
+        assert all(m["id"] != message_id for m in partner_msgs.json())
+
+    async def test_partner_cannot_delete(self, client: AsyncClient, admin_token, partner_with_rooms):
+        room_id = await self._get_admin_room(client, admin_token, partner_with_rooms)
+        assert room_id
+        message_id = await self._post_message(client, admin_token, room_id, "Партнёр не сможет удалить")
+
+        resp = await client.delete(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages/{message_id}",
+            headers=auth(partner_with_rooms),
+        )
+        assert resp.status_code == 403
+
+    async def test_delete_unknown_message_404(self, client: AsyncClient, admin_token, partner_with_rooms):
+        room_id = await self._get_admin_room(client, admin_token, partner_with_rooms)
+        assert room_id
+
+        resp = await client.delete(
+            f"/api/v1/admin/chat/rooms/{room_id}/messages/00000000-0000-0000-0000-000000000000",
+            headers=auth(admin_token),
+        )
+        assert resp.status_code == 404
