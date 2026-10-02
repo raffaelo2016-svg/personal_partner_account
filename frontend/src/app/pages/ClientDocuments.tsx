@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import {
   AlertTriangle,
   ArrowLeft,
@@ -19,10 +19,16 @@ import {
 import { toast } from 'sonner';
 import {
   downloadGeneratedDocument,
+  type ClientUpdatePayload,
   type DocumentGenerationData,
   type GeneratedDocumentKind,
 } from '../api/clients';
-import { useClient, useUpdateClient } from '../hooks/useClients';
+import {
+  useAdminClient,
+  useClient,
+  useUpdateAdminClient,
+  useUpdateClient,
+} from '../hooks/useClients';
 
 type FormItem = Record<string, string>;
 
@@ -36,6 +42,22 @@ interface GenerationForm {
   company_interests: FormItem[];
   securities: FormItem[];
   other_assets: FormItem[];
+}
+
+interface ClientProfileForm {
+  full_name: string;
+  date_of_birth: string;
+  passport_series: string;
+  passport_number: string;
+  passport_issue_date: string;
+  passport_issued_by: string;
+  registration_address: string;
+  inn: string;
+  snils: string;
+  phone: string;
+  email: string;
+  region: string;
+  arbitrage_court: string;
 }
 
 type CollectionKey = Exclude<keyof GenerationForm, 'general'>;
@@ -79,6 +101,22 @@ const EMPTY_FORM: GenerationForm = {
   company_interests: [],
   securities: [],
   other_assets: [],
+};
+
+const EMPTY_PROFILE: ClientProfileForm = {
+  full_name: '',
+  date_of_birth: '',
+  passport_series: '',
+  passport_number: '',
+  passport_issue_date: '',
+  passport_issued_by: '',
+  registration_address: '',
+  inn: '',
+  snils: '',
+  phone: '',
+  email: '',
+  region: '',
+  arbitrage_court: '',
 };
 
 const STEPS = [
@@ -329,39 +367,67 @@ function CollectionEditor({
 
 export default function ClientDocuments() {
   const { id = '' } = useParams<{ id: string }>();
-  const { data: client, isLoading } = useClient(id);
-  const updateClient = useUpdateClient();
+  const { pathname } = useLocation();
+  const isAdmin = pathname.startsWith('/admin/');
+  const partnerClient = useClient(id, !isAdmin);
+  const adminClient = useAdminClient(id, isAdmin);
+  const client = isAdmin ? adminClient.data : partnerClient.data;
+  const isLoading = isAdmin ? adminClient.isLoading : partnerClient.isLoading;
+  const partnerUpdateClient = useUpdateClient();
+  const adminUpdateClient = useUpdateAdminClient();
+  const updateClient = isAdmin ? adminUpdateClient : partnerUpdateClient;
   const [step, setStep] = useState(0);
   const [form, setForm] = useState<GenerationForm>(EMPTY_FORM);
+  const [profile, setProfile] = useState<ClientProfileForm>(EMPTY_PROFILE);
   const [initialized, setInitialized] = useState(false);
   const [downloading, setDownloading] = useState<GeneratedDocumentKind | null>(null);
 
   useEffect(() => {
     if (client && !initialized) {
       setForm(mergeStoredData(client.document_generation_data));
+      setProfile({
+        full_name: client.full_name ?? '',
+        date_of_birth: client.date_of_birth?.slice(0, 10) ?? '',
+        passport_series: client.passport_series ?? '',
+        passport_number: client.passport_number ?? '',
+        passport_issue_date: client.passport_issue_date?.slice(0, 10) ?? '',
+        passport_issued_by: client.passport_issued_by ?? '',
+        registration_address: client.registration_address ?? '',
+        inn: client.inn ?? '',
+        snils: client.snils ?? '',
+        phone: client.phone ?? '',
+        email: client.email ?? '',
+        region: client.region ?? '',
+        arbitrage_court: client.arbitrage_court ?? '',
+      });
       setInitialized(true);
     }
   }, [client, initialized]);
 
   const missingProfile = useMemo(() => {
     if (!client) return [];
+    const source = isAdmin ? profile : client;
     return [
-      ['Дата рождения', client.date_of_birth],
-      ['Паспорт', client.passport_series && client.passport_number],
-      ['Дата выдачи паспорта', client.passport_issue_date],
-      ['Кем выдан паспорт', client.passport_issued_by],
-      ['Адрес регистрации', client.registration_address],
-      ['ИНН', client.inn],
-      ['СНИЛС', client.snils],
-      ['Арбитражный суд', client.arbitrage_court],
+      ['Дата рождения', source.date_of_birth],
+      ['Паспорт', source.passport_series && source.passport_number],
+      ['Дата выдачи паспорта', source.passport_issue_date],
+      ['Кем выдан паспорт', source.passport_issued_by],
+      ['Адрес регистрации', source.registration_address],
+      ['ИНН', source.inn],
+      ['СНИЛС', source.snils],
+      ['Арбитражный суд', source.arbitrage_court],
     ].filter(([, value]) => !value).map(([label]) => label as string);
-  }, [client]);
+  }, [client, isAdmin, profile]);
 
   const generalCompleted = Object.values(form.general).filter((value) => value.trim()).length;
   const readiness = Math.round(((8 - missingProfile.length + Math.min(generalCompleted, 8)) / 16) * 100);
 
   const setGeneral = (key: string, value: string) => {
     setForm((current) => ({ ...current, general: { ...current.general, [key]: value } }));
+  };
+
+  const setProfileField = (key: keyof ClientProfileForm, value: string) => {
+    setProfile((current) => ({ ...current, [key]: value }));
   };
 
   const addItem = (key: CollectionKey, defaults: FormItem = {}) => {
@@ -381,7 +447,25 @@ export default function ClientDocuments() {
 
   const save = async (showToast = true) => {
     if (!id) return;
-    await updateClient.mutateAsync({ id, data: { document_generation_data: serializeForm(form) } });
+    const data: ClientUpdatePayload = { document_generation_data: serializeForm(form) };
+    if (isAdmin && client) {
+      Object.assign(data, {
+        full_name: profile.full_name.trim() || client.full_name,
+        date_of_birth: profile.date_of_birth || null,
+        passport_series: profile.passport_series || null,
+        passport_number: profile.passport_number || null,
+        passport_issue_date: profile.passport_issue_date || null,
+        passport_issued_by: profile.passport_issued_by || null,
+        registration_address: profile.registration_address || null,
+        inn: profile.inn || null,
+        snils: profile.snils || null,
+        phone: profile.phone || null,
+        email: profile.email || null,
+        region: profile.region || null,
+        arbitrage_court: profile.arbitrage_court || null,
+      });
+    }
+    await updateClient.mutateAsync({ id, data });
     if (showToast) toast.success('Анкета сохранена');
   };
 
@@ -389,8 +473,8 @@ export default function ClientDocuments() {
     setDownloading(kind);
     try {
       await save(false);
-      await downloadGeneratedDocument(id, kind);
-      toast.success('Документ сформирован и скачан');
+      await downloadGeneratedDocument(id, kind, { admin: isAdmin });
+      toast.success(isAdmin ? 'Документ сохранён в карточке и скачан' : 'Документ сформирован и скачан');
     } catch {
       toast.error('Не удалось сформировать документ');
     } finally {
@@ -402,11 +486,24 @@ export default function ClientDocuments() {
     return <div className="flex min-h-[420px] items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-blue-600" /></div>;
   }
 
+  if (isAdmin && client.document_preparation_mode !== 'uritech') {
+    return (
+      <div className="mx-auto max-w-3xl rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center">
+        <AlertTriangle className="mx-auto h-9 w-9 text-amber-600" />
+        <h1 className="mt-4 text-xl font-semibold text-gray-950">Документы формирует партнёр</h1>
+        <p className="mt-2 text-sm text-gray-600">Административная анкета доступна только для карточек, переданных на подготовку ЮРИТЕХ.</p>
+        <Link to={`/admin/clients/${id}`} className="mt-5 inline-flex rounded-xl bg-blue-600 px-5 py-2.5 text-sm font-semibold text-white">Вернуться в карточку</Link>
+      </div>
+    );
+  }
+
+  const clientPath = isAdmin ? `/admin/clients/${id}` : `/dashboard/clients/${id}`;
+
   return (
     <div className="mx-auto max-w-7xl pb-10">
       <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Link to={`/dashboard/clients/${id}`} className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-blue-700">
+          <Link to={clientPath} className="inline-flex items-center gap-2 text-sm font-medium text-gray-500 hover:text-blue-700">
             <ArrowLeft className="h-4 w-4" /> Назад в карточку клиента
           </Link>
           <div className="mt-4 flex items-center gap-3">
@@ -421,10 +518,10 @@ export default function ClientDocuments() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Link
-            to={`/dashboard/clients/${id}#client-files`}
+            to={`${clientPath}#client-files`}
             className="inline-flex items-center justify-center gap-2 rounded-xl border border-gray-300 bg-white px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
-            <FileArchive className="h-4 w-4" /> Загрузить исходные документы
+            <FileArchive className="h-4 w-4" /> {isAdmin ? 'Исходные документы' : 'Загрузить исходные документы'}
           </Link>
           <button
             type="button"
@@ -443,8 +540,14 @@ export default function ClientDocuments() {
           <div className="flex items-start gap-3">
             <Building2 className="mt-0.5 h-5 w-5 text-blue-700" />
             <div>
-              <p className="font-semibold text-gray-950">Самостоятельная подготовка партнёром</p>
-              <p className="mt-1 text-sm text-gray-600">Данные сохраняются в карточке клиента и используются сразу в трёх шаблонах.</p>
+              <p className="font-semibold text-gray-950">
+                {isAdmin ? 'Подготовка документов командой ЮРИТЕХ' : 'Самостоятельная подготовка партнёром'}
+              </p>
+              <p className="mt-1 text-sm text-gray-600">
+                {isAdmin
+                  ? 'Заполненные данные и готовые DOCX сохраняются в карточке и становятся доступны партнёру.'
+                  : 'Данные сохраняются в карточке клиента и используются сразу в трёх шаблонах.'}
+              </p>
             </div>
           </div>
           <div className="min-w-52">
@@ -480,6 +583,44 @@ export default function ClientDocuments() {
         <main className="space-y-5">
           {step === 0 && (
             <>
+              {isAdmin ? (
+                <section className="rounded-2xl border border-indigo-200 bg-indigo-50/40 p-6 shadow-sm">
+                  <div className="flex items-center gap-3">
+                    <Building2 className="h-5 w-5 text-indigo-700" />
+                    <div>
+                      <h2 className="text-lg font-semibold text-gray-950">Основные данные клиента</h2>
+                      <p className="text-sm text-gray-500">Заполните сведения по загруженным документам. Они используются во всех трёх формах.</p>
+                    </div>
+                  </div>
+                  <div className="mt-5 grid gap-4 sm:grid-cols-2">
+                    {[
+                      ['full_name', 'ФИО'],
+                      ['date_of_birth', 'Дата рождения', 'date'],
+                      ['passport_series', 'Серия паспорта'],
+                      ['passport_number', 'Номер паспорта'],
+                      ['passport_issue_date', 'Дата выдачи паспорта', 'date'],
+                      ['passport_issued_by', 'Кем выдан паспорт'],
+                      ['registration_address', 'Адрес регистрации'],
+                      ['inn', 'ИНН'],
+                      ['snils', 'СНИЛС'],
+                      ['phone', 'Телефон'],
+                      ['email', 'Email', 'email'],
+                      ['region', 'Регион'],
+                      ['arbitrage_court', 'Арбитражный суд'],
+                    ].map(([key, label, type]) => (
+                      <label key={key} className={`text-sm font-medium text-gray-700 ${['passport_issued_by', 'registration_address', 'arbitrage_court'].includes(key) ? 'sm:col-span-2' : ''}`}>
+                        {label}
+                        <input
+                          type={type ?? 'text'}
+                          value={profile[key as keyof ClientProfileForm]}
+                          onChange={(event) => setProfileField(key as keyof ClientProfileForm, event.target.value)}
+                          className={inputClass()}
+                        />
+                      </label>
+                    ))}
+                  </div>
+                </section>
+              ) : null}
               <section className="rounded-2xl border border-gray-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center gap-3">
                   <UserRound className="h-5 w-5 text-blue-700" />
@@ -575,7 +716,9 @@ export default function ClientDocuments() {
                   <div>
                     <p className="font-semibold">В карточке клиента не хватает данных</p>
                     <p className="mt-1 text-sm">{missingProfile.join(', ')}. Документы сформируются с пометкой «не указано».</p>
-                    <Link to={`/dashboard/clients/${id}/edit`} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold underline">Дополнить карточку <ArrowRight className="h-4 w-4" /></Link>
+                    {!isAdmin ? (
+                      <Link to={`/dashboard/clients/${id}/edit`} className="mt-3 inline-flex items-center gap-1 text-sm font-semibold underline">Дополнить карточку <ArrowRight className="h-4 w-4" /></Link>
+                    ) : null}
                   </div>
                 </div>
               )}
@@ -592,7 +735,7 @@ export default function ClientDocuments() {
                     <div className="mt-4 flex items-center gap-2 text-xs text-green-700"><Check className="h-4 w-4" /> Формат DOCX</div>
                     <button type="button" onClick={() => void handleDownload(kind)} disabled={downloading !== null} className="mt-4 inline-flex items-center justify-center gap-2 rounded-xl bg-violet-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-violet-700 disabled:opacity-60">
                       {downloading === kind ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4" />}
-                      Сформировать и скачать
+                      {isAdmin ? 'Сохранить и скачать' : 'Сформировать и скачать'}
                     </button>
                   </article>
                 ))}
@@ -601,6 +744,7 @@ export default function ClientDocuments() {
                 <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-gray-500" />
                 <p className="text-sm leading-6 text-gray-600">
                   Сформированные файлы являются проектами документов. Перед подачей в суд проверьте фактические сведения, приложения и актуальность правовых формулировок.
+                  {isAdmin ? ' Файл сохраняется в карточке клиента; после фактической отправки измените статус на «Отправка в суд».' : ''}
                 </p>
               </div>
             </>

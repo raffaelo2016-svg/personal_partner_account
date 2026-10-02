@@ -55,6 +55,9 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   court_fee: 'Квитанция госпошлины',
   criminal_record: 'Справка о судимости',
   deposit_payment: 'Квитанция на депозит',
+  generated_application: 'Заявление в суд',
+  generated_creditors: 'Список кредиторов и должников',
+  generated_inventory: 'Опись имущества',
   other: 'Прочее',
 };
 
@@ -138,6 +141,11 @@ export default function AdminDebtorDetails() {
   const fio = parseFio(client.full_name);
   const statusLabel = getStatusLabel(client.status);
   const statusColor = getStatusBadgeClass(client.status, true);
+  const generatedDocumentCount = new Set(
+    clientFiles
+      .map((file) => file.document_type)
+      .filter((type) => ['generated_application', 'generated_creditors', 'generated_inventory'].includes(type)),
+  ).size;
 
   const handleStatusChange = () => {
     if (!newStatus || newStatus === client.status) return;
@@ -215,6 +223,42 @@ export default function AdminDebtorDetails() {
           </div>
         </div>
       </div>
+
+      {client.type === 'before_court' && (
+        <section className="overflow-hidden rounded-2xl border border-indigo-200 bg-white shadow-sm">
+          <div className="flex flex-col gap-5 bg-gradient-to-r from-indigo-50 to-blue-50 p-6 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex items-start gap-4">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-indigo-600 text-white">
+                <FileText className="h-6 w-6" />
+              </span>
+              <div>
+                <p className="text-sm font-medium text-indigo-700">
+                  {client.document_preparation_mode === 'uritech'
+                    ? 'Документы готовит ЮРИТЕХ'
+                    : 'Партнёр формирует документы самостоятельно'}
+                </p>
+                <h2 className="mt-1 text-xl font-semibold text-gray-950">Документы для подачи в суд</h2>
+                <p className="mt-1 text-sm text-gray-600">
+                  {client.document_preparation_mode === 'uritech'
+                    ? client.status === 'documents_collection'
+                      ? 'Партнёр ещё не передал карточку на подготовку.'
+                      : `Сформировано и сохранено ${generatedDocumentCount} из 3 документов.`
+                    : 'Анкета и формирование документов доступны партнёру в его кабинете.'}
+                </p>
+              </div>
+            </div>
+            {client.document_preparation_mode === 'uritech' && client.status !== 'documents_collection' ? (
+              <Link
+                to={`/admin/clients/${client.id}/documents`}
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-semibold text-white hover:bg-indigo-700"
+              >
+                {generatedDocumentCount > 0 ? 'Продолжить подготовку' : 'Заполнить анкету'}
+                <ExternalLink className="h-4 w-4" />
+              </Link>
+            ) : null}
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content */}
@@ -586,7 +630,7 @@ export default function AdminDebtorDetails() {
           </div>
 
           {/* Документы */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div id="client-files" className="bg-white rounded-xl border border-gray-200 p-6 scroll-mt-6">
             <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5" />
               Документы

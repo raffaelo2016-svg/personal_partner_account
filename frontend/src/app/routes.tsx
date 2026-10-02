@@ -73,6 +73,7 @@ export const router = createBrowserRouter([
           { path: 'partners/:id', lazy: lazyPage(() => import('./pages/AdminPartnerDetails')) },
           { path: 'clients', lazy: lazyPage(() => import('./pages/AdminClients')) },
           { path: 'clients/:id', lazy: lazyPage(() => import('./pages/AdminDebtorDetails')) },
+          { path: 'clients/:id/documents', lazy: lazyPage(() => import('./pages/ClientDocuments')) },
           { path: 'debtors/:id', lazy: lazyPage(() => import('./pages/AdminDebtorDetails')) },
           { path: 'tasks', lazy: lazyPage(() => import('./pages/AdminTasks')) },
           { path: 'bitrix-attention', lazy: lazyPage(() => import('./pages/AdminBitrixAttention')) },

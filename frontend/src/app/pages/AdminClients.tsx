@@ -224,6 +224,15 @@ export default function AdminClients() {
                         <p className="text-sm text-gray-600">
                           {client.type === 'before_court' ? 'До суда' : 'В суде'}
                         </p>
+                        {client.type === 'before_court' ? (
+                          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            client.document_preparation_mode === 'uritech'
+                              ? 'bg-indigo-50 text-indigo-700'
+                              : 'bg-violet-50 text-violet-700'
+                          }`}>
+                            {client.document_preparation_mode === 'uritech' ? 'Готовит ЮРИТЕХ' : 'Готовит партнёр'}
+                          </span>
+                        ) : null}
                       </td>
                       <td className="px-3 py-3">
                         <span className={`inline-flex items-center px-2.5 py-0.5 text-xs font-medium rounded-full border ${getStatusColor(client.status)}`}>

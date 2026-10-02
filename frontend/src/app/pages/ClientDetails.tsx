@@ -71,6 +71,9 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   court_fee: 'Квитанция госпошлины',
   criminal_record: 'Справка о судимости',
   deposit_payment: 'Квитанция на депозит',
+  generated_application: 'Заявление в суд',
+  generated_creditors: 'Список кредиторов и должников',
+  generated_inventory: 'Опись имущества',
   other: 'Прочее',
 };
 
