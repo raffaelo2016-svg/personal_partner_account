@@ -35,6 +35,7 @@ const wsIncomingSchema = z.discriminatedUnion('type', [
     status: deliveryStatusSchema,
   }),
   z.object({ type: z.literal('typing'), room_id: z.string() }),
+  z.object({ type: z.literal('message_deleted'), room_id: z.string(), message_id: z.string() }),
 ]);
 
 interface UseWsChatOptions {
@@ -149,6 +150,11 @@ export function useWsChat(activeRoomId: string | null, options: UseWsChatOptions
             return prev;
           });
         }, 2500);
+      } else if (data.type === 'message_deleted') {
+        setWsMessages((prev) => prev.filter((m) => m.id !== data.message_id));
+        queryClient.invalidateQueries({ queryKey: [opts.messagesQueryPrefix] });
+        queryClient.invalidateQueries({ queryKey: opts.roomsQueryKey });
+        queryClient.invalidateQueries({ queryKey: opts.unreadQueryKey });
       }
     };
 

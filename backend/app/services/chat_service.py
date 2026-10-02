@@ -41,6 +41,7 @@ def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
         attachment_size=m.attachment_size,
         attachment_mime_type=m.attachment_mime_type,
         created_at=m.created_at,
+        deleted_at=m.deleted_at,
     )
 
 
@@ -108,7 +109,7 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
             )
             .label("rn"),
         )
-        .where(ChatMessage.room_id.in_(room_ids))
+        .where(ChatMessage.room_id.in_(room_ids), ChatMessage.deleted_at.is_(None))
         .subquery()
     )
     last_msgs_q = select(last_msg_sub.c.room_id, last_msg_sub.c.text, last_msg_sub.c.attachment_filename).where(
@@ -126,6 +127,7 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
             ChatMessage.room_id.in_(room_ids),
             ChatMessage.sender_type != "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
         .group_by(ChatMessage.room_id)
     )
@@ -158,7 +160,7 @@ async def get_messages(
     if str(room.partner_id) != partner_id:
         raise Forbidden("Access denied")
 
-    q = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    q = select(ChatMessage).where(ChatMessage.room_id == room_id, ChatMessage.deleted_at.is_(None))
     if before:
         ref = await session.get(ChatMessage, before)
         if ref:
@@ -219,6 +221,33 @@ async def send_message(
         raise
 
 
+async def delete_message(
+    session: AsyncSession,
+    room_id: str,
+    message_id: str,
+) -> tuple[str, str]:
+    """Мягкое удаление сообщения администратором (видно всем участникам комнаты).
+
+    Возвращает (room_id, message_id) для WS-рассылки. Повторное удаление — no-op.
+    """
+    from datetime import UTC, datetime
+
+    room = await session.get(ChatRoom, room_id)
+    if not room or room.type not in STAFF_ROOM_TYPES:
+        raise NotFound("Admin chat room not found")
+
+    msg = await session.get(ChatMessage, message_id)
+    if not msg or str(msg.room_id) != room_id:
+        raise NotFound("Message not found")
+
+    if msg.deleted_at is None:
+        msg.deleted_at = datetime.now(UTC)
+        await session.flush()
+        logger.info("chat_message_deleted", room_id=room_id, message_id=message_id, sender_type=msg.sender_type)
+
+    return str(msg.room_id), str(msg.id)
+
+
 async def list_admin_rooms(
     session: AsyncSession,
     *,
@@ -265,7 +294,7 @@ async def list_admin_rooms(
             )
             .label("rn"),
         )
-        .where(ChatMessage.room_id.in_(room_ids))
+        .where(ChatMessage.room_id.in_(room_ids), ChatMessage.deleted_at.is_(None))
         .subquery()
     )
     last_msgs_q = select(
@@ -286,6 +315,7 @@ async def list_admin_rooms(
             ChatMessage.room_id.in_(room_ids),
             ChatMessage.sender_type == "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
         .group_by(ChatMessage.room_id)
     )
@@ -328,7 +358,7 @@ async def get_admin_messages(
     if not room or room.type not in STAFF_ROOM_TYPES:
         raise NotFound("Admin chat room not found")
 
-    q = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    q = select(ChatMessage).where(ChatMessage.room_id == room_id, ChatMessage.deleted_at.is_(None))
     if before:
         ref = await session.get(ChatMessage, before)
         if ref:
@@ -432,6 +462,7 @@ async def get_total_unread_for_admin(session: AsyncSession) -> int:
             ChatRoom.type.in_(STAFF_ROOM_TYPES),
             ChatMessage.sender_type == "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
     )
     return (await session.execute(q)).scalar() or 0
@@ -447,6 +478,7 @@ async def get_total_unread_for_partner(session: AsyncSession, partner_id: str) -
             ChatRoom.partner_id == partner_id,
             ChatMessage.sender_type == "admin",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
     )
     return (await session.execute(q)).scalar() or 0

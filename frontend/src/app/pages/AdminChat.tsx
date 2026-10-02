@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History } from 'lucide-react';
+import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminChatRooms,
@@ -7,6 +7,7 @@ import {
   fetchAdminChatMessageEvents,
   sendAdminChatAttachment,
   sendAdminChatMessage,
+  deleteAdminChatMessage,
   ChatMessageData,
 } from '../api/chat';
 import { useWsChat } from '../hooks/useWsChat';
@@ -84,6 +85,22 @@ export default function AdminChat() {
       queryClient.invalidateQueries({ queryKey: ['adminUnreadCount'] });
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ roomId, messageId }: { roomId: string; messageId: string }) =>
+      deleteAdminChatMessage(roomId, messageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminChatMessages', activeRoomId] });
+      queryClient.invalidateQueries({ queryKey: ['adminChatRooms'] });
+      queryClient.invalidateQueries({ queryKey: ['adminUnreadCount'] });
+    },
+  });
+
+  const handleDeleteMessage = (messageId: string) => {
+    if (!activeRoomId || deleteMutation.isPending) return;
+    if (!window.confirm('Удалить сообщение? Оно исчезнет у всех участников чата.')) return;
+    deleteMutation.mutate({ roomId: activeRoomId, messageId });
+  };
 
   useEffect(() => {
     if (rooms && rooms.length > 0 && !activeRoomId) setActiveRoomId(rooms[0].id);
@@ -298,7 +315,7 @@ export default function AdminChat() {
                 const isAdmin = msg.sender_type === 'admin';
                 return (
                   <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                    <div className="max-w-md">
+                    <div className="relative max-w-md group">
                       {!isAdmin && (
                         <div className="flex items-center gap-2 mb-1">
                           <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-3.5 h-3.5 text-blue-600" /></div>
@@ -313,6 +330,20 @@ export default function AdminChat() {
                         <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
                         {isAdmin && <MessageStatus status={msg.delivery_status} />}
                       </div>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteMessage(msg.id)}
+                        disabled={deleteMutation.isPending}
+                        aria-label="Удалить сообщение"
+                        title="Удалить сообщение"
+                        className="absolute -top-2 -right-2 z-10 rounded-full border border-gray-200 bg-white p-1 text-gray-400 opacity-0 shadow-sm transition-opacity hover:border-red-200 hover:text-red-600 group-hover:opacity-100 disabled:cursor-not-allowed"
+                      >
+                        {deleteMutation.isPending ? (
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="h-3.5 w-3.5" />
+                        )}
+                      </button>
                     </div>
                   </div>
                 );

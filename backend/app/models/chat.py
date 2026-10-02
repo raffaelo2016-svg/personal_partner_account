@@ -49,6 +49,7 @@ class ChatMessage(Base, TimestampMixin):
     sender_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     sender_type: Mapped[str] = mapped_column(String(20))
     text: Mapped[str] = mapped_column(Text)
+    deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, index=True)
     delivery_status: Mapped[str] = mapped_column(String(10), default="sent")  # sent, delivered, read
     attachment_s3_key: Mapped[str | None] = mapped_column(String(500), nullable=True)
     attachment_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)

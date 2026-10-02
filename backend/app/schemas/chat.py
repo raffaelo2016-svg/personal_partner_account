@@ -42,6 +42,7 @@ class ChatMessageRead(BaseModel):
     attachment_size: int | None = None
     attachment_mime_type: str | None = None
     created_at: datetime
+    deleted_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
