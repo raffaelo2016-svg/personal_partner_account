@@ -35,11 +35,11 @@ export function useInfiniteClients(filters: Omit<ClientFilters, 'page'> = {}) {
   });
 }
 
-export function useClient(id: string) {
+export function useClient(id: string, enabled = true) {
   return useQuery({
     queryKey: ['client', id],
     queryFn: () => fetchClient(id),
-    enabled: !!id,
+    enabled: !!id && enabled,
   });
 }
 
@@ -100,11 +100,11 @@ export function useInfiniteAdminClients(filters: Omit<ClientFilters, 'page'> = {
   });
 }
 
-export function useAdminClient(id: string) {
+export function useAdminClient(id: string, enabled = true) {
   return useQuery({
     queryKey: ['adminClient', id],
     queryFn: () => fetchAdminClient(id),
-    enabled: !!id,
+    enabled: !!id && enabled,
   });
 }
 

@@ -140,13 +140,22 @@ export async function deleteClient(id: string): Promise<void> {
   await apiClient.delete(`/clients/${id}`);
 }
 
-export async function downloadGeneratedDocument(id: string, kind: GeneratedDocumentKind): Promise<void> {
+export async function downloadGeneratedDocument(
+  id: string,
+  kind: GeneratedDocumentKind,
+  options: { admin?: boolean } = {},
+): Promise<void> {
   const names: Record<GeneratedDocumentKind, string> = {
     application: 'Заявление в суд.docx',
     creditors: 'Список кредиторов и должников.docx',
     inventory: 'Опись имущества.docx',
   };
-  const response = await apiClient.get<Blob>(`/clients/${id}/documents/${kind}`, { responseType: 'blob' });
+  const endpoint = options.admin
+    ? `/admin/clients/${id}/documents/${kind}`
+    : `/clients/${id}/documents/${kind}`;
+  const response = options.admin
+    ? await apiClient.post<Blob>(endpoint, undefined, { responseType: 'blob' })
+    : await apiClient.get<Blob>(endpoint, { responseType: 'blob' });
   const url = URL.createObjectURL(response.data);
   const anchor = window.document.createElement('a');
   anchor.href = url;
