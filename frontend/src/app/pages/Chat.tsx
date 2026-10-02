@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X } from 'lucide-react';
+import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X, LifeBuoy } from 'lucide-react';
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   fetchChatRooms,
@@ -11,6 +11,7 @@ import {
 } from '../api/chat';
 import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
+import ChatDateSeparator from '../components/ui/ChatDateSeparator';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
@@ -18,14 +19,15 @@ import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partition
 const PAGE_SIZE = 20;
 
 const ROOM_TYPE_CONFIG: Record<string, { name: string; description: string; icon: typeof User; color: string }> = {
-  admin: { name: 'Администратор', description: 'Поддержка URITECH', icon: User, color: 'bg-blue-600' },
+  admin: { name: 'Администратор', description: 'Рабочие вопросы по сотрудничеству', icon: User, color: 'bg-blue-600' },
+  tech_support: { name: 'Техподдержка', description: 'Помощь с работой кабинета', icon: LifeBuoy, color: 'bg-teal-600' },
   arbitration_manager: { name: 'Арбитражный управляющий', description: 'Менеджер дела', icon: User, color: 'bg-slate-400' },
   assistant: { name: 'Помощник АУ', description: 'Петрова Анна Сергеевна', icon: User, color: 'bg-slate-400' },
   ai_assistant: { name: 'Нейропомощник', description: 'Искусственный интеллект', icon: Bot, color: 'bg-slate-400' },
 };
 
 function isActiveRoom(room: ChatRoomData): boolean {
-  return room.type === 'admin';
+  return room.type === 'admin' || room.type === 'tech_support';
 }
 
 export default function Chat() {
@@ -243,21 +245,24 @@ export default function Chat() {
           {messagesLoading && <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>}
           {!messagesLoading && allMessages.length === 0 && isCurrentRoomActive && (
             <div className="flex flex-col items-center justify-center h-full text-gray-400">
-              <User className="w-12 h-12 mb-3" /><p className="text-lg font-medium">Начните диалог с администратором</p><p className="text-sm">Напишите ваш первый вопрос</p>
+              <ActiveIcon className="w-12 h-12 mb-3" /><p className="text-lg font-medium">Начните диалог: {activeConfig.name}</p><p className="text-sm">Напишите ваш первый вопрос</p>
             </div>
           )}
-          {allMessages.map((msg) => {
+          {allMessages.map((msg, index) => {
             const isUser = msg.sender_type === 'user';
             return (
-              <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                <div className="max-w-md">
-                  <div className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                    {msg.text ? <p>{msg.text}</p> : null}
-                    {renderAttachment(msg, isUser)}
-                  </div>
-                  <div className={`flex items-center gap-0.5 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
-                    <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
-                    {isUser && <MessageStatus status={msg.delivery_status} />}
+              <div key={msg.id}>
+                <ChatDateSeparator createdAt={msg.created_at} previousCreatedAt={allMessages[index - 1]?.created_at} timezone={tz} />
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                  <div className="max-w-md">
+                    <div className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
+                      {msg.text ? <p>{msg.text}</p> : null}
+                      {renderAttachment(msg, isUser)}
+                    </div>
+                    <div className={`flex items-center gap-0.5 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                      <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
+                      {isUser && <MessageStatus status={msg.delivery_status} />}
+                    </div>
                   </div>
                 </div>
               </div>

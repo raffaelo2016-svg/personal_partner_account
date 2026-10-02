@@ -71,8 +71,8 @@ export async function fetchPartnerUnreadCount(): Promise<number> {
   return res.data.unread_count;
 }
 
-export async function fetchAdminChatRooms(search?: string): Promise<ChatRoomData[]> {
-  const res = await apiClient.get<ChatRoomData[]>('/admin/chat/rooms', { params: search ? { search } : {} });
+export async function fetchAdminChatRooms(search?: string, roomType: 'admin' | 'tech_support' = 'admin'): Promise<ChatRoomData[]> {
+  const res = await apiClient.get<ChatRoomData[]>('/admin/chat/rooms', { params: { ...(search ? { search } : {}), room_type: roomType } });
   return res.data;
 }
 
@@ -107,4 +107,8 @@ export async function sendAdminChatAttachment(roomId: string, text: string, file
 export async function fetchAdminUnreadCount(): Promise<number> {
   const res = await apiClient.get<{ unread_count: number }>('/admin/chat/unread-count');
   return res.data.unread_count;
+}
+
+export async function deleteAdminChatMessage(roomId: string, messageId: string): Promise<void> {
+  await apiClient.delete(`/admin/chat/rooms/${roomId}/messages/${messageId}`);
 }

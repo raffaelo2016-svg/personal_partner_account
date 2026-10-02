@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History } from 'lucide-react';
+import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminChatRooms,
@@ -7,10 +7,12 @@ import {
   fetchAdminChatMessageEvents,
   sendAdminChatAttachment,
   sendAdminChatMessage,
+  deleteAdminChatMessage,
   ChatMessageData,
 } from '../api/chat';
 import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
+import ChatDateSeparator from '../components/ui/ChatDateSeparator';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
@@ -26,6 +28,7 @@ export default function AdminChat() {
   const [searchText, setSearchText] = useState('');
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [showJournal, setShowJournal] = useState(false);
+  const [roomType, setRoomType] = useState<'admin' | 'tech_support'>('admin');
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -46,8 +49,8 @@ export default function AdminChat() {
   }, [searchText]);
 
   const { data: rooms, isLoading: roomsLoading } = useQuery({
-    queryKey: ['adminChatRooms', debouncedSearch],
-    queryFn: () => fetchAdminChatRooms(debouncedSearch || undefined),
+    queryKey: ['adminChatRooms', roomType, debouncedSearch],
+    queryFn: () => fetchAdminChatRooms(debouncedSearch || undefined, roomType),
   });
 
   const {
@@ -70,8 +73,8 @@ export default function AdminChat() {
   const { data: messageEvents = [], isLoading: eventsLoading } = useQuery({
     queryKey: ['adminChatMessageEvents', activeRoomId],
     queryFn: () => fetchAdminChatMessageEvents(activeRoomId!),
-    enabled: !!activeRoomId && showJournal,
-    refetchInterval: showJournal ? 15_000 : false,
+    enabled: !!activeRoomId && showJournal && roomType === 'admin',
+    refetchInterval: showJournal && roomType === 'admin' ? 15_000 : false,
   });
 
   const sendMutation = useMutation({
@@ -83,6 +86,22 @@ export default function AdminChat() {
       queryClient.invalidateQueries({ queryKey: ['adminUnreadCount'] });
     },
   });
+
+  const deleteMutation = useMutation({
+    mutationFn: ({ roomId, messageId }: { roomId: string; messageId: string }) =>
+      deleteAdminChatMessage(roomId, messageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['adminChatMessages', activeRoomId] });
+      queryClient.invalidateQueries({ queryKey: ['adminChatRooms'] });
+      queryClient.invalidateQueries({ queryKey: ['adminUnreadCount'] });
+    },
+  });
+
+  const handleDeleteMessage = (messageId: string) => {
+    if (!activeRoomId || deleteMutation.isPending) return;
+    if (!window.confirm('Удалить сообщение? Оно исчезнет у всех участников чата.')) return;
+    deleteMutation.mutate({ roomId: activeRoomId, messageId });
+  };
 
   useEffect(() => {
     if (rooms && rooms.length > 0 && !activeRoomId) setActiveRoomId(rooms[0].id);
@@ -198,6 +217,18 @@ export default function AdminChat() {
               <span className="flex items-center gap-1 text-orange-600"><WifiOff className="w-3 h-3" /> Переподключение...</span>
             )}
           </p>
+          <div className="mb-3 flex gap-1 rounded-lg bg-gray-100 p-1" role="tablist" aria-label="Тип чата">
+            {([
+              ['admin', 'Рабочие вопросы'],
+              ['tech_support', 'Техподдержка'],
+            ] as const).map(([type, label]) => (
+              <button key={type} type="button" role="tab" aria-selected={roomType === type}
+                onClick={() => { setRoomType(type); setActiveRoomId(null); setShowJournal(false); clearWsMessages(); }}
+                className={`flex-1 rounded-md px-2 py-2 text-sm font-medium ${roomType === type ? 'bg-white text-blue-700 shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}>
+                {label}
+              </button>
+            ))}
+          </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
             <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)}
@@ -214,7 +245,7 @@ export default function AdminChat() {
             <button key={room.id}
               onClick={() => { setActiveRoomId(room.id); clearWsMessages(); isInitialLoad.current = true; }}
               className={`w-full p-4 flex items-center gap-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeRoomId === room.id ? 'bg-blue-50' : ''}`}>
-              <div className="w-11 h-11 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className={`w-11 h-11 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center flex-shrink-0`}>
                 <span className="text-white font-semibold text-sm">{(room.partner_name ?? 'П').slice(0, 2).toUpperCase()}</span>
               </div>
               <div className="flex-1 text-left min-w-0">
@@ -233,21 +264,21 @@ export default function AdminChat() {
         {activeRoom ? (
           <>
             <div className="bg-white border-b border-gray-200 p-4 flex items-center gap-3">
-              <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
+              <div className={`w-10 h-10 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center`}>
                 <span className="text-white font-semibold text-sm">{(activeRoom.partner_name ?? 'П').slice(0, 2).toUpperCase()}</span>
               </div>
               <div>
                 <h3 className="font-semibold text-gray-900">{activeRoom.partner_name ?? 'Партнёр'}</h3>
-                <p className="text-sm text-gray-500">Чат с партнёром</p>
+                <p className="text-sm text-gray-500">{roomType === 'tech_support' ? 'Техническая поддержка' : 'Чат с партнёром'}</p>
               </div>
-              <button
+              {roomType === 'admin' && <button
                 type="button"
                 onClick={() => setShowJournal((value) => !value)}
                 className="ml-auto inline-flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50"
               >
                 <History className="h-4 w-4" />
                 История изменений
-              </button>
+              </button>}
             </div>
 
             {showJournal && (
@@ -281,24 +312,41 @@ export default function AdminChat() {
                   <MessageSquare className="w-12 h-12 mb-3" /><p className="text-lg font-medium">Нет сообщений</p><p className="text-sm">Напишите первое сообщение партнёру</p>
                 </div>
               )}
-              {allMessages.map((msg) => {
+              {allMessages.map((msg, index) => {
                 const isAdmin = msg.sender_type === 'admin';
                 return (
-                  <div key={msg.id} className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                    <div className="max-w-md">
-                      {!isAdmin && (
-                        <div className="flex items-center gap-2 mb-1">
-                          <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-3.5 h-3.5 text-blue-600" /></div>
-                          <span className="text-xs text-gray-500">Партнёр</span>
+                  <div key={msg.id}>
+                    <ChatDateSeparator createdAt={msg.created_at} previousCreatedAt={allMessages[index - 1]?.created_at} timezone={tz} />
+                    <div className={`flex ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                      <div className="relative max-w-md group">
+                        {!isAdmin && (
+                          <div className="flex items-center gap-2 mb-1">
+                            <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center"><User className="w-3.5 h-3.5 text-blue-600" /></div>
+                            <span className="text-xs text-gray-500">Партнёр</span>
+                          </div>
+                        )}
+                        <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
+                          {msg.text ? <p>{msg.text}</p> : null}
+                          {renderAttachment(msg, isAdmin)}
                         </div>
-                      )}
-                      <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                        {msg.text ? <p>{msg.text}</p> : null}
-                        {renderAttachment(msg, isAdmin)}
-                      </div>
-                      <div className={`flex items-center gap-0.5 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
-                        <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
-                        {isAdmin && <MessageStatus status={msg.delivery_status} />}
+                        <div className={`flex items-center gap-0.5 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>
+                          <span className="text-xs text-gray-500">{formatTime(msg.created_at, tz)}</span>
+                          {isAdmin && <MessageStatus status={msg.delivery_status} />}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteMessage(msg.id)}
+                          disabled={deleteMutation.isPending}
+                          aria-label="Удалить сообщение"
+                          title="Удалить сообщение"
+                          className="absolute -top-2 -right-2 z-10 rounded-full border border-gray-200 bg-white p-1 text-gray-400 opacity-0 shadow-sm transition-opacity hover:border-red-200 hover:text-red-600 group-hover:opacity-100 disabled:cursor-not-allowed"
+                        >
+                          {deleteMutation.isPending ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Trash2 className="h-3.5 w-3.5" />
+                          )}
+                        </button>
                       </div>
                     </div>
                   </div>

@@ -1,14 +1,16 @@
 import html
+from typing import Literal
 
 from fastapi import APIRouter, Depends, File, Form, Query, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.ws_chat import broadcast_messages_read, broadcast_new_message
+from app.api.ws_chat import broadcast_message_deleted, broadcast_messages_read, broadcast_new_message
 from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageEventRead, ChatMessageRead, ChatRoomRead
 from app.services.chat_service import (
+    delete_message,
     get_admin_message_events,
     get_admin_messages,
     get_total_unread_for_admin,
@@ -44,10 +46,11 @@ def _message_payload(msg: ChatMessageRead) -> dict:
 @router.get("/rooms", response_model=list[ChatRoomRead])
 async def admin_chat_rooms(
     search: str | None = Query(None, max_length=100),  # noqa: B008
+    room_type: Literal["admin", "tech_support"] = Query("admin"),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     _current_user: User = Depends(require_role("admin")),  # noqa: B008
 ):
-    rooms = await list_admin_rooms(db, search=search)
+    rooms = await list_admin_rooms(db, search=search, room_type=room_type)
     await db.commit()
     return rooms
 
@@ -131,3 +134,16 @@ async def admin_post_attachment(
 
     await broadcast_new_message(_message_payload(msg), exclude_user_id=str(current_user.id), room_id=room_id)
     return msg
+
+
+@router.delete("/rooms/{room_id}/messages/{message_id}", status_code=204)
+async def admin_delete_message(
+    room_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    await delete_message(db, room_id, message_id)
+    await db.commit()
+
+    await broadcast_message_deleted(room_id, message_id)

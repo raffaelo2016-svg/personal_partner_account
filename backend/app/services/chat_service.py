@@ -12,7 +12,8 @@ from app.services.s3_service import delete_file_async, get_presigned_url, upload
 
 logger = structlog.get_logger()
 
-ROOM_TYPES = ["admin", "arbitration_manager", "assistant", "ai_assistant"]
+ROOM_TYPES = ["admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"]
+STAFF_ROOM_TYPES = {"admin", "tech_support"}
 CHAT_UPLOAD_MAX_SIZE_MB = 10
 CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
 CHAT_ALLOWED_MIME_TYPES = {
@@ -40,6 +41,7 @@ def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
         attachment_size=m.attachment_size,
         attachment_mime_type=m.attachment_mime_type,
         created_at=m.created_at,
+        deleted_at=m.deleted_at,
     )
 
 
@@ -107,7 +109,7 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
             )
             .label("rn"),
         )
-        .where(ChatMessage.room_id.in_(room_ids))
+        .where(ChatMessage.room_id.in_(room_ids), ChatMessage.deleted_at.is_(None))
         .subquery()
     )
     last_msgs_q = select(last_msg_sub.c.room_id, last_msg_sub.c.text, last_msg_sub.c.attachment_filename).where(
@@ -125,6 +127,7 @@ async def list_rooms(session: AsyncSession, partner_id: str) -> list[ChatRoomRea
             ChatMessage.room_id.in_(room_ids),
             ChatMessage.sender_type != "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
         .group_by(ChatMessage.room_id)
     )
@@ -157,7 +160,7 @@ async def get_messages(
     if str(room.partner_id) != partner_id:
         raise Forbidden("Access denied")
 
-    q = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    q = select(ChatMessage).where(ChatMessage.room_id == room_id, ChatMessage.deleted_at.is_(None))
     if before:
         ref = await session.get(ChatMessage, before)
         if ref:
@@ -186,6 +189,8 @@ async def send_message(
     if not room:
         raise NotFound("Chat room not found")
     if partner_id and str(room.partner_id) != partner_id:
+        raise Forbidden("Access denied")
+    if sender_type == "admin" and room.type not in STAFF_ROOM_TYPES:
         raise Forbidden("Access denied")
 
     msg = ChatMessage(
@@ -216,18 +221,46 @@ async def send_message(
         raise
 
 
+async def delete_message(
+    session: AsyncSession,
+    room_id: str,
+    message_id: str,
+) -> tuple[str, str]:
+    """Мягкое удаление сообщения администратором (видно всем участникам комнаты).
+
+    Возвращает (room_id, message_id) для WS-рассылки. Повторное удаление — no-op.
+    """
+    from datetime import UTC, datetime
+
+    room = await session.get(ChatRoom, room_id)
+    if not room or room.type not in STAFF_ROOM_TYPES:
+        raise NotFound("Admin chat room not found")
+
+    msg = await session.get(ChatMessage, message_id)
+    if not msg or str(msg.room_id) != room_id:
+        raise NotFound("Message not found")
+
+    if msg.deleted_at is None:
+        msg.deleted_at = datetime.now(UTC)
+        await session.flush()
+        logger.info("chat_message_deleted", room_id=room_id, message_id=message_id, sender_type=msg.sender_type)
+
+    return str(msg.room_id), str(msg.id)
+
+
 async def list_admin_rooms(
     session: AsyncSession,
     *,
     search: str | None = None,
+    room_type: str = "admin",
 ) -> list[ChatRoomRead]:
-    """Все admin-чаты для панели администратора."""
+    """Чаты выбранного типа для панели администратора."""
     from datetime import UTC
     from datetime import datetime as dt
 
     from app.models.partner import Partner
 
-    q = select(ChatRoom).where(ChatRoom.type == "admin")
+    q = select(ChatRoom).where(ChatRoom.type == room_type)
     rooms = list((await session.execute(q)).scalars().all())
 
     partner_ids = {str(r.partner_id) for r in rooms}
@@ -261,7 +294,7 @@ async def list_admin_rooms(
             )
             .label("rn"),
         )
-        .where(ChatMessage.room_id.in_(room_ids))
+        .where(ChatMessage.room_id.in_(room_ids), ChatMessage.deleted_at.is_(None))
         .subquery()
     )
     last_msgs_q = select(
@@ -282,6 +315,7 @@ async def list_admin_rooms(
             ChatMessage.room_id.in_(room_ids),
             ChatMessage.sender_type == "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
         .group_by(ChatMessage.room_id)
     )
@@ -321,10 +355,10 @@ async def get_admin_messages(
     before: str | None = None,
 ) -> list[ChatMessageRead]:
     room = await session.get(ChatRoom, room_id)
-    if not room or room.type != "admin":
+    if not room or room.type not in STAFF_ROOM_TYPES:
         raise NotFound("Admin chat room not found")
 
-    q = select(ChatMessage).where(ChatMessage.room_id == room_id)
+    q = select(ChatMessage).where(ChatMessage.room_id == room_id, ChatMessage.deleted_at.is_(None))
     if before:
         ref = await session.get(ChatMessage, before)
         if ref:
@@ -425,9 +459,10 @@ async def get_total_unread_for_admin(session: AsyncSession) -> int:
         .select_from(ChatMessage)
         .join(ChatRoom, ChatMessage.room_id == ChatRoom.id)
         .where(
-            ChatRoom.type == "admin",
+            ChatRoom.type.in_(STAFF_ROOM_TYPES),
             ChatMessage.sender_type == "user",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
     )
     return (await session.execute(q)).scalar() or 0
@@ -439,10 +474,11 @@ async def get_total_unread_for_partner(session: AsyncSession, partner_id: str) -
         .select_from(ChatMessage)
         .join(ChatRoom, ChatMessage.room_id == ChatRoom.id)
         .where(
-            ChatRoom.type == "admin",
+            ChatRoom.type.in_(STAFF_ROOM_TYPES),
             ChatRoom.partner_id == partner_id,
             ChatMessage.sender_type == "admin",
             ChatMessage.delivery_status != "read",
+            ChatMessage.deleted_at.is_(None),
         )
     )
     return (await session.execute(q)).scalar() or 0
