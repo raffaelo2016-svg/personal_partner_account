@@ -21,6 +21,7 @@ from app.integrations.bitrix24.clients import (
     CLIENT_SUPPORT_DEAL_STAGE_ID,
     build_client_contact_payload,
     build_client_deal_payload,
+    client_deal_route,
     extract_client_deal_event_reference,
     process_client_deal_add_event,
     schedule_client_creation,
@@ -77,10 +78,15 @@ def test_before_court_deal_routes_to_support_department():
     payload = build_client_deal_payload(client, "321", "654")["fields"]
 
     assert payload["CATEGORY_ID"] == CLIENT_SUPPORT_DEAL_CATEGORY_ID == 7
-    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == "C7:NEW"
+    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == "C7:UC_X16U4C"
     assert payload["CONTACT_ID"] == "654"
     assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
     assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
+
+
+def test_client_deal_route_maps_client_types_to_pipelines():
+    assert client_deal_route("before_court") == (CLIENT_SUPPORT_DEAL_CATEGORY_ID, "C7:UC_X16U4C")
+    assert client_deal_route("in_court") == (CLIENT_DEAL_CATEGORY_ID, "C3:NEW")
 
 
 def test_in_court_deal_routes_to_arbitration():

@@ -69,8 +69,11 @@ class Settings(BaseSettings):
     BITRIX_SMART_PROCESS_ENTITY_TYPE_ID: int = 1070
     # Clients already in court go to the Arbitration deal pipeline.
     BITRIX_DEAL_CATEGORY_ID: int = 3
-    # Clients transferred before filing go to the Support department pipeline.
+    # Clients transferred before filing go to the Support department pipeline,
+    # straight into its first stage «Партнеры» (verified through the portal API),
+    # not into the «Новый клиент» stage.
     BITRIX_SUPPORT_DEAL_CATEGORY_ID: int = 7
+    BITRIX_SUPPORT_DEAL_STAGE_ID: str = "C7:UC_X16U4C"
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"
     BITRIX_TOKEN_ENCRYPTION_KEY: str = ""
     BITRIX_OUTBOX_BATCH_SIZE: int = 25
