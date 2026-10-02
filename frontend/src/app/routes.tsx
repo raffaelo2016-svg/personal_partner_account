@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
 import Login from './pages/Login';
 import AdminLayout from './pages/AdminLayout';
+import RouteErrorPage from './pages/RouteErrorPage';
 
 const lazyPage = (loader: () => Promise<{ default: React.ComponentType }>) => async () => ({
   Component: (await loader()).default,
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
   {
     path: '/dashboard',
     Component: AuthGuard,
+    ErrorBoundary: RouteErrorPage,
     children: [
       {
         element: <RoleGuard allowedRoles={['partner']} />,
@@ -62,6 +64,7 @@ export const router = createBrowserRouter([
   {
     path: '/admin',
     Component: AuthGuard,
+    ErrorBoundary: RouteErrorPage,
     children: [
       {
         element: <RoleGuard allowedRoles={['admin']} />,
