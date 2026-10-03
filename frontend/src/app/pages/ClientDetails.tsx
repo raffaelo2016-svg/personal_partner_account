@@ -74,6 +74,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   generated_application: 'Заявление в суд',
   generated_creditors: 'Список кредиторов и должников',
   generated_inventory: 'Опись имущества',
+  uritech_review: 'На проверку от ЮРИТЕХ',
   other: 'Прочее',
 };
 
@@ -488,7 +489,7 @@ export default function ClientDetails() {
             />
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
               <FileText className="w-5 h-5" />
-              Документы
+              Первоначальные документы
               {clientFiles.length > 0 && (
                 <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
                   {clientFiles.length}

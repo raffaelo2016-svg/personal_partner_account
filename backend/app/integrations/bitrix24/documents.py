@@ -48,6 +48,7 @@ TIMELINE_EVENT_HANDLER = "https://finzdorovie.ru/api/v1/integrations/bitrix24/ha
 CRM_ACTIVITY_ADD_EVENT = "ONCRMACTIVITYADD"
 CRM_ACTIVITY_ENTITY_TYPE = "crm_activity"
 CRM_ACTIVITY_FILE_REMOTE_ENTITY_TYPE = "crm_activity_file"
+DISK_FOLDER_FILE_REMOTE_ENTITY_TYPE = "disk_folder_file"
 
 
 @dataclass(frozen=True)
@@ -651,6 +652,124 @@ async def _import_remote_files(
             raise
         audit_log(action="import_file_from_bitrix", target_id=str(record.id), target_type="file")
     return True
+
+
+async def import_initial_documents_from_folder(
+    db: AsyncSession,
+    remote: Bitrix24Client,
+    *,
+    local_client: Client,
+    member_id: str,
+) -> int:
+    """Import files placed directly into a client's Initial documents folder."""
+    partner = await db.get(Partner, local_client.partner_id)
+    if partner is None:
+        return 0
+
+    partners_folder = await _find_partners_folder(remote)
+    partners_folder_id = _object_id(partners_folder)
+    if not partners_folder_id:
+        return 0
+    include_partner_identifier = await _partner_folder_needs_identifier(db, partner)
+    partner_folder = await _find_folder_child(
+        remote,
+        partners_folder_id,
+        partner_folder_name(partner, include_identifier=include_partner_identifier),
+    )
+    if partner_folder is None:
+        return 0
+    partner_folder_id = _object_id(partner_folder)
+    if not partner_folder_id:
+        return 0
+
+    client_folder = await _find_folder_child(remote, partner_folder_id, client_folder_name(local_client))
+    if client_folder is None:
+        return 0
+    client_folder_id = _object_id(client_folder)
+    if not client_folder_id:
+        return 0
+
+    documents_folder = await _find_folder_child(remote, client_folder_id, INITIAL_DOCUMENTS_FOLDER_NAME)
+    if documents_folder is None:
+        return 0
+    documents_folder_id = _object_id(documents_folder)
+    if not documents_folder_id:
+        return 0
+
+    children = await remote.list_all(
+        "disk.folder.getchildren",
+        {"id": documents_folder_id},
+        max_pages=20,
+    )
+    known_file_ids = set(
+        (
+            await db.scalars(
+                select(FileUpload.bitrix_disk_file_id).where(
+                    FileUpload.client_id == local_client.id,
+                    FileUpload.bitrix_disk_file_id.is_not(None),
+                )
+            )
+        ).all()
+    )
+
+    imported = 0
+    for item in children:
+        if not isinstance(item, dict) or str(item.get("TYPE") or item.get("type") or "").lower() != "file":
+            continue
+        disk_file_id = str(item.get("ID") or item.get("id") or "").strip()
+        if not disk_file_id or disk_file_id in known_file_ids:
+            continue
+
+        receipt = BitrixInboundEvent(
+            member_id=member_id,
+            event_key=hashlib.sha256(f"folder:{documents_folder_id}:{disk_file_id}".encode()).hexdigest(),
+            event_name="FOLDER_RECONCILE",
+            payload_hash=hashlib.sha256(disk_file_id.encode()).hexdigest(),
+            remote_entity_type=DISK_FOLDER_FILE_REMOTE_ENTITY_TYPE,
+            remote_entity_id=disk_file_id,
+        )
+        completed = await _import_remote_files(
+            db,
+            remote,
+            receipt,
+            local_client=local_client,
+            parent_id=documents_folder_id,
+            files=[item],
+            remote_entity_type=DISK_FOLDER_FILE_REMOTE_ENTITY_TYPE,
+        )
+        if not completed:
+            continue
+        imported_record = await db.scalar(
+            select(FileUpload.id).where(
+                FileUpload.client_id == local_client.id,
+                FileUpload.bitrix_disk_file_id == disk_file_id,
+            )
+        )
+        if imported_record is not None:
+            imported += 1
+            known_file_ids.add(disk_file_id)
+    return imported
+
+
+async def sync_client_initial_documents(db: AsyncSession, client_id: str) -> int:
+    """Fetch direct Bitrix24 folder uploads so both sides see the same client files."""
+    local_client = await db.get(Client, client_id)
+    if local_client is None or local_client.deleted_at is not None or not local_client.bitrix_deal_id:
+        return 0
+    installation = await active_installation(db)
+    if installation is None:
+        return 0
+
+    token = await _installation_token(db, installation)
+    async with Bitrix24Client(installation.client_endpoint, token) as remote:
+        imported = await import_initial_documents_from_folder(
+            db,
+            remote,
+            local_client=local_client,
+            member_id=installation.member_id,
+        )
+    await db.commit()
+    return imported
 
 
 async def process_timeline_comment_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:

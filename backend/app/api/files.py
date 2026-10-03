@@ -1,6 +1,7 @@
 import hashlib
 import os
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.integrations.bitrix24.documents import schedule_file_creation
+from app.integrations.bitrix24.documents import schedule_file_creation, sync_client_initial_documents
 from app.models.client import Client
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
@@ -29,6 +30,7 @@ from app.validation.files import (
 )
 
 router = APIRouter(tags=["files"])
+logger = structlog.get_logger()
 
 
 async def _check_client_access(db: AsyncSession, client_id: str, user: User) -> None:
@@ -70,6 +72,15 @@ async def list_client_files(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
     await _check_client_access(db, client_id, current_user)
+    try:
+        await sync_client_initial_documents(db, client_id)
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        logger.warning(
+            "bitrix_initial_documents_sync_failed",
+            client_id=client_id,
+            error_type=type(exc).__name__,
+        )
     result = await db.execute(
         select(FileUpload).where(FileUpload.client_id == client_id).order_by(FileUpload.created_at.desc())
     )

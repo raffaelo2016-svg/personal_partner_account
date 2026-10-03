@@ -22,6 +22,7 @@ from app.integrations.bitrix24.documents import (
     extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
     file_marker,
+    import_initial_documents_from_folder,
     load_file_folder_context,
     partner_folder_name,
     process_crm_activity_add_event,
@@ -534,6 +535,57 @@ async def test_external_timeline_file_is_imported_to_client_once(db_session: Asy
     records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
     assert completed_again is True
     assert len(records) == 1
+
+
+@pytest.mark.asyncio
+async def test_file_placed_directly_in_initial_documents_folder_is_imported_once(db_session: AsyncSession):
+    client = await _saved_client(db_session)
+    folder_tree = [
+        [{"ID": "10", "NAME": "Общий диск"}],
+        [{"ID": "20", "TYPE": "folder", "NAME": "ПАРТНЕРЫ"}],
+        [{"ID": "30", "TYPE": "folder", "NAME": "ООО Документы"}],
+        [{"ID": "40", "TYPE": "folder", "NAME": "Иванов Иван Иванович"}],
+        [{"ID": "50", "TYPE": "folder", "NAME": "Первоначальные документы"}],
+        [{"ID": "702", "TYPE": "file", "NAME": "заявление.pdf", "SIZE": "8"}],
+    ]
+    remote = AsyncMock()
+    remote.list_all.side_effect = folder_tree + folder_tree
+    remote.call.return_value = {
+        "ID": "702",
+        "NAME": "заявление.pdf",
+        "SIZE": "8",
+        "DOWNLOAD_URL": f"https://{settings.BITRIX_ALLOWED_DOMAIN}/rest/download.json?token=signed",
+    }
+    remote.download_file.return_value = b"%PDF-1.7"
+
+    with patch(
+        "app.integrations.bitrix24.documents.upload_file_async",
+        new=AsyncMock(return_value="uploads/folder-import.pdf"),
+    ):
+        imported = await import_initial_documents_from_folder(
+            db_session,
+            remote,
+            local_client=client,
+            member_id="member-doc-reverse",
+        )
+        imported_again = await import_initial_documents_from_folder(
+            db_session,
+            remote,
+            local_client=client,
+            member_id="member-doc-reverse",
+        )
+
+    record = await db_session.scalar(
+        select(FileUpload).where(FileUpload.client_id == client.id, FileUpload.bitrix_disk_file_id == "702")
+    )
+    assert imported == 1
+    assert imported_again == 0
+    assert record is not None
+    assert record.original_name == "заявление.pdf"
+    assert record.bitrix_sync_status == "synced"
+    assert record.bitrix_activity_id is None
+    assert record.bitrix_timeline_comment_id is None
+    remote.download_file.assert_awaited_once()
 
 
 @pytest.mark.asyncio

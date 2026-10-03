@@ -17,16 +17,18 @@ import {
   Loader2,
   BarChart3,
   Trash2,
+  Upload,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdminClient, useRetryAdminClientBitrix, useUpdateAdminClient } from '@/app/hooks/useClients';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { formatFileSize } from '@/app/utils/files';
-import { fetchClientFiles, retryFileBitrix, type UploadedFileResponse } from '../api/upload';
+import { formatFileSize, uploadAllSettled } from '@/app/utils/files';
+import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
+import { captureError } from '@/app/sentry';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
@@ -58,6 +60,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   generated_application: 'Заявление в суд',
   generated_creditors: 'Список кредиторов и должников',
   generated_inventory: 'Опись имущества',
+  uritech_review: 'На проверку от ЮРИТЕХ',
   other: 'Прочее',
 };
 
@@ -85,6 +88,8 @@ export default function AdminDebtorDetails() {
   const updateClient = useUpdateAdminClient();
   const retryClientBitrix = useRetryAdminClientBitrix();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingForPartner, setIsUploadingForPartner] = useState(false);
   const retryFileMutation = useMutation({
     mutationFn: retryFileBitrix,
     onSuccess: () => {
@@ -118,6 +123,34 @@ export default function AdminDebtorDetails() {
   });
 
   const bankruptcyDate = client?.court_procedure_date ?? '';
+
+  const handleUploadForPartner = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles || selectedFiles.length === 0 || !id) return;
+
+    setIsUploadingForPartner(true);
+    try {
+      const items = Array.from(selectedFiles);
+      const result = await uploadAllSettled(items, (file) => uploadFile(file, id, 'uritech_review'));
+      await queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
+
+      if (result.failed.length === 0) {
+        toast.success(`Документы для партнёра загружены: ${result.succeeded.length}`);
+      } else {
+        result.failed.forEach(({ item, error }) => {
+          captureError(error, { context: 'admin_partner_document_upload', fileName: item.name });
+        });
+        const failedNames = result.failed.map(({ item }) => item.name).join(', ');
+        const message = result.succeeded.length > 0
+          ? `Загружено: ${result.succeeded.length}. Не удалось: ${failedNames}`
+          : `Не удалось загрузить: ${failedNames}`;
+        result.succeeded.length > 0 ? toast.warning(message) : toast.error(message);
+      }
+    } finally {
+      setIsUploadingForPartner(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   if (isLoading) {
     return (
@@ -631,15 +664,43 @@ export default function AdminDebtorDetails() {
 
           {/* Документы */}
           <div id="client-files" className="bg-white rounded-xl border border-gray-200 p-6 scroll-mt-6">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Документы
-              {clientFiles.length > 0 && (
-                <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                  {clientFiles.length}
-                </span>
-              )}
-            </h3>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Первоначальные документы
+                  {clientFiles.length > 0 ? (
+                    <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                      {clientFiles.length}
+                    </span>
+                  ) : null}
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Загруженные здесь файлы сразу видны партнёру и синхронизируются с Битрикс24.
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                onChange={handleUploadForPartner}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingForPartner}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isUploadingForPartner ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {isUploadingForPartner ? 'Загрузка…' : 'Загрузить для партнёра'}
+              </button>
+            </div>
             {isFilesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
