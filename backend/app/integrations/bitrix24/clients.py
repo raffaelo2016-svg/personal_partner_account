@@ -13,6 +13,7 @@ from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE, active_installation
+from app.integrations.bitrix24.preparation_notice import schedule_preparation_notice
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
@@ -28,7 +29,7 @@ CLIENT_DEAL_CREATE_METHOD = "crm.deal.add"
 CLIENT_DEAL_CATEGORY_ID = settings.BITRIX_DEAL_CATEGORY_ID
 CLIENT_DEAL_STAGE_ID = f"C{CLIENT_DEAL_CATEGORY_ID}:NEW"
 CLIENT_SUPPORT_DEAL_CATEGORY_ID = settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID
-CLIENT_SUPPORT_DEAL_STAGE_ID = f"C{CLIENT_SUPPORT_DEAL_CATEGORY_ID}:NEW"
+CLIENT_SUPPORT_DEAL_STAGE_ID = settings.BITRIX_SUPPORT_DEAL_STAGE_ID
 CLIENT_DEAL_CATEGORY_IDS = {
     CLIENT_DEAL_CATEGORY_ID,
     CLIENT_SUPPORT_DEAL_CATEGORY_ID,
@@ -457,6 +458,14 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_FOUND")
 
             if existing_client is not None:
+                await schedule_preparation_notice(
+                    db,
+                    client=existing_client,
+                    member_id=receipt.member_id,
+                    deal_id=receipt.remote_entity_id,
+                    category_id=deal_category_id,
+                    stage_id=deal.get("STAGE_ID"),
+                )
                 return await _complete_existing_client_update(
                     db,
                     receipt=receipt,
