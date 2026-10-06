@@ -39,8 +39,7 @@ export const router = createBrowserRouter([
     ErrorBoundary: RouteErrorPage,
     children: [
       {
-        element: <RoleGuard allowedRoles={['partner']} />,
-        Component: Layout,
+        element: <RoleGuard allowedRoles={['partner']}><Layout /></RoleGuard>,
         children: [
           { index: true, Component: Dashboard },
           { path: 'clients', lazy: lazyPage(() => import('./pages/ClientsList')) },
@@ -67,8 +66,7 @@ export const router = createBrowserRouter([
     ErrorBoundary: RouteErrorPage,
     children: [
       {
-        element: <RoleGuard allowedRoles={['admin']} />,
-        Component: AdminLayout,
+        element: <RoleGuard allowedRoles={['admin']}><AdminLayout /></RoleGuard>,
         children: [
           { index: true, lazy: lazyPage(() => import('./pages/AdminDashboard')) },
           { path: 'partners', lazy: lazyPage(() => import('./pages/AdminPartners')) },
