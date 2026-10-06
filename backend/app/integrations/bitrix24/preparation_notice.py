@@ -40,11 +40,13 @@ async def schedule_preparation_notice(
             local_entity_type=PREPARATION_NOTICE_ENTITY_TYPE,
             local_entity_id=client.id,
             bitrix_method="crm.timeline.comment.add",
-            payload={"fields": {
-                "ENTITY_ID": deal_id,
-                "ENTITY_TYPE": "deal",
-                "COMMENT": PREPARATION_NOTICE_COMMENT,
-            }},
+            payload={
+                "fields": {
+                    "ENTITY_ID": deal_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": PREPARATION_NOTICE_COMMENT,
+                }
+            },
             correlation_id=uuid.uuid4(),
             max_attempts=settings.BITRIX_OUTBOX_MAX_ATTEMPTS,
         )
