@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 from typing import Any
 from urllib.parse import urlparse
 
@@ -67,6 +68,10 @@ class Bitrix24Client:
         except httpx.HTTPError as exc:
             raise Bitrix24Error("TRANSPORT_ERROR", "Could not reach Bitrix24") from exc
 
+        return self._decode_response(response)
+
+    @staticmethod
+    def _decode_response(response: httpx.Response) -> dict[str, Any]:
         try:
             data = response.json()
         except ValueError as exc:
@@ -80,15 +85,48 @@ class Bitrix24Client:
             raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 returned an unexpected JSON shape")
         if response.is_error or "error" in data:
             raise Bitrix24Error(
-                str(data.get("error", f"HTTP_{response.status_code}")),
+                str(data.get("error") or f"HTTP_{response.status_code}"),
                 str(data.get("error_description", "Request failed")),
                 status_code=response.status_code,
             )
         return data
 
     async def call(self, method: str, params: dict[str, Any] | None = None) -> Any:
+        if method.lower() == "disk.folder.uploadfile" and params and "fileContent" in params:
+            return await self._upload_disk_file(method, params)
         data = await self._request(method, params)
         return data.get("result")
+
+    async def _upload_disk_file(self, method: str, params: dict[str, Any]) -> Any:
+        """Use the portal's multipart upload endpoint instead of its Base64 save path."""
+        upload_params = dict(params)
+        name, encoded = upload_params.pop("fileContent")
+        target = (await self._request(method, upload_params)).get("result")
+        if not isinstance(target, dict):
+            raise Bitrix24Error("INVALID_RESPONSE", "Bitrix24 did not return an upload endpoint")
+        url = str(target.get("uploadUrl") or target.get("UploadUrl") or "")
+        field = target.get("field")
+        parsed = urlparse(url)
+        if (
+            parsed.scheme != "https"
+            or (parsed.hostname or "").lower() != self._portal_host
+            or parsed.username
+            or parsed.password
+            or not isinstance(field, str)
+            or not field
+        ):
+            raise Bitrix24Error("INVALID_UPLOAD_URL", "Bitrix24 returned an unsafe upload endpoint")
+        try:
+            response = await self._client.post(
+                url, files={field: (name, base64.b64decode(encoded, validate=True), "application/octet-stream")}
+            )
+        except httpx.TimeoutException as exc:
+            raise Bitrix24Error("TIMEOUT", "Bitrix24 file upload timed out") from exc
+        except httpx.HTTPError as exc:
+            raise Bitrix24Error("TRANSPORT_ERROR", "Could not upload the Bitrix24 file") from exc
+        if response.is_redirect:
+            raise Bitrix24Error("INVALID_UPLOAD_URL", "Bitrix24 redirected the upload request")
+        return self._decode_response(response).get("result")
 
     async def download_file(self, url: str, *, max_bytes: int) -> bytes:
         """Download a signed Bitrix24 file without allowing arbitrary hosts or unbounded bodies."""
