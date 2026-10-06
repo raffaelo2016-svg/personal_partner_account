@@ -483,7 +483,7 @@ export default function ClientDetails() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip"
               className="hidden"
               onChange={handleDirectUpload}
             />

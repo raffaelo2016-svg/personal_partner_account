@@ -15,8 +15,10 @@ logger = structlog.get_logger()
 ROOM_TYPES = ["admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"]
 STAFF_ROOM_TYPES = {"admin", "tech_support"}
 CHAT_UPLOAD_MAX_SIZE_MB = 10
-CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".zip"}
 CHAT_ALLOWED_MIME_TYPES = {
+    "application/zip",
+    "application/x-zip-compressed",
     "application/pdf",
     "image/jpeg",
     "image/png",
@@ -62,6 +64,8 @@ async def upload_chat_file(file: UploadFile) -> tuple[str, str, int, str]:
         raise UnsupportedFileType()
 
     content_type = file.content_type or ""
+    if ext == ".zip" and content_type in {"", "application/octet-stream", "application/x-zip-compressed"}:
+        content_type = "application/zip"
     if content_type not in CHAT_ALLOWED_MIME_TYPES:
         raise UnsupportedFileType()
 

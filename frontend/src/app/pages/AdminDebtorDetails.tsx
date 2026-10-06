@@ -683,7 +683,7 @@ export default function AdminDebtorDetails() {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip"
                 onChange={handleUploadForPartner}
                 className="hidden"
               />

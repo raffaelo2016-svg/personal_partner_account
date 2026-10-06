@@ -136,7 +136,7 @@ export default function Chat() {
     const { valid, invalidFormat, tooLarge } = partitionFiles(files);
     if (invalidFormat.length > 0) {
       setSelectedFile(null);
-      setFileError('Можно прикрепить PDF, JPG, PNG, DOC или DOCX');
+      setFileError('Можно прикрепить PDF, JPG, PNG, DOC, DOCX или ZIP');
       return;
     }
     if (tooLarge.length > 0) {

@@ -7,6 +7,16 @@ function makeFile(name: string, size: number, type = ''): File {
 }
 
 describe('partitionFiles', () => {
+  it.each(['application/zip', 'application/x-zip-compressed', ''])('принимает ZIP с MIME %s', (type) => {
+    const file = makeFile('documents.ZIP', 100, type);
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it('отвергает ZIP больше лимита', () => {
+    const file = makeFile('documents.zip', MAX_FILE_SIZE_BYTES + 1, 'application/zip');
+    expect(partitionFiles([file]).tooLarge).toEqual(['documents.zip']);
+  });
+
   it('принимает разрешённые форматы по MIME', () => {
     const f = makeFile('a.pdf', 100, 'application/pdf');
     const r = partitionFiles([f]);

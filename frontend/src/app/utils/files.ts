@@ -1,4 +1,6 @@
 export const ALLOWED_FILE_FORMATS = [
+  'application/zip',
+  'application/x-zip-compressed',
   'image/jpeg',
   'image/jpg',
   'image/png',
@@ -7,7 +9,7 @@ export const ALLOWED_FILE_FORMATS = [
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
 ];
 
-export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx'];
+export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.zip'];
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_FILE_SIZE_LABEL = '10 МБ';

@@ -112,6 +112,8 @@ async def upload_endpoint(
         )
 
     content_type = file.content_type or ""
+    if ext == ".zip" and content_type in {"", "application/octet-stream", "application/x-zip-compressed"}:
+        content_type = "application/zip"
     if content_type not in ALLOWED_MIME_TYPES:
         raise HTTPException(
             status_code=415,

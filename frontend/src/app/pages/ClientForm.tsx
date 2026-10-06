@@ -270,7 +270,7 @@ export default function ClientForm() {
 
       const errors: string[] = [];
       if (invalidFormat.length > 0) {
-        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX`);
+        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP`);
       }
       if (tooLarge.length > 0) {
         errors.push(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
@@ -304,7 +304,7 @@ export default function ClientForm() {
       const { valid, invalidFormat, tooLarge } = partitionFiles(files);
 
       if (invalidFormat.length > 0) {
-        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX`);
+        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP`);
       }
       if (tooLarge.length > 0) {
         toast.error(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
@@ -808,7 +808,7 @@ export default function ClientForm() {
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX. Максимальный размер файла: 10 МБ
+                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP. Максимальный размер файла: 10 МБ
               </p>
               
               <div className="space-y-3">
@@ -857,7 +857,7 @@ export default function ClientForm() {
                           onChange={(e) => handleDocumentUpload(doc.id, e)}
                           className="hidden"
                           id={`doc-upload-${doc.id}`}
-                          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip"
                         />
                         <label
                           htmlFor={`doc-upload-${doc.id}`}
