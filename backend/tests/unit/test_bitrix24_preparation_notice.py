@@ -21,23 +21,35 @@ def operation():
     return BitrixOutboxOperation(
         local_entity_type=PREPARATION_NOTICE_ENTITY_TYPE,
         bitrix_method="crm.timeline.comment.add",
-        payload={"fields": {
-            "ENTITY_ID": "42", "ENTITY_TYPE": "deal", "COMMENT": PREPARATION_NOTICE_COMMENT,
-        }},
+        payload={
+            "fields": {
+                "ENTITY_ID": "42",
+                "ENTITY_TYPE": "deal",
+                "COMMENT": PREPARATION_NOTICE_COMMENT,
+            }
+        },
     )
 
 
-@pytest.mark.parametrize("mode,category,stage,expected", [
-    ("partner", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, True),
-    ("uritech", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, False),
-    ("partner", settings.BITRIX_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, False),
-    ("partner", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, "C7:NEW", False),
-])
+@pytest.mark.parametrize(
+    "mode,category,stage,expected",
+    [
+        ("partner", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, True),
+        ("uritech", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, False),
+        ("partner", settings.BITRIX_DEAL_CATEGORY_ID, settings.BITRIX_SUPPORT_DEAL_STAGE_ID, False),
+        ("partner", settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID, "C7:NEW", False),
+    ],
+)
 async def test_notice_only_for_partner_preparation_in_support_partner_stage(mode, category, stage, expected):
     db = AsyncMock()
     client = Client(id=uuid4(), document_preparation_mode=mode)
     await schedule_preparation_notice(
-        db, client=client, member_id="portal", deal_id="42", category_id=category, stage_id=stage,
+        db,
+        client=client,
+        member_id="portal",
+        deal_id="42",
+        category_id=category,
+        stage_id=stage,
     )
     assert db.execute.await_count == int(expected)
     if expected:
@@ -88,17 +100,24 @@ async def test_deal_completion_queues_notice_with_created_deal_id():
     db.scalars.return_value = MagicMock()
     db.scalars.return_value.all.return_value = []
     op = BitrixOutboxOperation(
-        local_entity_type="client_deal", local_entity_id=client.id,
-        member_id="portal", result_reference="42",
-        payload={"fields": {
-            "CATEGORY_ID": settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID,
-            "STAGE_ID": settings.BITRIX_SUPPORT_DEAL_STAGE_ID,
-        }},
+        local_entity_type="client_deal",
+        local_entity_id=client.id,
+        member_id="portal",
+        result_reference="42",
+        payload={
+            "fields": {
+                "CATEGORY_ID": settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID,
+                "STAGE_ID": settings.BITRIX_SUPPORT_DEAL_STAGE_ID,
+            }
+        },
     )
     with patch("app.integrations.bitrix24.sync.schedule_preparation_notice", new_callable=AsyncMock) as schedule:
         await _complete_client_projection(db, op)
     schedule.assert_awaited_once_with(
-        db, client=client, member_id="portal", deal_id="42",
+        db,
+        client=client,
+        member_id="portal",
+        deal_id="42",
         category_id=settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID,
         stage_id=settings.BITRIX_SUPPORT_DEAL_STAGE_ID,
     )

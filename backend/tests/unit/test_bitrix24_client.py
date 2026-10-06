@@ -44,6 +44,55 @@ async def test_list_all_uses_next_cursor_from_response():
     assert starts == [0, 75]
 
 
+async def test_empty_error_code_uses_http_status():
+    transport = httpx.MockTransport(lambda _: httpx.Response(400, json={"error": "", "error_description": "Failed"}))
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        with pytest.raises(Bitrix24Error) as exc_info:
+            await client.call("scope")
+    assert exc_info.value.code == "HTTP_400"
+
+
+async def test_disk_upload_uses_signed_multipart_endpoint():
+    calls = []
+
+    async def handler(request):
+        calls.append(request)
+        if len(calls) == 1:
+            payload = json.loads(request.content)
+            assert "fileContent" not in payload
+            assert payload["data"]["NAME"] == "test.pdf"
+            return httpx.Response(
+                200, json={"result": {"uploadUrl": "https://portal.example/upload?key=signed", "field": "file"}}
+            )
+        assert request.url.path == "/upload"
+        assert b"%PDF" in request.content
+        assert b"test.pdf" in request.content
+        assert b"secret-token" not in request.content
+        return httpx.Response(200, json={"result": {"ID": "700"}})
+
+    async with Bitrix24Client(
+        "https://portal.example/rest/", "secret-token", transport=httpx.MockTransport(handler)
+    ) as client:
+        result = await client.call(
+            "disk.folder.uploadfile",
+            {"id": "600", "data": {"NAME": "test.pdf"}, "fileContent": ["test.pdf", "JVBERg=="]},
+        )
+    assert result == {"ID": "700"}
+    assert len(calls) == 2
+
+
+async def test_disk_upload_rejects_external_endpoint():
+    transport = httpx.MockTransport(
+        lambda _: httpx.Response(
+            200, json={"result": {"uploadUrl": "https://attacker.example/upload", "field": "file"}}
+        )
+    )
+    async with Bitrix24Client("https://portal.example/rest/", "token", transport=transport) as client:
+        with pytest.raises(Bitrix24Error) as exc_info:
+            await client.call("disk.folder.uploadfile", {"fileContent": ["test.pdf", "JVBERg=="]})
+    assert exc_info.value.code == "INVALID_UPLOAD_URL"
+
+
 async def test_list_all_stops_when_next_cursor_is_absent():
     calls = 0
 

@@ -656,3 +656,70 @@ async def test_external_activity_file_is_imported_to_client_once(db_session: Asy
     records = list((await db_session.scalars(select(FileUpload).where(FileUpload.client_id == client.id))).all())
     assert completed_again is True
     assert len(records) == 1
+
+
+@pytest.mark.parametrize("activity", [False, True])
+async def test_event_without_attachments_is_ignored_before_client_lookup(activity):
+    receipt = BitrixInboundEvent(
+        member_id="member",
+        event_key="empty",
+        event_name="ONCRMACTIVITYADD" if activity else "ONCRMTIMELINECOMMENTADD",
+        remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE if activity else TIMELINE_COMMENT_ENTITY_TYPE,
+        remote_entity_id="90",
+        payload_hash="a" * 64,
+        status="received",
+        attempts=0,
+    )
+    db = AsyncMock()
+    db.get.return_value = Mock(client_endpoint="https://portal.example/rest/")
+    remote = AsyncMock()
+    remote.call.return_value = (
+        {"OWNER_TYPE_ID": "2", "OWNER_ID": "456"} if activity else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456"}
+    )
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+        patch("app.integrations.bitrix24.documents._local_client_for_deal", new=AsyncMock()) as lookup,
+    ):
+        process = process_crm_activity_add_event if activity else process_timeline_comment_add_event
+        assert await process(db, receipt)
+    assert receipt.status == "ignored"
+    assert receipt.error_code is None
+    lookup.assert_not_awaited()
+
+
+@pytest.mark.parametrize("activity", [False, True])
+@pytest.mark.parametrize("unmanaged", [False, True])
+async def test_missing_client_attachment_is_ignored_only_for_unmanaged_deal(activity, unmanaged):
+    receipt = BitrixInboundEvent(
+        member_id="member",
+        event_key="attachment",
+        event_name="ONCRMACTIVITYADD" if activity else "ONCRMTIMELINECOMMENTADD",
+        remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE if activity else TIMELINE_COMMENT_ENTITY_TYPE,
+        remote_entity_id="90",
+        payload_hash="a" * 64,
+        status="received",
+        attempts=0,
+    )
+    db = AsyncMock()
+    db.get.return_value = Mock(client_endpoint="https://portal.example/rest/")
+    remote = AsyncMock()
+    remote.call.return_value = (
+        {"OWNER_TYPE_ID": "2", "OWNER_ID": "456", "STORAGE_ELEMENT_IDS": ["700"]}
+        if activity
+        else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456", "FILES": [{"ID": "700"}]}
+    )
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.documents.Bitrix24Client", return_value=context),
+        patch("app.integrations.bitrix24.documents._local_client_for_deal", new=AsyncMock(return_value=None)),
+        patch("app.integrations.bitrix24.documents.is_unmanaged_deal", new=AsyncMock(return_value=unmanaged)),
+    ):
+        process = process_crm_activity_add_event if activity else process_timeline_comment_add_event
+        assert await process(db, receipt) is unmanaged
+    assert receipt.status == ("ignored" if unmanaged else "failed")
+    assert receipt.error_code == (None if unmanaged else "CLIENT_DEAL_NOT_FOUND")

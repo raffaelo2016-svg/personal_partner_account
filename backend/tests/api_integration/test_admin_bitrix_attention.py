@@ -108,7 +108,8 @@ class TestAdminBitrixAttention:
             assert receipt.attempts == 0
             assert receipt.error_code is None
 
-    async def test_lists_failed_inbound_file_and_allows_retry(self, client: AsyncClient, admin_token):
+    @pytest.mark.parametrize("remote_type", ["timeline_comment", "crm_activity"])
+    async def test_lists_failed_inbound_file_and_allows_retry(self, client: AsyncClient, admin_token, remote_type):
         receipt_id = uuid.uuid4()
         async with async_session_test() as session:
             session.add(
@@ -127,7 +128,7 @@ class TestAdminBitrixAttention:
                     member_id="attention-file-member",
                     event_key="attention-inbound-file",
                     event_name="ONCRMTIMELINECOMMENTADD",
-                    remote_entity_type="timeline_comment",
+                    remote_entity_type=remote_type,
                     remote_entity_id="90",
                     payload_hash="b" * 64,
                     status="failed",
@@ -160,6 +161,50 @@ class TestAdminBitrixAttention:
         async with async_session_test() as session:
             receipt = await session.get(BitrixInboundEvent, receipt_id)
             assert receipt is not None
+            assert receipt.status == "received"
+            assert receipt.attempts == 0
+            assert receipt.error_code is None
+
+    async def test_lists_failed_inbound_task_and_allows_retry(self, client: AsyncClient, admin_token):
+        receipt_id = uuid.uuid4()
+        async with async_session_test() as session:
+            session.add(
+                BitrixInstallation(
+                    member_id="attention-task-member",
+                    portal_domain="bitrix.example.ru",
+                    client_endpoint="https://bitrix.example.ru/rest/",
+                    server_endpoint="https://oauth.bitrix.info/rest/",
+                    access_token_encrypted=b"token",
+                    refresh_token_encrypted=b"refresh",
+                )
+            )
+            session.add(
+                BitrixInboundEvent(
+                    id=receipt_id,
+                    member_id="attention-task-member",
+                    event_key="attention-inbound-task",
+                    event_name="ONTASKADD",
+                    remote_entity_type="task",
+                    remote_entity_id="900",
+                    payload_hash="c" * 64,
+                    status="failed",
+                    attempts=8,
+                    error_code="CLIENT_NOT_FOUND",
+                )
+            )
+            await session.commit()
+        response = await client.get(
+            "/api/v1/admin/bitrix-attention", params={"entity_type": "inbound_task"}, headers=auth(admin_token)
+        )
+        assert response.status_code == 200
+        assert response.json()["counts"]["inbound_task"] == 1
+        assert response.json()["items"][0]["remote_id"] == "900"
+        retry = await client.post(
+            f"/api/v1/admin/bitrix-attention/inbound-tasks/{receipt_id}/retry", headers=auth(admin_token)
+        )
+        assert retry.status_code == 204
+        async with async_session_test() as session:
+            receipt = await session.get(BitrixInboundEvent, receipt_id)
             assert receipt.status == "received"
             assert receipt.attempts == 0
             assert receipt.error_code is None

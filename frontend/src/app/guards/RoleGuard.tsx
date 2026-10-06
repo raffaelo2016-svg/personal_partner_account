@@ -1,11 +1,13 @@
+import type { ReactNode } from 'react';
 import { Navigate, Outlet } from 'react-router';
 import { useAuthStore, useHasHydrated } from '@/app/store/authStore';
 
 interface RoleGuardProps {
   allowedRoles: ('partner' | 'admin')[];
+  children?: ReactNode;
 }
 
-export default function RoleGuard({ allowedRoles }: RoleGuardProps) {
+export default function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
   const hydrated = useHasHydrated();
   const user = useAuthStore((s) => s.user);
 
@@ -26,5 +28,5 @@ export default function RoleGuard({ allowedRoles }: RoleGuardProps) {
     return <Navigate to={redirect} replace />;
   }
 
-  return <Outlet />;
+  return children ?? <Outlet />;
 }

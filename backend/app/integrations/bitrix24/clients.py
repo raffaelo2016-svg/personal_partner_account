@@ -395,6 +395,20 @@ async def _complete_existing_client_update(
     return True
 
 
+async def is_unmanaged_deal(remote: Bitrix24Client, deal_id: str) -> bool:
+    """Only cabinet pipelines with an explicitly selected partner are managed."""
+    deal = await remote.call("crm.deal.get", {"ID": deal_id})
+    if not isinstance(deal, dict):
+        raise Bitrix24Error("INVALID_DEAL_RESPONSE", "Bitrix24 did not return a deal")
+    try:
+        category = int(deal.get("CATEGORY_ID"))
+    except (TypeError, ValueError):
+        raise Bitrix24Error("INVALID_DEAL_RESPONSE", "Bitrix24 did not return a deal category") from None
+    return category not in CLIENT_DEAL_CATEGORY_IDS or not deal.get(
+        f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"
+    )
+
+
 async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
     """Create or relink a cabinet client from a managed deal pipeline event."""
     receipt.status = "processing"
@@ -492,7 +506,7 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
         if (
             not deal_loaded
             and exc.status_code in {400, 404}
-            and not exc.code.strip()
+            and exc.code.strip() in {"", "HTTP_400", "HTTP_404"}
             and exc.description.strip().casefold() == "not found"
         ):
             return await _ignore_current_state(db, receipt)

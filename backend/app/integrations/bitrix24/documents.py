@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
-from app.integrations.bitrix24.clients import CLIENT_DEAL_ENTITY_TYPE
+from app.integrations.bitrix24.clients import CLIENT_DEAL_ENTITY_TYPE, is_unmanaged_deal
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.token_storage import decrypt_token
@@ -805,16 +805,21 @@ async def process_timeline_comment_add_event(db: AsyncSession, receipt: BitrixIn
                 return True
 
             deal_id = str(comment.get("ENTITY_ID") or comment.get("entityId") or "").strip()
-            local_client = await _local_client_for_deal(db, member_id=receipt.member_id, deal_id=deal_id)
-            if local_client is None:
-                return _mark_inbound_failure(receipt, "CLIENT_DEAL_NOT_FOUND")
-
             files = _comment_files(comment)
             if not files:
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
                 return True
+
+            local_client = await _local_client_for_deal(db, member_id=receipt.member_id, deal_id=deal_id)
+            if local_client is None:
+                if await is_unmanaged_deal(remote, deal_id):
+                    receipt.status = "ignored"
+                    receipt.processed_at = datetime.now(UTC)
+                    receipt.attempts += 1
+                    return True
+                return _mark_inbound_failure(receipt, "CLIENT_DEAL_NOT_FOUND")
 
             if not await _import_remote_files(
                 db,
@@ -869,15 +874,21 @@ async def process_crm_activity_add_event(db: AsyncSession, receipt: BitrixInboun
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
                 return True
-            local_client = await _local_client_for_deal(db, member_id=receipt.member_id, deal_id=deal_id)
-            if local_client is None:
-                return _mark_inbound_failure(receipt, "CLIENT_DEAL_NOT_FOUND")
             files = _activity_files(activity)
             if not files:
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
                 return True
+            local_client = await _local_client_for_deal(db, member_id=receipt.member_id, deal_id=deal_id)
+            if local_client is None:
+                if await is_unmanaged_deal(remote, deal_id):
+                    receipt.status = "ignored"
+                    receipt.processed_at = datetime.now(UTC)
+                    receipt.attempts += 1
+                    return True
+                return _mark_inbound_failure(receipt, "CLIENT_DEAL_NOT_FOUND")
+
             if not await _import_remote_files(
                 db,
                 remote,
