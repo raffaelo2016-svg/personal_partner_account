@@ -65,10 +65,7 @@ jobs:
           command_timeout: 20m
           script: |
             set -e
-            case "$DEPLOY_SHA" in
-              *[!0-9a-f]*|'') echo 'Invalid deployment revision'; exit 1 ;;
-            esac
-            test "${#DEPLOY_SHA}" -eq 40
+            printf '%s\n' "$DEPLOY_SHA" | grep -Eq '^[0-9a-f]{40}$'
             cd /srv/personal_partner_account
             git fetch origin main
             test "$(git rev-parse origin/main)" = "$DEPLOY_SHA"
