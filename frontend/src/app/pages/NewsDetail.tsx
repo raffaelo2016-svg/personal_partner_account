@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ArrowLeft, CheckCircle2 } from 'lucide-react';
 import { acknowledgeNews, fetchNewsPost, readNews } from '../api/news';
+import NewsSocialFooter from '../components/NewsSocialFooter';
 import { formatDateTime } from '../utils/formatDate';
 
 export default function NewsDetail() {
@@ -57,6 +58,7 @@ export default function NewsDetail() {
               {acknowledge.isError && <p role="alert" className="text-red-600 mt-2">Не удалось сохранить подтверждение.</p>}
             </div>
           )}
+          <NewsSocialFooter />
         </article>
       )}
     </div>
