@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-color.svg';
+import SocialLinks from '../components/SocialLinks';
 import NotificationBell from '../components/NotificationBell';
 import { useMe } from '../hooks/useAuth';
 import { useAuthStore } from '../store/authStore';
@@ -179,7 +180,12 @@ export default function Layout() {
             <Menu className="w-5 h-5 text-gray-600" aria-hidden="true" />
           </button>
           <div className="flex-1" />
-          <NotificationBell />
+          <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+            <SocialLinks />
+            <div className="border-l border-gray-200 pl-3 sm:pl-5">
+              <NotificationBell />
+            </div>
+          </div>
         </div>
         <main>
           <Outlet />
