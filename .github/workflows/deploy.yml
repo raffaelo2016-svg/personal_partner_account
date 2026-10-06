@@ -1,29 +1,76 @@
 name: Deploy to production
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+  actions: read
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
 jobs:
+  validate:
+    if: github.event_name == 'workflow_dispatch' || (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-latest
+    outputs:
+      deploy: ${{ steps.check.outputs.deploy }}
+      sha: ${{ steps.check.outputs.sha }}
+    steps:
+      - name: Require successful CI for the current main revision
+        id: check
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: branch } = await github.rest.repos.getBranch({
+              ...context.repo, branch: 'main',
+            });
+            const sha = context.payload.workflow_run?.head_sha || context.sha;
+            if (sha !== branch.commit.sha) {
+              core.info('A newer main revision exists; skip the older deployment.');
+              core.setOutput('deploy', 'false');
+              return;
+            }
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...context.repo, workflow_id: 'ci.yml', head_sha: sha,
+              branch: 'main', event: 'push', status: 'completed', per_page: 100,
+            });
+            if (!data.workflow_runs.some(run => run.head_sha === sha && run.conclusion === 'success')) {
+              throw new Error('Deployment requires successful CI for this exact main revision.');
+            }
+            core.setOutput('sha', sha);
+            core.setOutput('deploy', 'true');
+
   deploy:
+    needs: validate
+    if: needs.validate.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     steps:
       - name: SSH and run deploy.sh
         uses: appleboy/ssh-action@v1.0.3
+        env:
+          DEPLOY_SHA: ${{ needs.validate.outputs.sha }}
         with:
           host: ${{ secrets.SSH_HOST }}
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: DEPLOY_SHA
           script_stop: true
           command_timeout: 20m
           script: |
             set -e
+            case "$DEPLOY_SHA" in
+              *[!0-9a-f]*|'') echo 'Invalid deployment revision'; exit 1 ;;
+            esac
+            test "${#DEPLOY_SHA}" -eq 40
             cd /srv/personal_partner_account
             git fetch origin main
-            git reset --hard origin/main
+            test "$(git rev-parse origin/main)" = "$DEPLOY_SHA"
+            git reset --hard "$DEPLOY_SHA"
             bash deploy/deploy.sh

@@ -104,6 +104,8 @@ async def register_inbound_event(
     timeline_comment_id = extract_timeline_comment_event_reference(event_name, payload)
     activity_id = extract_crm_activity_event_reference(event_name, payload)
     task_id = extract_task_event_reference(event_name, payload)
+    if not any((client_deal_id, timeline_comment_id, activity_id, task_id)):
+        status = "ignored"
     statement = (
         insert(BitrixInboundEvent)
         .values(

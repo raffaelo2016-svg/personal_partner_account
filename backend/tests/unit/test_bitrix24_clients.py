@@ -77,7 +77,7 @@ def test_before_court_deal_routes_to_support_department():
     payload = build_client_deal_payload(client, "321", "654")["fields"]
 
     assert payload["CATEGORY_ID"] == CLIENT_SUPPORT_DEAL_CATEGORY_ID == 7
-    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == "C7:NEW"
+    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == settings.BITRIX_SUPPORT_DEAL_STAGE_ID
     assert payload["CONTACT_ID"] == "654"
     assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
     assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
@@ -523,7 +523,8 @@ async def test_deal_moved_out_of_client_funnel_resolves_old_warning(db_session: 
 
 
 @pytest.mark.asyncio
-async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession):
+@pytest.mark.parametrize("code", ["", "HTTP_400"])
+async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession, code):
     await _saved_entities(db_session)
     receipt = BitrixInboundEvent(
         member_id="member-stage-4",
@@ -540,7 +541,7 @@ async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession
     await db_session.flush()
 
     remote = AsyncMock()
-    remote.call.side_effect = Bitrix24Error("", "Not found", status_code=400)
+    remote.call.side_effect = Bitrix24Error(code, "Not found", status_code=400)
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
@@ -635,3 +636,19 @@ async def test_external_deal_does_not_reuse_contact_of_existing_client(db_sessio
     assert receipt.status == "failed"
     assert receipt.error_code == "CONTACT_ALREADY_LINKED"
     assert remote.call.await_count == 1
+
+
+@pytest.mark.parametrize(
+    ("deal", "expected"),
+    [
+        ({"CATEGORY_ID": "2"}, True),
+        ({"CATEGORY_ID": "3"}, True),
+        ({"CATEGORY_ID": "7", "PARENT_ID_1070": "321"}, False),
+    ],
+)
+async def test_unmanaged_deal_filter_preserves_qualified_partner_deals(deal, expected):
+    from app.integrations.bitrix24.clients import is_unmanaged_deal
+
+    remote = AsyncMock()
+    remote.call.return_value = deal
+    assert await is_unmanaged_deal(remote, "456") is expected

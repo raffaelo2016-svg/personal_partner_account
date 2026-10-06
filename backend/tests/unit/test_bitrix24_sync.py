@@ -229,3 +229,14 @@ async def test_outbox_operation_is_enqueued_once(db_session: AsyncSession):
     assert second_id is None
     assert second_created is False
     assert count == 1
+
+
+async def test_unsupported_event_is_journaled_as_ignored(db_session):
+    await _installation(db_session)
+    receipt_id, created = await register_inbound_event(
+        db_session, member_id="member", payload={"event": "UNSUPPORTED_EVENT", "event_id": "unsupported"}
+    )
+    assert created
+    receipt = await db_session.get(BitrixInboundEvent, receipt_id)
+    assert receipt.status == "ignored"
+    assert receipt.remote_entity_type is None

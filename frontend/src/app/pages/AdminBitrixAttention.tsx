@@ -19,6 +19,7 @@ import {
   fetchBitrixAttention,
   retryInboundClientImport,
   retryInboundFileImport,
+  retryInboundTaskImport,
   type AttentionEntityType,
   type AttentionSyncStatus,
   type BitrixAttentionItem,
@@ -38,6 +39,7 @@ const ENTITY_CONFIG = {
   file: { label: 'Документы', singular: 'Документ', icon: FileText, color: 'bg-amber-100 text-amber-700' },
   task: { label: 'Задачи', singular: 'Задача', icon: CheckSquare, color: 'bg-emerald-100 text-emerald-700' },
   inbound_client: { label: 'Входящие клиенты', singular: 'Клиент из Битрикс24', icon: UserPlus, color: 'bg-orange-100 text-orange-700' },
+  inbound_task: { label: 'Входящие задачи', singular: 'Задача из Битрикс24', icon: CheckSquare, color: 'bg-teal-100 text-teal-700' },
   inbound_file: { label: 'Входящие документы', singular: 'Документ из Битрикс24', icon: FileDown, color: 'bg-cyan-100 text-cyan-700' },
 } as const;
 
@@ -55,6 +57,7 @@ async function retryItem(item: BitrixAttentionItem) {
   if (item.entity_type === 'file') return retryFileBitrix(item.entity_id);
   if (item.entity_type === 'task') return retryTaskBitrix(item.entity_id);
   if (item.entity_type === 'inbound_client') return retryInboundClientImport(item.entity_id);
+  if (item.entity_type === 'inbound_task') return retryInboundTaskImport(item.entity_id);
   return retryInboundFileImport(item.entity_id);
 }
 
@@ -101,7 +104,7 @@ export default function AdminBitrixAttention() {
         </p>
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-7 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-8 gap-4">
         <button
           type="button"
           onClick={() => selectEntity('all')}
@@ -178,7 +181,9 @@ export default function AdminBitrixAttention() {
                         {item.entity_type === 'inbound_client'
                           ? `Сделка № ${item.remote_id ?? '—'}`
                           : item.entity_type === 'inbound_file'
-                            ? `Комментарий № ${item.remote_id ?? '—'}`
+                            ? `Запись CRM № ${item.remote_id ?? '—'}`
+                            : item.entity_type === 'inbound_task'
+                              ? `Задача № ${item.remote_id ?? '—'}`
                             : `ID: ${item.entity_id}`}
                       </p>
                     </div>

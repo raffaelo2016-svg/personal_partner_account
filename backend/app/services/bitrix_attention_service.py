@@ -15,11 +15,12 @@ from app.models.task import Task
 from app.schemas.bitrix_attention import BitrixAttentionItem, BitrixAttentionResponse
 from app.services.audit import audit_log
 
-EntityType = Literal["all", "partner", "client", "file", "task", "inbound_client", "inbound_file"]
+EntityType = Literal["all", "partner", "client", "file", "task", "inbound_client", "inbound_file", "inbound_task"]
 SyncStatus = Literal["all", "failed", "conflict", "pending", "not_scheduled"]
 
 INBOUND_CLIENT_ENTITY_TYPE = "client_deal"
-INBOUND_FILE_ENTITY_TYPE = "timeline_comment"
+INBOUND_FILE_ENTITY_TYPES = ("timeline_comment", "crm_activity")
+INBOUND_TASK_ENTITY_TYPE = "task"
 _SAFE_PORTAL_DOMAIN = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,253}[a-z0-9])?$")
 
 
@@ -37,7 +38,7 @@ def _projection_query(entity_type: str, model, *, parent_column=None):
         cast(model.id, String).label("entity_id"),
         parent.label("parent_id"),
         model.bitrix_sync_status.label("sync_status"),
-        func.coalesce(model.bitrix_sync_error_code, "UNKNOWN_ERROR").label("error_code"),
+        func.coalesce(func.nullif(model.bitrix_sync_error_code, ""), "UNKNOWN_ERROR").label("error_code"),
         func.coalesce(model.bitrix_sync_requested_at, model.updated_at, model.created_at).label("occurred_at"),
         cast(literal(None), String).label("remote_id"),
         cast(literal(None), String).label("portal_domain"),
@@ -51,7 +52,7 @@ def _inbound_client_query():
             cast(BitrixInboundEvent.id, String).label("entity_id"),
             cast(literal(None), String).label("parent_id"),
             literal("conflict").label("sync_status"),
-            func.coalesce(BitrixInboundEvent.error_code, "UNKNOWN_ERROR").label("error_code"),
+            func.coalesce(func.nullif(BitrixInboundEvent.error_code, ""), "UNKNOWN_ERROR").label("error_code"),
             func.coalesce(
                 BitrixInboundEvent.processed_at,
                 BitrixInboundEvent.updated_at,
@@ -75,7 +76,7 @@ def _inbound_file_query():
             cast(BitrixInboundEvent.id, String).label("entity_id"),
             cast(literal(None), String).label("parent_id"),
             literal("conflict").label("sync_status"),
-            func.coalesce(BitrixInboundEvent.error_code, "UNKNOWN_ERROR").label("error_code"),
+            func.coalesce(func.nullif(BitrixInboundEvent.error_code, ""), "UNKNOWN_ERROR").label("error_code"),
             func.coalesce(
                 BitrixInboundEvent.processed_at,
                 BitrixInboundEvent.updated_at,
@@ -86,7 +87,31 @@ def _inbound_file_query():
         )
         .join(BitrixInstallation, BitrixInstallation.member_id == BitrixInboundEvent.member_id)
         .where(
-            BitrixInboundEvent.remote_entity_type == INBOUND_FILE_ENTITY_TYPE,
+            BitrixInboundEvent.remote_entity_type.in_(INBOUND_FILE_ENTITY_TYPES),
+            BitrixInboundEvent.status == "failed",
+        )
+    )
+
+
+def _inbound_task_query():
+    return (
+        select(
+            literal("inbound_task").label("entity_type"),
+            cast(BitrixInboundEvent.id, String).label("entity_id"),
+            cast(literal(None), String).label("parent_id"),
+            literal("conflict").label("sync_status"),
+            func.coalesce(func.nullif(BitrixInboundEvent.error_code, ""), "UNKNOWN_ERROR").label("error_code"),
+            func.coalesce(
+                BitrixInboundEvent.processed_at,
+                BitrixInboundEvent.updated_at,
+                BitrixInboundEvent.created_at,
+            ).label("occurred_at"),
+            BitrixInboundEvent.remote_entity_id.label("remote_id"),
+            BitrixInstallation.portal_domain.label("portal_domain"),
+        )
+        .join(BitrixInstallation, BitrixInstallation.member_id == BitrixInboundEvent.member_id)
+        .where(
+            BitrixInboundEvent.remote_entity_type == INBOUND_TASK_ENTITY_TYPE,
             BitrixInboundEvent.status == "failed",
         )
     )
@@ -121,6 +146,7 @@ async def list_bitrix_attention(
         ),
         "inbound_client": _inbound_client_query(),
         "inbound_file": _inbound_file_query(),
+        "inbound_task": _inbound_task_query(),
     }
     selected = list(queries.values()) if entity_type == "all" else [queries[entity_type]]
     attention = union_all(*selected).subquery("bitrix_attention")
@@ -200,7 +226,7 @@ async def retry_inbound_client_event(db: AsyncSession, receipt_id: uuid.UUID) ->
 
 async def retry_inbound_file_event(db: AsyncSession, receipt_id: uuid.UUID) -> None:
     receipt = await db.get(BitrixInboundEvent, receipt_id)
-    if receipt is None or receipt.remote_entity_type != INBOUND_FILE_ENTITY_TYPE:
+    if receipt is None or receipt.remote_entity_type not in INBOUND_FILE_ENTITY_TYPES:
         raise NotFound("Inbound file receipt not found")
     if receipt.status != "failed":
         raise BadRequest("Inbound file receipt is not waiting for manual review")
@@ -214,4 +240,18 @@ async def retry_inbound_file_event(db: AsyncSession, receipt_id: uuid.UUID) -> N
         target_id=str(receipt.id),
         target_type="bitrix_inbound_event",
     )
+    await db.flush()
+
+
+async def retry_inbound_task_event(db: AsyncSession, receipt_id: uuid.UUID) -> None:
+    receipt = await db.get(BitrixInboundEvent, receipt_id)
+    if receipt is None or receipt.remote_entity_type != INBOUND_TASK_ENTITY_TYPE:
+        raise NotFound("Inbound task receipt not found")
+    if receipt.status != "failed":
+        raise BadRequest("Inbound task receipt is not waiting for manual review")
+    receipt.status = "received"
+    receipt.attempts = 0
+    receipt.error_code = None
+    receipt.processed_at = None
+    audit_log(action="retry_task_import_from_bitrix", target_id=str(receipt.id), target_type="bitrix_inbound_event")
     await db.flush()

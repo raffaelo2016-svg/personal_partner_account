@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
+from app.integrations.bitrix24.clients import is_unmanaged_deal
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.token_storage import decrypt_token
@@ -484,6 +485,21 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
                     "select": _TASK_SELECT_FIELDS,
                 },
             )
+            remote_task = result.get("task", {}) if isinstance(result, dict) else {}
+            if mapping is None and receipt.event_name.upper() == TASK_ADD_EVENT:
+                deal_id = _remote_deal_id(remote_task)
+                local_client_id = (
+                    await db.scalar(
+                        select(Client.id).where(Client.bitrix_deal_id == deal_id, Client.deleted_at.is_(None))
+                    )
+                    if deal_id
+                    else None
+                )
+                if deal_id and local_client_id is None and await is_unmanaged_deal(remote, deal_id):
+                    receipt.status = "ignored"
+                    receipt.processed_at = datetime.now(UTC)
+                    receipt.attempts += 1
+                    return True
     except Bitrix24Error as exc:
         receipt.status = "failed"
         receipt.error_code = exc.code[:100]

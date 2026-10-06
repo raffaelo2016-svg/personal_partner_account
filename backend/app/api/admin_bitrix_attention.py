@@ -12,6 +12,7 @@ from app.services.bitrix_attention_service import (
     list_bitrix_attention,
     retry_inbound_client_event,
     retry_inbound_file_event,
+    retry_inbound_task_event,
 )
 
 router = APIRouter(prefix="/admin/bitrix-attention", tags=["admin-bitrix-attention"])
@@ -19,7 +20,9 @@ router = APIRouter(prefix="/admin/bitrix-attention", tags=["admin-bitrix-attenti
 
 @router.get("", response_model=BitrixAttentionResponse)
 async def get_bitrix_attention(
-    entity_type: Literal["all", "partner", "client", "file", "task", "inbound_client", "inbound_file"] = Query("all"),  # noqa: B008
+    entity_type: Literal[
+        "all", "partner", "client", "file", "task", "inbound_client", "inbound_file", "inbound_task"
+    ] = Query("all"),  # noqa: B008
     sync_status: Literal["all", "failed", "conflict", "pending", "not_scheduled"] = Query("all"),  # noqa: B008
     pagination: PaginationParams = Depends(),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
@@ -52,5 +55,16 @@ async def retry_inbound_file(
     _current_user=Depends(require_role("admin")),  # noqa: B008
 ):
     await retry_inbound_file_event(db, receipt_id)
+    await db.commit()
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+@router.post("/inbound-tasks/{receipt_id}/retry", status_code=status.HTTP_204_NO_CONTENT)
+async def retry_inbound_task(
+    receipt_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user=Depends(require_role("admin")),  # noqa: B008
+):
+    await retry_inbound_task_event(db, receipt_id)
     await db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
