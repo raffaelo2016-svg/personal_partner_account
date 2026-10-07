@@ -842,6 +842,38 @@ async def process_timeline_comment_add_event(db: AsyncSession, receipt: BitrixIn
     return True
 
 
+async def _read_crm_activity(remote: Bitrix24Client, activity_id: str) -> dict[str, Any]:
+    """Select the provider's read API before requesting the activity contents."""
+    rows = await remote.call(
+        "crm.activity.list",
+        {"filter": {"ID": activity_id}, "select": ["ID", "PROVIDER_ID"]},
+    )
+    if (
+        not isinstance(rows, list)
+        or len(rows) != 1
+        or not isinstance(rows[0], dict)
+        or str(rows[0].get("ID") or "") != activity_id
+    ):
+        raise Bitrix24Error("INVALID_ACTIVITY_RESPONSE", "Bitrix24 did not return the requested activity")
+
+    if rows[0].get("PROVIDER_ID") == "CONFIGURABLE_REST_APP":
+        result = await remote.call("crm.activity.configurable.get", {"id": activity_id})
+        activity = result.get("activity") if isinstance(result, dict) else None
+        if not isinstance(activity, dict) or str(activity.get("id") or "") != activity_id:
+            raise Bitrix24Error("INVALID_ACTIVITY_RESPONSE", "Bitrix24 returned an invalid configurable activity")
+        # This API returns a timeline layout, not Disk document attachments.
+        # Normalize its owner so the existing no-files path ignores the event.
+        return {
+            "OWNER_TYPE_ID": activity.get("ownerTypeId"),
+            "OWNER_ID": activity.get("ownerId"),
+        }
+
+    activity = await remote.call("crm.activity.get", {"id": activity_id})
+    if not isinstance(activity, dict):
+        raise Bitrix24Error("INVALID_ACTIVITY_RESPONSE", "Bitrix24 returned an invalid activity")
+    return activity
+
+
 async def process_crm_activity_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
     """Import files attached to a CRM activity created in a known client deal."""
     receipt.status = "processing"
@@ -860,9 +892,7 @@ async def process_crm_activity_add_event(db: AsyncSession, receipt: BitrixInboun
     try:
         token = await _installation_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, token) as remote:
-            activity = await remote.call("crm.activity.get", {"id": activity_id})
-            if not isinstance(activity, dict):
-                return _mark_inbound_failure(receipt, "INVALID_ACTIVITY_RESPONSE")
+            activity = await _read_crm_activity(remote, activity_id)
             if FILE_MARKER_PREFIX in str(activity.get("DESCRIPTION") or activity.get("description") or ""):
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)
