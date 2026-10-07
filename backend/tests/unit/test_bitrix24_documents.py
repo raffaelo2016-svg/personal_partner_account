@@ -604,6 +604,7 @@ async def test_external_activity_file_is_imported_to_client_once(db_session: Asy
 
     remote = AsyncMock()
     remote.call.side_effect = [
+        [{"ID": "91", "PROVIDER_ID": "CRM_TODO"}],
         {
             "ID": "91",
             "OWNER_TYPE_ID": "2",
@@ -640,13 +641,15 @@ async def test_external_activity_file_is_imported_to_client_once(db_session: Asy
     assert record.bitrix_timeline_comment_id is None
     assert record.bitrix_disk_file_id == "701"
 
-    remote.call.side_effect = None
-    remote.call.return_value = {
-        "ID": "91",
-        "OWNER_TYPE_ID": "2",
-        "OWNER_ID": "456",
-        "STORAGE_ELEMENT_IDS": [701],
-    }
+    remote.call.side_effect = [
+        [{"ID": "91", "PROVIDER_ID": "CRM_TODO"}],
+        {
+            "ID": "91",
+            "OWNER_TYPE_ID": "2",
+            "OWNER_ID": "456",
+            "STORAGE_ELEMENT_IDS": [701],
+        },
+    ]
     receipt.status = "received"
     with (
         patch("app.integrations.bitrix24.documents._installation_token", new=AsyncMock(return_value="token")),
@@ -676,6 +679,8 @@ async def test_event_without_attachments_is_ignored_before_client_lookup(activit
     remote.call.return_value = (
         {"OWNER_TYPE_ID": "2", "OWNER_ID": "456"} if activity else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456"}
     )
+    if activity:
+        remote.call.side_effect = [[{"ID": "90", "PROVIDER_ID": "CRM_TODO"}], remote.call.return_value]
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
@@ -711,6 +716,8 @@ async def test_missing_client_attachment_is_ignored_only_for_unmanaged_deal(acti
         if activity
         else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456", "FILES": [{"ID": "700"}]}
     )
+    if activity:
+        remote.call.side_effect = [[{"ID": "90", "PROVIDER_ID": "CRM_TODO"}], remote.call.return_value]
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
