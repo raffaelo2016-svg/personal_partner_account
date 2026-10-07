@@ -23,9 +23,15 @@ async def test_configurable_activity_uses_its_api_and_is_not_a_document():
     db = AsyncMock()
     db.get.return_value = SimpleNamespace(client_endpoint="https://bitrix.example/rest/")
     receipt = BitrixInboundEvent(
-        member_id="member", event_key=uuid4().hex, payload_hash=uuid4().hex,
-        event_name="ONCRMACTIVITYADD", remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE,
-        remote_entity_id="115390", status="failed", error_code="HTTP_400", attempts=4,
+        member_id="member",
+        event_key=uuid4().hex,
+        payload_hash=uuid4().hex,
+        event_name="ONCRMACTIVITYADD",
+        remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE,
+        remote_entity_id="115390",
+        status="failed",
+        error_code="HTTP_400",
+        attempts=4,
     )
     context = AsyncMock()
     context.__aenter__.return_value = remote
@@ -41,7 +47,8 @@ async def test_configurable_activity_uses_its_api_and_is_not_a_document():
     assert receipt.processed_at is not None
     assert receipt.attempts == 5
     assert [call.args[0] for call in remote.call.await_args_list] == [
-        "crm.activity.list", "crm.activity.configurable.get",
+        "crm.activity.list",
+        "crm.activity.configurable.get",
     ]
     client_lookup.assert_not_awaited()
     importer.assert_not_awaited()
@@ -82,9 +89,13 @@ async def test_real_access_error_still_fails_the_receipt():
     db = AsyncMock()
     db.get.return_value = SimpleNamespace(client_endpoint="https://bitrix.example/rest/")
     receipt = BitrixInboundEvent(
-        member_id="member", event_key=uuid4().hex, payload_hash=uuid4().hex,
-        event_name="ONCRMACTIVITYADD", remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE,
-        remote_entity_id="91", attempts=0,
+        member_id="member",
+        event_key=uuid4().hex,
+        payload_hash=uuid4().hex,
+        event_name="ONCRMACTIVITYADD",
+        remote_entity_type=CRM_ACTIVITY_ENTITY_TYPE,
+        remote_entity_id="91",
+        attempts=0,
     )
     context = AsyncMock()
     context.__aenter__.return_value = remote
