@@ -679,6 +679,8 @@ async def test_event_without_attachments_is_ignored_before_client_lookup(activit
     remote.call.return_value = (
         {"OWNER_TYPE_ID": "2", "OWNER_ID": "456"} if activity else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456"}
     )
+    if activity:
+        remote.call.side_effect = [[{"ID": "90", "PROVIDER_ID": "CRM_TODO"}], remote.call.return_value]
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
@@ -714,6 +716,8 @@ async def test_missing_client_attachment_is_ignored_only_for_unmanaged_deal(acti
         if activity
         else {"ENTITY_TYPE": "deal", "ENTITY_ID": "456", "FILES": [{"ID": "700"}]}
     )
+    if activity:
+        remote.call.side_effect = [[{"ID": "90", "PROVIDER_ID": "CRM_TODO"}], remote.call.return_value]
     context = AsyncMock()
     context.__aenter__.return_value = remote
     with (
