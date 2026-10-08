@@ -1,3 +1,4 @@
+import { decodeChatText } from '@/app/utils/chatText';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History, Trash2 } from 'lucide-react';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
@@ -252,7 +253,7 @@ export default function AdminChat() {
                   <p className="font-medium text-gray-900 truncate">{room.partner_name ?? 'Партнёр'}</p>
                   {room.unread_count > 0 && <span className="bg-red-500 text-white text-xs rounded-full px-2 py-0.5 ml-2 flex-shrink-0">{room.unread_count}</span>}
                 </div>
-                <p className="text-sm text-gray-500 truncate">{room.last_message ?? 'Нет сообщений'}</p>
+                <p className="text-sm text-gray-500 truncate">{decodeChatText(room.last_message ?? 'Нет сообщений')}</p>
               </div>
             </button>
           ))}
@@ -323,7 +324,7 @@ export default function AdminChat() {
                         </div>
                       )}
                       <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                        {msg.text ? <p>{msg.text}</p> : null}
+                        {msg.text ? <p>{decodeChatText(msg.text)}</p> : null}
                         {renderAttachment(msg, isAdmin)}
                       </div>
                       <div className={`flex items-center gap-0.5 mt-1 ${isAdmin ? 'justify-end' : 'justify-start'}`}>

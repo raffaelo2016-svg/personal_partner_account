@@ -1,3 +1,4 @@
+import { decodeChatText } from '@/app/utils/chatText';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X, LifeBuoy } from 'lucide-react';
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
@@ -220,7 +221,7 @@ export default function Chat() {
                     <p className="font-medium text-gray-900">{cfg.name}</p>
                     {room.unread_count > 0 && <span className="bg-blue-600 text-white text-xs rounded-full px-2 py-0.5">{room.unread_count}</span>}
                   </div>
-                  <p className="text-sm truncate text-gray-500">{room.last_message ?? cfg.description}</p>
+                  <p className="text-sm truncate text-gray-500">{decodeChatText(room.last_message ?? cfg.description)}</p>
                 </div>
               </button>
             );
@@ -253,7 +254,7 @@ export default function Chat() {
               <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                 <div className="max-w-md">
                   <div className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
-                    {msg.text ? <p>{msg.text}</p> : null}
+                    {msg.text ? <p>{decodeChatText(msg.text)}</p> : null}
                     {renderAttachment(msg, isUser)}
                   </div>
                   <div className={`flex items-center gap-0.5 mt-1 ${isUser ? 'justify-end' : 'justify-start'}`}>

@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import html
 import mimetypes
 import re
 import uuid
@@ -600,7 +599,7 @@ async def import_message_event(
         db.add(room)
         await db.flush()
 
-    text = html.escape(str(message_data.get("text") or "").strip(), quote=True)
+    text = str(message_data.get("text") or "").strip()
     attachment = None
     file_data = _event_file(data)
     dialog_id = str(chat_data.get("dialogId") or message_data.get("chatId"))

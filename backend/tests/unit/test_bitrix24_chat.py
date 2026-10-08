@@ -452,10 +452,12 @@ def _file_event(remote_id: int = 5014) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_incoming_message_is_imported_once_and_escaped(db_session: AsyncSession):
+async def test_incoming_message_is_imported_once_as_plain_text(db_session: AsyncSession):
     room = await _partner_room(db_session)
 
-    first = await import_message_event(db_session, _message_event())
+    event = _message_event()
+    event["data"]["message"]["text"] = 'Ответ <сотрудника> "Льготный период"'
+    first = await import_message_event(db_session, event)
     await db_session.commit()
     second = await import_message_event(db_session, _message_event())
 
@@ -465,7 +467,7 @@ async def test_incoming_message_is_imported_once_and_escaped(db_session: AsyncSe
     assert first.sender_type == "admin"
     assert first.origin == "bitrix"
     assert first.bitrix_message_id == "5012"
-    assert first.text == "Ответ &lt;сотрудника&gt;"
+    assert first.text == 'Ответ <сотрудника> "Льготный период"'
     assert second is None
     assert count == 1
 
@@ -704,4 +706,4 @@ async def test_message_update_is_journaled_once_without_changing_local_text(db_s
     assert first is True
     assert second is False
     assert journal_count == 1
-    assert original.text == "Ответ &lt;сотрудника&gt;"
+    assert original.text == "Ответ <сотрудника>"
