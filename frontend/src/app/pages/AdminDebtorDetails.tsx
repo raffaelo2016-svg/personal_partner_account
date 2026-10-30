@@ -28,6 +28,7 @@ import { formatFileSize, uploadAllSettled } from '@/app/utils/files';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
+import CaseNumberCard from '../components/CaseNumberCard';
 import { captureError } from '@/app/sentry';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
@@ -244,17 +245,23 @@ export default function AdminDebtorDetails() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Номер дела</p>
-              <p className="font-semibold text-gray-900 font-mono">{client.case_number || '—'}</p>
-            </div>
-          </div>
-        </div>
+        <CaseNumberCard
+          value={client.case_number}
+          onSave={async (caseNumber) => {
+            await new Promise<void>((resolve, reject) => {
+              updateClient.mutate(
+                { id: client.id, data: { case_number: caseNumber } },
+                {
+                  onSuccess: () => {
+                    toast.success(caseNumber ? 'Номер дела сохранён' : 'Номер дела удалён');
+                    resolve();
+                  },
+                  onError: () => reject(new Error('case_number_update_failed')),
+                },
+              );
+            });
+          }}
+        />
       </div>
 
       {client.type === 'before_court' && (

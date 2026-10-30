@@ -228,20 +228,30 @@ async def update_client(
     if client_type := update_data.get("type"):
         update_data["type"] = client_type.value
     court_date_changed = "court_procedure_date" in update_data
+    previous_case_number = client.case_number
     for key, value in update_data.items():
         if hasattr(client, key):
             setattr(client, key, value)
+    case_number_changed = "case_number" in update_data and client.case_number != previous_case_number
 
     await session.flush()
-    # updated_at обновляется server-side (onupdate=func.now()) — обновим только его.
-    await session.refresh(client, ["updated_at"])
 
     partner = await session.get(Partner, client.partner_id)
+
+    if case_number_changed:
+        from app.integrations.bitrix24.clients import schedule_client_case_number_update
+
+        await schedule_client_case_number_update(session, client)
 
     if court_date_changed and client.court_procedure_date:
         from app.services.finance_service import recalculate_due_date
 
         await recalculate_due_date(session, client, partner)
+
+    # updated_at обновляется server-side (onupdate=func.now()) при любом UPDATE,
+    # поэтому обновляем его после всех изменений клиента (включая планирование
+    # синхронизации с Битрикс24), иначе обращение к нему сделает лишний IO.
+    await session.refresh(client, ["updated_at"])
 
     audit_log(action="update_client", target_id=str(client.id), target_type="client", details=update_data)
     logger.info(
