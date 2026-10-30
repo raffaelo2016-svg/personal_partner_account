@@ -40,6 +40,7 @@ export default function AdminClients() {
       restructuring: 'Реструктуризация',
       auction: 'Торги',
       realization: 'Реализация',
+      completed: 'Завершено',
     };
     return labels[status] || status;
   };
@@ -54,6 +55,7 @@ export default function AdminClients() {
       restructuring: 'bg-purple-100 text-purple-700 border-purple-200',
       auction: 'bg-amber-100 text-amber-700 border-amber-200',
       realization: 'bg-green-100 text-green-700 border-green-200',
+      completed: 'bg-teal-100 text-teal-700 border-teal-200',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
   };
@@ -133,6 +135,7 @@ export default function AdminClients() {
                     { value: 'restructuring', label: 'Реструктуризация' },
                     { value: 'auction', label: 'Торги' },
                     { value: 'realization', label: 'Реализация' },
+                    { value: 'completed', label: 'Завершено' },
                   ]}
                 />
               </div>

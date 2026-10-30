@@ -189,6 +189,7 @@ export default function ClientDetails() {
       restructuring: 'Реструктуризация',
       auction: 'Торги',
       realization: 'Реализация',
+      completed: 'Завершено',
     };
     return labels[status] || status;
   };
@@ -203,6 +204,7 @@ export default function ClientDetails() {
       restructuring: 'bg-purple-100 text-purple-700',
       auction: 'bg-amber-100 text-amber-700',
       realization: 'bg-green-100 text-green-700',
+      completed: 'bg-teal-100 text-teal-700',
     };
     return colors[status] || 'bg-gray-100 text-gray-700';
   };
@@ -219,6 +221,8 @@ export default function ClientDetails() {
     'restructuring',
     'auction',
     'realization',
+    // Терминальный статус: для него все восемь этапов считаются пройденными.
+    'completed',
   ];
 
   const STAGE_DEFS = [

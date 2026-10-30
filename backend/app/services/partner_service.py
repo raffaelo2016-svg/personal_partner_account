@@ -14,6 +14,7 @@ from app.models.partner import Partner
 from app.models.user import User
 from app.schemas.partner import PartnerBitrixCollabBinding, PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
 from app.services.audit import audit_log
+from app.services.client_service import COMPLETED_STATUSES
 
 logger = structlog.get_logger()
 
@@ -121,7 +122,7 @@ async def _get_client_status_counts_batch(session: AsyncSession, partner_ids: li
             func.count().label("clients_count"),
             func.count().filter(Client.type == "before_court").label("before_court_count"),
             func.count().filter(Client.type == "in_court").label("in_court_count"),
-            func.count().filter(Client.status == "realization").label("completed_count"),
+            func.count().filter(Client.status.in_(COMPLETED_STATUSES)).label("completed_count"),
         )
         .where(Client.partner_id.in_(partner_ids), Client.deleted_at.is_(None))
         .group_by(Client.partner_id)

@@ -380,7 +380,7 @@ export default function AdminDashboard() {
           <MetricCard label="На партнёра" value={d.main_stats.clients_per_active_partner.toLocaleString('ru-RU')} context="Среднее среди передающих" icon={TrendingUp} tone="violet" />
           <MetricCard label="До суда" value={d.movement_stats.before_court} context="Новые клиенты периода" icon={Receipt} tone="violet" />
           <MetricCard label="В суде" value={d.movement_stats.in_court} context="Новые клиенты периода" icon={CircleDollarSign} tone="violet" />
-          <MetricCard label="Завершено" value={d.movement_stats.completed} context="В статусе реализации" icon={UserCheck} tone="green" />
+          <MetricCard label="Завершено" value={d.movement_stats.completed} context="Реализация и завершённые дела" icon={UserCheck} tone="green" />
           <MetricCard label="Без движения" value={d.movement_stats.without_movement} context="Нет обновлений более 14 дней" icon={Clock3} tone="amber" />
         </div>
 

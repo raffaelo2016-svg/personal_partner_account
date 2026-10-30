@@ -7,7 +7,7 @@ from app.database import get_db
 from app.models.client import Client
 from app.models.task import Task
 from app.models.user import User
-from app.services.client_service import _get_partner_id_for_user
+from app.services.client_service import COMPLETED_STATUSES, _get_partner_id_for_user
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -26,7 +26,7 @@ async def partner_dashboard(
     total_clients = (await db.execute(base_clients)).scalar() or 0
     before_court = (await db.execute(base_clients.where(Client.type == "before_court"))).scalar() or 0
     in_court = (await db.execute(base_clients.where(Client.type == "in_court"))).scalar() or 0
-    completed = (await db.execute(base_clients.where(Client.status == "realization"))).scalar() or 0
+    completed = (await db.execute(base_clients.where(Client.status.in_(COMPLETED_STATUSES)))).scalar() or 0
     new_this_week = (
         await db.execute(base_clients.where(Client.created_at >= func.now() - text("interval '7 days'")))
     ).scalar() or 0

@@ -3,7 +3,7 @@
 import pytest
 
 from app.models.enums import ClientStatus
-from app.services.client_service import BEFORE_COURT_STATUSES, IN_COURT_STATUSES
+from app.services.client_service import BEFORE_COURT_STATUSES, COMPLETED_STATUSES, IN_COURT_STATUSES
 
 
 class TestStatusCategories:
@@ -21,14 +21,16 @@ class TestStatusCategories:
         """before_court и in_court не пересекаются."""
         assert set(BEFORE_COURT_STATUSES).isdisjoint(set(IN_COURT_STATUSES))
 
-    def test_realization_is_completed(self):
-        """realization не входит ни в before_court, ни в in_court."""
-        assert "realization" not in BEFORE_COURT_STATUSES
-        assert "realization" not in IN_COURT_STATUSES
+    def test_realization_and_completed_are_terminal(self):
+        """realization и completed не входят ни в before_court, ни в in_court."""
+        for status in ("realization", "completed"):
+            assert status not in BEFORE_COURT_STATUSES
+            assert status not in IN_COURT_STATUSES
+            assert status in COMPLETED_STATUSES
 
     def test_all_statuses_categorized(self):
         """Каждый статус принадлежит ровно одной категории."""
-        all_categorized = set(BEFORE_COURT_STATUSES) | set(IN_COURT_STATUSES) | {"realization"}
+        all_categorized = set(BEFORE_COURT_STATUSES) | set(IN_COURT_STATUSES) | set(COMPLETED_STATUSES)
         all_enum = {s.value for s in ClientStatus}
         assert all_categorized == all_enum
 
@@ -43,6 +45,7 @@ class TestStatusCategories:
             ("restructuring", "in_court"),
             ("auction", "in_court"),
             ("realization", "completed"),
+            ("completed", "completed"),
         ],
     )
     def test_each_status_category(self, status, category):
@@ -51,7 +54,7 @@ class TestStatusCategories:
         elif category == "in_court":
             assert status in IN_COURT_STATUSES
         else:
-            assert status == "realization"
+            assert status in COMPLETED_STATUSES
 
 
 class TestProgressPercent:

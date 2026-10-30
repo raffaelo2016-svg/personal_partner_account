@@ -1,6 +1,6 @@
 """Unit-тесты: Dashboard — категоризация, вычисления."""
 
-from app.services.client_service import BEFORE_COURT_STATUSES, IN_COURT_STATUSES
+from app.services.client_service import BEFORE_COURT_STATUSES, COMPLETED_STATUSES, IN_COURT_STATUSES
 
 
 class TestDashboardCategories:
@@ -12,10 +12,12 @@ class TestDashboardCategories:
     def test_in_court_count(self):
         assert len(IN_COURT_STATUSES) == 3
 
-    def test_completed_is_realization(self):
-        """completed = status 'realization', не входит в before/in court."""
-        assert "realization" not in BEFORE_COURT_STATUSES
-        assert "realization" not in IN_COURT_STATUSES
+    def test_completed_includes_realization_and_completed(self):
+        """Оба терминальных статуса не входят в before/in court."""
+        assert COMPLETED_STATUSES == ["realization", "completed"]
+        for status in COMPLETED_STATUSES:
+            assert status not in BEFORE_COURT_STATUSES
+            assert status not in IN_COURT_STATUSES
 
 
 class TestTaskCompletion:

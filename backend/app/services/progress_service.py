@@ -62,6 +62,7 @@ LINEAR_STATUS_ORDER: list[ClientStatus] = [
     ClientStatus.RESTRUCTURING,
     ClientStatus.AUCTION,
     ClientStatus.REALIZATION,
+    ClientStatus.COMPLETED,
 ]
 
 

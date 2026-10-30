@@ -55,6 +55,7 @@ describe('getStatusLabel', () => {
     ['restructuring', 'Реструктуризация'],
     ['auction', 'Торги'],
     ['realization', 'Реализация'],
+    ['completed', 'Завершено'],
   ])('maps %s → %s', (status, label) => {
     expect(getStatusLabel(status)).toBe(label);
   });
@@ -91,10 +92,10 @@ describe('getStatusDotColor', () => {
 describe('STATUS_LABELS completeness', () => {
   const ALL_STATUSES = [
     'documents_collection', 'documents_formation', 'sent_to_court',
-    'documents_decision', 'waiting_hearing', 'restructuring', 'auction', 'realization',
+    'documents_decision', 'waiting_hearing', 'restructuring', 'auction', 'realization', 'completed',
   ];
 
-  it('has labels for all 8 statuses', () => {
+  it('has labels for all 9 statuses', () => {
     for (const s of ALL_STATUSES) {
       expect(STATUS_LABELS[s]).toBeTruthy();
     }
@@ -108,7 +109,7 @@ describe('STATUS_LABELS completeness', () => {
 describe('category classification', () => {
   const BEFORE_COURT = ['documents_collection', 'documents_formation', 'sent_to_court', 'documents_decision'];
   const IN_COURT = ['waiting_hearing', 'restructuring', 'auction'];
-  const COMPLETED = ['realization'];
+  const COMPLETED = ['realization', 'completed'];
 
   function getCategory(status: string): string {
     if (BEFORE_COURT.includes(status)) return 'before_court';
@@ -126,6 +127,7 @@ describe('category classification', () => {
     ['restructuring', 'in_court'],
     ['auction', 'in_court'],
     ['realization', 'completed'],
+    ['completed', 'completed'],
   ])('%s → %s', (status, category) => {
     expect(getCategory(status)).toBe(category);
   });
@@ -142,16 +144,16 @@ describe('category classification', () => {
 describe('progress calculation', () => {
   const STATUS_ORDER = [
     'documents_collection', 'documents_formation', 'sent_to_court',
-    'documents_decision', 'waiting_hearing', 'restructuring', 'auction', 'realization',
+    'documents_decision', 'waiting_hearing', 'restructuring', 'auction', 'realization', 'completed',
   ];
-  const TOTAL = STATUS_ORDER.length;
+  const STAGE_COUNT = 8;
 
   function calculateProgress(currentStatus: string): number {
     const idx = STATUS_ORDER.indexOf(currentStatus);
     if (idx < 0) return 0;
-    const completed = idx;
-    const inProgress = 1;
-    return ((completed + inProgress * 0.5) / TOTAL) * 100;
+    // «Завершено» — терминальный статус: все восемь этапов пройдены.
+    if (currentStatus === 'completed') return 100;
+    return ((idx + 0.5) / STAGE_COUNT) * 100;
   }
 
   it('first status → ~6.25%', () => {
@@ -162,8 +164,12 @@ describe('progress calculation', () => {
     expect(calculateProgress('waiting_hearing')).toBeCloseTo(56.25, 1);
   });
 
-  it('last status → ~93.75%', () => {
+  it('last stage → ~93.75%', () => {
     expect(calculateProgress('realization')).toBeCloseTo(93.75, 1);
+  });
+
+  it('completed → 100%', () => {
+    expect(calculateProgress('completed')).toBe(100);
   });
 
   it('unknown status → 0', () => {
@@ -321,7 +327,8 @@ describe('status transitions validity', () => {
     waiting_hearing: ['restructuring', 'documents_decision'],
     restructuring: ['auction', 'waiting_hearing'],
     auction: ['realization', 'restructuring'],
-    realization: ['auction'],
+    realization: ['auction', 'completed'],
+    completed: ['realization'],
   };
 
   function canTransition(from: string, to: string): boolean {
@@ -342,6 +349,18 @@ describe('status transitions validity', () => {
 
   it('realization → documents_collection NOT allowed', () => {
     expect(canTransition('realization', 'documents_collection')).toBe(false);
+  });
+
+  it('realization → completed allowed', () => {
+    expect(canTransition('realization', 'completed')).toBe(true);
+  });
+
+  it('completed → realization allowed (reopen)', () => {
+    expect(canTransition('completed', 'realization')).toBe(true);
+  });
+
+  it('completed → documents_collection NOT allowed', () => {
+    expect(canTransition('completed', 'documents_collection')).toBe(false);
   });
 
   it('every status has at least one transition', () => {

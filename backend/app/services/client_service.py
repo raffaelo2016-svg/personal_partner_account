@@ -64,6 +64,9 @@ async def _get_partner_id_for_user(session: AsyncSession, user_id: str) -> str:
 
 BEFORE_COURT_STATUSES = ["documents_collection", "documents_formation", "sent_to_court", "documents_decision"]
 IN_COURT_STATUSES = ["waiting_hearing", "restructuring", "auction"]
+# «Реализация» исторически считается завершённой стадией в аналитике;
+# новый явный статус «Завершено» добавлен рядом, без сброса старых цифр.
+COMPLETED_STATUSES = ["realization", "completed"]
 
 
 async def list_clients(
@@ -99,7 +102,7 @@ async def list_clients(
     elif category == "in_court":
         base_q = base_q.where(Client.status.in_(IN_COURT_STATUSES))
     elif category == "completed":
-        base_q = base_q.where(Client.status == "realization")
+        base_q = base_q.where(Client.status.in_(COMPLETED_STATUSES))
 
     total = (await session.execute(select(func.count()).select_from(base_q.subquery()))).scalar() or 0
     rows = (
@@ -300,7 +303,7 @@ async def get_client_stats(session: AsyncSession, partner_id: str) -> ClientStat
     total = (await session.execute(base)).scalar() or 0
     before_court = (await session.execute(base.where(Client.type == "before_court"))).scalar() or 0
     in_court = (await session.execute(base.where(Client.type == "in_court"))).scalar() or 0
-    completed = (await session.execute(base.where(Client.status == "realization"))).scalar() or 0
+    completed = (await session.execute(base.where(Client.status.in_(COMPLETED_STATUSES)))).scalar() or 0
 
     new_this_week = (
         await session.execute(base.where(Client.created_at >= func.now() - text("interval '7 days'")))
