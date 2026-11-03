@@ -217,6 +217,7 @@ async def assign_chat_document(
         message_id=message_id,
         client_id=body.client_id,
         document_type=body.document_type,
+        filename=body.filename,
         assigned_by=current_user.id,
         sync_to_bitrix=body.sync_to_bitrix,
     )

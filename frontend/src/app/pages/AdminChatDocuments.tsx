@@ -82,6 +82,25 @@ function shortName(fullName: string): string {
   return `${parts[0]} ${initials}`;
 }
 
+const FORBIDDEN_NAME_CHARS = /[\\/:*?"<>|\u0000-\u001f]/g;
+const MAX_DOCUMENT_NAME_LENGTH = 120;
+
+function splitDocumentName(filename: string): { stem: string; extension: string } {
+  const name = filename.replace(/\\/g, '/').split('/').pop() ?? filename;
+  const match = /(\.[^.]*)$/.exec(name);
+  const extension = match ? match[1] : '';
+  return { stem: extension ? name.slice(0, -extension.length) : name, extension };
+}
+
+function sanitizeDocumentStem(value: string, maxLength: number): string {
+  return value
+    .replace(FORBIDDEN_NAME_CHARS, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[ .]+|[ .]+$/g, '')
+    .slice(0, maxLength)
+    .trim();
+}
+
 interface AssignDialogProps {
   item: ChatDocumentInboxItem;
   onClose: () => void;
@@ -95,6 +114,17 @@ function AssignDialog({ item, onClose }: AssignDialogProps) {
   const [debouncedSearch, setDebouncedSearch] = useState('');
   const [documentType, setDocumentType] = useState(guessDocumentType(item));
   const [syncToBitrix, setSyncToBitrix] = useState(true);
+  const { stem: originalStem, extension } = useMemo(
+    () => splitDocumentName(item.attachment.filename),
+    [item.attachment.filename],
+  );
+  const maxStemLength = Math.max(1, MAX_DOCUMENT_NAME_LENGTH - extension.length);
+  const defaultStem = originalStem.slice(0, maxStemLength);
+  const [documentName, setDocumentName] = useState(defaultStem);
+  const normalizedStem = sanitizeDocumentStem(documentName, maxStemLength);
+  const nameIsValid = normalizedStem.length > 0;
+  const finalFilename = `${normalizedStem}${extension}`;
+  const isRenamed = normalizedStem !== originalStem;
 
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(clientSearch), 300);
@@ -114,18 +144,23 @@ function AssignDialog({ item, onClose }: AssignDialogProps) {
       assignChatDocument(item.message_id, {
         client_id: clientId,
         document_type: documentType,
+        filename: finalFilename,
         sync_to_bitrix: syncToBitrix,
       }),
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ['chatDocumentInbox'] });
       queryClient.invalidateQueries({ queryKey: ['chatDocumentInboxCount'] });
-      if (result.bitrix_sync_status === 'not_scheduled') {
+      if (result.duplicate) {
+        toast.info('Файл уже есть в карточке', {
+          description: `Привязан существующий документ «${result.document_name ?? ''}». Имя не менялось.`,
+        });
+      } else if (result.bitrix_sync_status === 'not_scheduled') {
         toast.success('Документ прикреплён к клиенту', {
-          description: 'Клиент ещё не синхронизирован с Битрикс24 — файл отправится позже.',
+          description: `Сохранён как «${result.document_name ?? finalFilename}». Клиент ещё не синхронизирован с Битрикс24 — файл отправится позже.`,
         });
       } else {
         toast.success('Документ прикреплён к клиенту', {
-          description: 'Файл добавлен в карточку и отправлен в Битрикс24.',
+          description: `Сохранён как «${result.document_name ?? finalFilename}» и отправлен в Битрикс24.`,
         });
       }
       onClose();
@@ -276,6 +311,45 @@ function AssignDialog({ item, onClose }: AssignDialogProps) {
             />
           </div>
 
+          <div>
+            <div className="mb-1.5 flex items-center justify-between gap-3">
+              <p className="text-xs font-semibold text-gray-600">Имя документа</p>
+              {isRenamed && (
+                <button
+                  type="button"
+                  onClick={() => setDocumentName(defaultStem)}
+                  className="text-xs font-medium text-blue-600 hover:text-blue-700"
+                >
+                  Вернуть исходное
+                </button>
+              )}
+            </div>
+            <div
+              className={`flex items-center gap-2 rounded-lg border px-3 py-2 ${
+                nameIsValid ? 'border-gray-300' : 'border-red-300'
+              }`}
+            >
+              <input
+                value={documentName}
+                onChange={(event) => setDocumentName(event.target.value.replace(FORBIDDEN_NAME_CHARS, ' '))}
+                maxLength={maxStemLength}
+                placeholder="Например, Паспорт_Иванов"
+                aria-label="Имя документа"
+                className="w-full bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+              />
+              {extension && (
+                <span className="flex-shrink-0 rounded-md bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                  {extension}
+                </span>
+              )}
+            </div>
+            <p className={`mt-1 text-xs ${nameIsValid ? 'text-gray-400' : 'text-red-600'}`}>
+              {nameIsValid
+                ? 'Так документ будет называться в карточке и на Диске Битрикса. Расширение не меняется.'
+                : 'Укажите имя документа'}
+            </p>
+          </div>
+
           <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-gray-200 px-4 py-3">
             <input
               type="checkbox"
@@ -308,7 +382,7 @@ function AssignDialog({ item, onClose }: AssignDialogProps) {
           <button
             type="button"
             onClick={() => assignMutation.mutate()}
-            disabled={!clientId || assignMutation.isPending}
+            disabled={!clientId || !nameIsValid || assignMutation.isPending}
             className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {assignMutation.isPending && <Loader2 className="h-4 w-4 animate-spin" />}

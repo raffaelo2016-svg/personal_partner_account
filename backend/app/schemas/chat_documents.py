@@ -29,6 +29,8 @@ class ChatDocumentAssignmentRead(BaseModel):
     document_type: str | None = None
     file_id: str | None = None
     assigned_at: datetime | None = None
+    document_name: str | None = None
+    duplicate: bool = False
     bitrix_sync_status: str | None = None
     bitrix_sync_error_code: str | None = None
 
@@ -55,6 +57,8 @@ class ChatDocumentInboxResponse(PaginatedResponse[ChatDocumentInboxItem]):
 class ChatDocumentAssignRequest(BaseModel):
     client_id: str = Field(min_length=1, max_length=64)
     document_type: str = Field(min_length=1, max_length=100)
+    # Admin-editable document name; extension must match the chat attachment.
+    filename: str | None = Field(default=None, max_length=300)
     sync_to_bitrix: bool = True
 
 

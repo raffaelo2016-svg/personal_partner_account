@@ -26,6 +26,8 @@ export interface ChatDocumentAssignment {
   document_type?: string | null;
   file_id?: string | null;
   assigned_at?: string | null;
+  document_name?: string | null;
+  duplicate?: boolean;
   bitrix_sync_status?: string | null;
   bitrix_sync_error_code?: string | null;
 }
@@ -87,7 +89,7 @@ export async function fetchChatDocumentItem(messageId: string): Promise<ChatDocu
 
 export async function assignChatDocument(
   messageId: string,
-  payload: { client_id: string; document_type: string; sync_to_bitrix: boolean },
+  payload: { client_id: string; document_type: string; filename: string; sync_to_bitrix: boolean },
 ): Promise<ChatDocumentAssignment> {
   const res = await apiClient.post<ChatDocumentAssignment>(
     `/admin/chat/document-inbox/items/${messageId}/assign`,

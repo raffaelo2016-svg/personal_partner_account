@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import hashlib
 import mimetypes
+import re
 import uuid
 from datetime import UTC, datetime
+from pathlib import PurePosixPath
 from typing import Literal
 
 import structlog
@@ -62,6 +64,38 @@ ASSIGNABLE_DOCUMENT_TYPES = frozenset(DOCUMENT_TYPE_LABELS)
 
 MIN_CANDIDATE_SCORE = 40
 MAX_CANDIDATES = 3
+MAX_DOCUMENT_NAME_LENGTH = 120
+_FORBIDDEN_NAME_CHARS = re.compile(r'[\\/:*?"<>|\x00-\x1f]')
+
+
+def normalize_document_name(requested: str | None, *, original_name: str) -> str:
+    """Sanitize an admin-supplied document name and keep the source extension."""
+    original = PurePosixPath((original_name or "документ").replace("\\", "/")).name
+    original_extension = PurePosixPath(original).suffix
+    extension = original_extension.lower()
+
+    if not requested or not requested.strip():
+        return original[:500] or "документ"
+
+    candidate = requested.replace("\\", "/").rsplit("/", 1)[-1]
+    candidate = _FORBIDDEN_NAME_CHARS.sub(" ", candidate)
+    candidate = " ".join(candidate.split()).strip(" .")
+    if not candidate:
+        raise BadRequest("Укажите имя документа")
+    if not extension:
+        return candidate[:MAX_DOCUMENT_NAME_LENGTH]
+
+    candidate_extension = PurePosixPath(candidate).suffix.lower()
+    if extension and candidate_extension and candidate_extension != extension:
+        raise BadRequest("Расширение файла менять нельзя")
+
+    stem = candidate[: -len(candidate_extension)] if candidate_extension else candidate
+    stem = stem.strip(" .") or "документ"
+    max_stem_length = MAX_DOCUMENT_NAME_LENGTH - len(original_extension)
+    stem = stem[:max_stem_length].strip(" .") or "документ"
+    return f"{stem}{original_extension}"
+
+
 
 
 def _normalize(value: str | None) -> str:
@@ -126,6 +160,7 @@ def _assignment_read(
     *,
     client_name: str | None,
     file: FileUpload | None,
+    duplicate: bool = False,
 ) -> ChatDocumentAssignmentRead:
     return ChatDocumentAssignmentRead(
         message_id=str(assignment.chat_message_id),
@@ -135,6 +170,8 @@ def _assignment_read(
         document_type=assignment.document_type,
         file_id=str(assignment.file_id) if assignment.file_id else None,
         assigned_at=assignment.assigned_at,
+        document_name=file.original_name if file else None,
+        duplicate=duplicate,
         bitrix_sync_status=file.bitrix_sync_status if file else None,
         bitrix_sync_error_code=file.bitrix_sync_error_code if file else None,
     )
@@ -386,6 +423,7 @@ async def assign_attachment(
     client_id: str,
     document_type: str,
     assigned_by: uuid.UUID,
+    filename: str | None = None,
     sync_to_bitrix: bool = True,
 ) -> tuple[ChatDocumentAssignmentRead, ChatMessage]:
     """Copy a chat attachment into the client card and return the system note."""
@@ -393,6 +431,8 @@ async def assign_attachment(
         raise BadRequest("Unknown document type")
 
     message, room = await _get_message_with_room(db, message_id)
+    source_name = message.attachment_filename or "документ"
+    requested_name = normalize_document_name(filename, original_name=source_name)
 
     client = await db.get(Client, client_id)
     if client is None or client.deleted_at is not None:
@@ -424,19 +464,21 @@ async def assign_attachment(
     duplicate = file_record is not None
     created_s3_key: str | None = None
 
+    document_name = file_record.original_name if file_record is not None else requested_name
+    actual_document_type = file_record.document_type if file_record is not None else document_type
+
     if file_record is None:
-        original_name = message.attachment_filename or "документ"
         mime_type = (
             message.attachment_mime_type
-            or mimetypes.guess_type(original_name)[0]
+            or mimetypes.guess_type(source_name)[0]
             or "application/octet-stream"
         )
         try:
-            created_s3_key = await upload_file_async(data, original_name, mime_type)
+            created_s3_key = await upload_file_async(data, requested_name, mime_type)
             file_record = FileUpload(
                 client_id=client.id,
                 document_type=document_type,
-                original_name=original_name,
+                original_name=requested_name,
                 s3_key=created_s3_key,
                 size=len(data),
                 mime_type=mime_type,
@@ -464,7 +506,7 @@ async def assign_attachment(
             chat_message_id=message.id,
             client_id=client.id,
             file_id=file_record.id,
-            document_type=document_type,
+            document_type=actual_document_type,
             status="assigned",
             assigned_by=assigned_by,
             assigned_at=assigned_at,
@@ -474,7 +516,7 @@ async def assign_attachment(
         assignment = existing
         assignment.client_id = client.id
         assignment.file_id = file_record.id
-        assignment.document_type = document_type
+        assignment.document_type = actual_document_type
         assignment.status = "assigned"
         assignment.assigned_by = assigned_by
         assignment.assigned_at = assigned_at
@@ -484,8 +526,13 @@ async def assign_attachment(
         sender_id=None,
         sender_type="system",
         text=(
-            f"Документ «{message.attachment_filename or 'файл'}» прикреплён "
-            f"к клиенту {client.full_name} · {_document_type_label(document_type)}"
+            f"Файл «{source_name}» прикреплён как «{document_name}» "
+            f"к клиенту {client.full_name} · {_document_type_label(actual_document_type)}"
+            if document_name != source_name
+            else (
+                f"Документ «{source_name}» прикреплён "
+                f"к клиенту {client.full_name} · {_document_type_label(actual_document_type)}"
+            )
         ),
         delivery_status="sent",
         origin="cabinet",
@@ -501,7 +548,10 @@ async def assign_attachment(
         details={
             "client_id": str(client.id),
             "file_id": str(file_record.id),
-            "document_type": document_type,
+            "document_type": actual_document_type,
+            "source_name": source_name,
+            "requested_name": requested_name,
+            "final_name": document_name,
             "duplicate": duplicate,
             "sync_to_bitrix": sync_to_bitrix,
         },
@@ -514,7 +564,12 @@ async def assign_attachment(
     )
 
     return (
-        _assignment_read(assignment, client_name=client.full_name, file=file_record),
+        _assignment_read(
+            assignment,
+            client_name=client.full_name,
+            file=file_record,
+            duplicate=duplicate,
+        ),
         note,
     )
 
