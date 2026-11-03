@@ -9,6 +9,21 @@ from app.core.dependencies import require_role
 from app.database import get_db
 from app.models.user import User
 from app.schemas.chat import ChatMessageCreate, ChatMessageEventRead, ChatMessageRead, ChatRoomRead
+from app.schemas.chat_documents import (
+    ChatDocumentAssignmentRead,
+    ChatDocumentAssignRequest,
+    ChatDocumentInboxCount,
+    ChatDocumentInboxItem,
+    ChatDocumentInboxResponse,
+)
+from app.schemas.pagination import PaginationParams
+from app.services.chat_documents import (
+    assign_attachment,
+    count_unassigned,
+    get_inbox_item,
+    ignore_attachment,
+    list_inbox,
+)
 from app.services.chat_service import (
     delete_message,
     get_admin_message_events,
@@ -147,3 +162,80 @@ async def admin_delete_message(
     await db.commit()
 
     await broadcast_message_deleted(room_id, message_id)
+
+
+# ── Documents received in chat ──────────────────────────────────────
+
+
+@router.get("/document-inbox", response_model=ChatDocumentInboxResponse)
+async def chat_document_inbox(
+    status: Literal["unassigned", "assigned", "ignored", "all"] = Query("unassigned"),  # noqa: B008
+    partner_id: str | None = Query(None),  # noqa: B008
+    search: str | None = Query(None, max_length=100),  # noqa: B008
+    pagination: PaginationParams = Depends(),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    return await list_inbox(
+        db,
+        status=status,
+        partner_id=partner_id,
+        search=search,
+        page=pagination.page,
+        page_size=pagination.page_size,
+    )
+
+
+@router.get("/document-inbox/count", response_model=ChatDocumentInboxCount)
+async def chat_document_inbox_count(
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    return ChatDocumentInboxCount(unassigned=await count_unassigned(db))
+
+
+@router.get("/document-inbox/items/{message_id}", response_model=ChatDocumentInboxItem)
+async def chat_document_inbox_item(
+    message_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    return await get_inbox_item(db, message_id)
+
+
+@router.post("/document-inbox/items/{message_id}/assign", response_model=ChatDocumentAssignmentRead)
+async def assign_chat_document(
+    message_id: str,
+    body: ChatDocumentAssignRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    from app.services.chat_service import _msg_to_read
+
+    assignment, note = await assign_attachment(
+        db,
+        message_id=message_id,
+        client_id=body.client_id,
+        document_type=body.document_type,
+        assigned_by=current_user.id,
+        sync_to_bitrix=body.sync_to_bitrix,
+    )
+    await db.commit()
+
+    await broadcast_new_message(
+        _message_payload(_msg_to_read(note)),
+        exclude_user_id=str(current_user.id),
+        room_id=str(note.room_id),
+    )
+    return assignment
+
+
+@router.post("/document-inbox/items/{message_id}/ignore", response_model=ChatDocumentAssignmentRead)
+async def ignore_chat_document(
+    message_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(require_role("admin")),  # noqa: B008
+):
+    assignment = await ignore_attachment(db, message_id=message_id, assigned_by=current_user.id)
+    await db.commit()
+    return assignment
