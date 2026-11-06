@@ -11,7 +11,7 @@ import { fetchAdminClients } from '../api/clients';
 import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import { toast } from 'sonner';
 import CustomSelect from '../components/ui/CustomSelect';
-import DateInput from '../components/ui/DateInput';
+import { formatTaskDeadline, isTaskOverdue, taskDeadlineFields, taskDeadlinePayload, taskDeadlineTimestamp, taskDisplayStatus } from '../utils/taskDeadline';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
 
@@ -103,6 +103,8 @@ export default function AdminTasks() {
     description: string;
     priority: string;
     due_date: string;
+    due_time: string;
+    deadlineChanged: boolean;
   } | null>(null);
 
   const handleEditTask = (e: React.FormEvent) => {
@@ -115,7 +117,7 @@ export default function AdminTasks() {
           title: editingTask.title.trim(),
           description: editingTask.description.trim() || undefined,
           priority: editingTask.priority,
-          due_date: editingTask.due_date,
+          ...(editingTask.deadlineChanged ? taskDeadlinePayload(editingTask.due_date, editingTask.due_time) : {}),
         },
       },
       {
@@ -141,31 +143,29 @@ export default function AdminTasks() {
     client_id: '',
     priority: 'low',
     due_date: '',
+    due_time: '',
   });
 
   const resetNewTask = () => {
-    setNewTask({ title: '', description: '', client_id: '', priority: 'low', due_date: '' });
+    setNewTask({ title: '', description: '', client_id: '', priority: 'low', due_date: '', due_time: '' });
     setSelectedPartnerId('');
   };
 
   const handleCreateTask = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newTask.title.trim() || !selectedPartnerId || !newTask.due_date) {
-      toast.error('Заполните обязательные поля: название, партнёр и срок выполнения');
-      return;
-    }
-    if (partnerClients.length > 0 && !newTask.client_id) {
-      toast.error('Выберите клиента партнёра');
+    if (!newTask.title.trim() || !selectedPartnerId) {
+      toast.error('Заполните обязательные поля: название и партнёр');
       return;
     }
     createTaskMutation.mutate(
       {
-        client_id: newTask.client_id,
+        client_id: newTask.client_id || undefined,
+        partner_id: selectedPartnerId,
         title: newTask.title.trim(),
         description: newTask.description.trim() || undefined,
         priority: newTask.priority,
         assigned_to: 'partner',
-        due_date: newTask.due_date,
+        ...taskDeadlinePayload(newTask.due_date, newTask.due_time),
       },
       {
         onSuccess: () => {
@@ -189,11 +189,14 @@ export default function AdminTasks() {
     id: t.id,
     title: t.title,
     description: t.description ?? '',
-    client: { id: t.client_id, name: t.client_name ?? '' },
+    client: { id: t.client_id, name: t.client_name ?? 'Общая задача' },
+    partnerName: t.partner_name,
     assignedTo: t.assigned_to as 'partner' | 'uritech',
     status: t.status as 'pending' | 'in_progress' | 'completed' | 'overdue',
     priority: t.priority as 'low' | 'medium' | 'high',
-    dueDate: t.due_date,
+    due_date: t.due_date,
+    due_at: t.due_at,
+    displayStatus: taskDisplayStatus(t),
     createdAt: t.created_at,
     completedAt: t.completed_at ?? undefined,
     bitrixSyncStatus: t.bitrix_sync_status,
@@ -202,21 +205,13 @@ export default function AdminTasks() {
 
   const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
 
-  const isTaskOverdue = (task: { status: string; dueDate: string }) => {
-    if (task.status === 'completed') return false;
-    if (task.status === 'overdue') return true;
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return new Date(task.dueDate) < today;
-  };
-
   const filteredTasks = [...tasks]
     .filter((t) => !onlyOverdue || isTaskOverdue(t))
     .sort((a, b) => {
       const pa = priorityWeight[a.priority] ?? 3;
       const pb = priorityWeight[b.priority] ?? 3;
       if (pa !== pb) return pa - pb;
-      return new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime();
+      return (taskDeadlineTimestamp(a) ?? Infinity) - (taskDeadlineTimestamp(b) ?? Infinity);
     });
 
   const getStatusInfo = (status: string) => {
@@ -236,16 +231,6 @@ export default function AdminTasks() {
       high: { label: 'Высокий', color: 'bg-red-100 text-red-700' },
     };
     return priorityMap[priority as keyof typeof priorityMap] || priorityMap.low;
-  };
-
-  const getDaysRemaining = (dueDate: string) => {
-    const today = new Date();
-    const due = new Date(dueDate);
-    const diff = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
-    if (diff < 0) return `Просрочено на ${Math.abs(diff)} дн.`;
-    if (diff === 0) return 'Сегодня';
-    if (diff === 1) return 'Завтра';
-    return `Осталось ${diff} дн.`;
   };
 
   const stats = {
@@ -421,7 +406,7 @@ export default function AdminTasks() {
       ) : (
         <div className="space-y-3">
           {filteredTasks.map((task) => {
-            const statusInfo = getStatusInfo(task.status);
+            const statusInfo = getStatusInfo(task.displayStatus);
             const priorityInfo = getPriorityInfo(task.priority);
             const StatusIcon = statusInfo.icon;
 
@@ -433,11 +418,11 @@ export default function AdminTasks() {
                 <div className="flex items-start gap-4">
                   <div className={`w-12 h-12 rounded-xl flex items-center justify-center ${
                     task.status === 'completed' ? 'bg-green-50' :
-                    task.status === 'overdue' ? 'bg-red-50' : 'bg-indigo-50'
+                    task.displayStatus === 'overdue' ? 'bg-red-50' : 'bg-indigo-50'
                   }`}>
                     <CheckSquare className={`w-6 h-6 ${
                       task.status === 'completed' ? 'text-green-600' :
-                      task.status === 'overdue' ? 'text-red-600' : 'text-indigo-600'
+                      task.displayStatus === 'overdue' ? 'text-red-600' : 'text-indigo-600'
                     }`} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -448,10 +433,11 @@ export default function AdminTasks() {
                       </div>
                       <div className="flex items-center gap-2">
                         <CustomSelect
-                          value={task.status}
+                          value={task.displayStatus}
                           onChange={(val) => handleStatusChange(task.id, val)}
                           options={[
                             { value: 'pending', label: 'Ожидает' },
+                            ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
                             { value: 'in_progress', label: 'В работе' },
                             { value: 'completed', label: 'Выполнено' },
                           ]}
@@ -464,7 +450,8 @@ export default function AdminTasks() {
                             title: task.title,
                             description: task.description,
                             priority: task.priority,
-                            due_date: task.dueDate,
+                            ...taskDeadlineFields(task),
+                            deadlineChanged: false,
                           })}
                           className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
                           title="Редактировать задачу"
@@ -483,11 +470,11 @@ export default function AdminTasks() {
                     <div className="flex items-center gap-6 text-sm">
                       <span className="flex items-center gap-2 text-gray-700">
                         <User className="w-4 h-4" />
-                        {task.client.name}
+                        {task.partnerName ? `${task.partnerName} • ${task.client.name}` : task.client.name}
                       </span>
                       <div className="flex items-center gap-2 text-gray-600">
                         <Calendar className="w-4 h-4" />
-                        {getDaysRemaining(task.dueDate)}
+                        {formatTaskDeadline(task)}
                       </div>
                       <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${priorityInfo.color}`}>
                         {priorityInfo.label}
@@ -589,23 +576,23 @@ export default function AdminTasks() {
               {selectedPartnerId && partnerClients.length > 0 && (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Клиент партнёра <span className="text-red-500">*</span>
+                    Клиент партнёра (необязательно)
                   </label>
                   <CustomSelect
                     value={newTask.client_id}
                     onChange={(val) => setNewTask({ ...newTask, client_id: val })}
                     options={[
-                      { value: '', label: 'Выберите клиента' },
+                      { value: '', label: 'Общая задача без клиента' },
                       ...partnerClients.map((c) => ({ value: c.id, label: c.full_name })),
                     ]}
-                    placeholder="Выберите клиента"
+                    placeholder="Общая задача без клиента"
                     size="lg"
                   />
                 </div>
               )}
               {selectedPartnerId && partnerClients.length === 0 && (
                 <div className="p-3 bg-yellow-50 border border-yellow-200 rounded-xl text-sm text-yellow-700">
-                  У этого партнёра нет клиентов
+                  Задача будет назначена партнёру без привязки к клиенту
                 </div>
               )}
               <div className="grid grid-cols-2 gap-4">
@@ -626,13 +613,29 @@ export default function AdminTasks() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Срок выполнения <span className="text-red-500">*</span>
+                    Срок выполнения (МСК)
                   </label>
-                  <DateInput
-                    value={newTask.due_date}
-                    onChange={(val) => setNewTask({ ...newTask, due_date: val })}
-                    required
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      aria-label="Дата срока (МСК)"
+                      value={newTask.due_date}
+                      onChange={(e) => setNewTask({ ...newTask, due_date: e.target.value, due_time: e.target.value ? newTask.due_time : '' })}
+                      className="w-full min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm"
+                    />
+                    <input
+                      type="time"
+                      aria-label="Время срока (МСК)"
+                      value={newTask.due_time}
+                      disabled={!newTask.due_date}
+                      onChange={(e) => setNewTask({ ...newTask, due_time: e.target.value })}
+                      className="w-28 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm disabled:opacity-50"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">Без времени — до конца дня. Без даты — без срока.</p>
+                  {newTask.due_date && (
+                    <button type="button" onClick={() => setNewTask({ ...newTask, due_date: '', due_time: '' })} className="mt-1 text-xs text-gray-500 hover:text-gray-700">Убрать срок</button>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3 pt-4">
@@ -711,13 +714,29 @@ export default function AdminTasks() {
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Срок выполнения
+                    Срок выполнения (МСК)
                   </label>
-                  <DateInput
-                    value={editingTask.due_date}
-                    onChange={(val) => setEditingTask({ ...editingTask, due_date: val })}
-                    required
-                  />
+                  <div className="flex gap-2">
+                    <input
+                      type="date"
+                      aria-label="Дата срока (МСК)"
+                      value={editingTask.due_date}
+                      onChange={(e) => setEditingTask({ ...editingTask, due_date: e.target.value, due_time: e.target.value ? editingTask.due_time : '', deadlineChanged: true })}
+                      className="w-full min-w-0 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm"
+                    />
+                    <input
+                      type="time"
+                      aria-label="Время срока (МСК)"
+                      value={editingTask.due_time}
+                      disabled={!editingTask.due_date}
+                      onChange={(e) => setEditingTask({ ...editingTask, due_time: e.target.value, deadlineChanged: true })}
+                      className="w-28 px-3 py-2.5 bg-white border border-gray-200 rounded-xl text-sm disabled:opacity-50"
+                    />
+                  </div>
+                  <p className="mt-2 text-xs text-gray-500">Без времени — до конца дня. Без даты — без срока.</p>
+                  {editingTask.due_date && (
+                    <button type="button" onClick={() => setEditingTask({ ...editingTask, due_date: '', due_time: '', deadlineChanged: true })} className="mt-1 text-xs text-gray-500 hover:text-gray-700">Убрать срок</button>
+                  )}
                 </div>
               </div>
               <div className="flex gap-3 pt-4">

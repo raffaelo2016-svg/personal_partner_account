@@ -1,6 +1,17 @@
 import { useState, useMemo, useEffect, useCallback } from 'react';
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Save, Upload, X, FileText, Check, Loader2, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft,
+  Save,
+  Upload,
+  X,
+  FileText,
+  Check,
+  Loader2,
+  Trash2,
+  Building2,
+  WandSparkles,
+} from 'lucide-react';
 import { Link } from 'react-router';
 import { useCreateClient, useClient, useUpdateClient, useDeleteClient } from '../hooks/useClients';
 import { useQueryClient } from '@tanstack/react-query';
@@ -14,7 +25,7 @@ import { clientFormSchema } from '@/app/schemas/client';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import { syntheticChange } from '../utils/form';
-import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_LABEL } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, partitionFiles, formatFileSize, uploadAllSettled, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
 
 interface UploadedFile {
   file: File;
@@ -27,6 +38,7 @@ interface DocumentUploads {
 
 const EMPTY_FORM = {
   type: 'before_court',
+  documentPreparationMode: 'uritech' as 'uritech' | 'partner',
   caseNumber: '',
   fullName: '',
   dateOfBirth: '',
@@ -42,6 +54,13 @@ const EMPTY_FORM = {
   phone: '',
   email: '',
 };
+
+const DOCUMENT_TYPES = [
+  { id: 'passport', label: 'Паспорт' },
+  { id: 'snils', label: 'СНИЛС' },
+  { id: 'inn_certificate', label: 'ИНН' },
+  { id: 'other', label: 'Прочие документы' },
+] as const;
 
 function formatSnils(value: string): string {
   const digits = value.replace(/\D/g, '').slice(0, 11);
@@ -74,6 +93,7 @@ export default function ClientForm() {
     if (isEditMode && existingClient && !formInitialized) {
       setFormData({
         type: existingClient.type || 'before_court',
+        documentPreparationMode: existingClient.document_preparation_mode || 'uritech',
         caseNumber: existingClient.case_number || '',
         fullName: existingClient.full_name || '',
         dateOfBirth: existingClient.date_of_birth?.split('T')[0] || '',
@@ -101,6 +121,7 @@ export default function ClientForm() {
   const [isUploading, setIsUploading] = useState(false);
   const [phoneError, setPhoneError] = useState('');
   const [emailError, setEmailError] = useState('');
+  const [regionError, setRegionError] = useState('');
 
   const uploadAllFiles = useCallback(async (clientId: string) => {
     const allFiles: { file: File; docType: string }[] = [];
@@ -134,6 +155,12 @@ export default function ClientForm() {
     e.preventDefault();
     setPhoneError('');
     setEmailError('');
+    setRegionError('');
+
+    if (!formData.region) {
+      setRegionError('Выберите регион');
+      return;
+    }
 
     const phoneErr = validatePhoneFieldOptional(formData.phone);
     if (phoneErr) {
@@ -154,10 +181,13 @@ export default function ClientForm() {
 
     const payload: Record<string, unknown> = {
       type: formData.type,
+      document_preparation_mode:
+        formData.type === 'before_court' ? formData.documentPreparationMode : 'uritech',
       full_name: formData.fullName,
       phone: normalizePhoneForApi(formData.phone),
       email: emailTrim || null,
       case_number: formData.caseNumber || null,
+      region: formData.region,
     };
 
     if (formData.type === 'before_court') {
@@ -169,7 +199,6 @@ export default function ClientForm() {
       payload.registration_address = formData.registrationAddress || null;
       payload.inn = formData.inn || null;
       payload.snils = formData.snils || null;
-      payload.region = formData.region || null;
       payload.arbitrage_court = formData.arbitrageCourt || null;
     }
 
@@ -205,7 +234,11 @@ export default function ClientForm() {
           } else {
             toast.success('Клиент создан');
           }
-          navigate(`/dashboard/clients/${data.id}`);
+          navigate(
+            formData.type === 'before_court' && formData.documentPreparationMode === 'partner'
+              ? `/dashboard/clients/${data.id}/documents`
+              : `/dashboard/clients/${data.id}`,
+          );
         },
         onError: (err) => {
           captureError(err, { context: 'client_create' });
@@ -219,6 +252,7 @@ export default function ClientForm() {
     const { name, value } = e.target;
     if (name === 'region') {
       const court = getCourtForRegion(value);
+      setRegionError('');
       setFormData({
         ...formData,
         region: value,
@@ -236,10 +270,10 @@ export default function ClientForm() {
 
       const errors: string[] = [];
       if (invalidFormat.length > 0) {
-        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX`);
+        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
       }
       if (tooLarge.length > 0) {
-        errors.push(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
+        errors.push(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}`);
       }
       if (errors.length > 0) {
         setUploadError(errors.join('. '));
@@ -270,10 +304,10 @@ export default function ClientForm() {
       const { valid, invalidFormat, tooLarge } = partitionFiles(files);
 
       if (invalidFormat.length > 0) {
-        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX`);
+        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
       }
       if (tooLarge.length > 0) {
-        toast.error(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
+        toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
       }
 
       if (valid.length > 0) {
@@ -296,25 +330,6 @@ export default function ClientForm() {
     });
   };
 
-  const requiredDocuments = [
-    { id: 'passport', label: 'Паспорт', required: true },
-    { id: 'snils', label: 'СНИЛС', required: true },
-    { id: 'inn_certificate', label: 'Свидетельство ИНН', required: true },
-    { id: 'children_birth_cert', label: 'Свидетельство о рождении детей', required: false },
-    { id: 'marriage_cert', label: 'Свидетельство о заключении/расторжении брака', required: false },
-    { id: 'employment_history', label: 'Справка о сведениях о трудовой деятельности из информационных ресурсов Пенсионного фонда', required: true },
-    { id: 'pension_account', label: 'Справка, содержащая сведения о состоянии индивидуального лицевого счета застрахованного лица', required: true },
-    { id: 'tax_registry', label: 'Выписка из Единого государственного реестра налогоплательщиков', required: true },
-    { id: 'no_ip_status', label: 'Справка об отсутствии статуса ИП', required: true },
-    { id: 'ndfl_2', label: 'Справки 2-НДФЛ (за последние три года)', required: true },
-    { id: 'tax_debt', label: 'Справка об исполнении обязанности по уплате налогов, сборов, страховых взносов, пеней, штрафов, процентов', required: true },
-    { id: 'credit_debt', label: 'Справка о задолженности по кредитным обязательствам', required: true },
-    { id: 'credit_agreements', label: 'Копии кредитных договоров', required: true },
-    { id: 'criminal_record', label: 'Справка о наличии (отсутствии) судимости', required: true },
-    { id: 'deposit_payment', label: 'Квитанция по оплате 25000 на депозит', required: true },
-    { id: 'other', label: 'Прочее', required: false },
-  ];
-  
   const selectedCourt = useMemo(
     () => (formData.region ? getCourtForRegion(formData.region) : null),
     [formData.region],
@@ -390,6 +405,66 @@ export default function ClientForm() {
             </label>
           </div>
         </div>
+
+        {formData.type === 'before_court' ? (
+          <div id="document-preparation" className="bg-white rounded-xl border border-gray-200 p-6 mb-6 scroll-mt-6">
+            <div className="mb-5">
+              <h2 className="text-lg font-semibold text-gray-900">
+                Кто подготовит документы для подачи в суд
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                В обоих вариантах сначала создаётся карточка клиента и загружается базовый комплект файлов.
+              </p>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <label className="relative flex cursor-pointer items-start gap-4 rounded-xl border-2 border-gray-200 p-5 transition-colors hover:border-blue-400 has-[:checked]:border-blue-500 has-[:checked]:bg-blue-50">
+                <input
+                  type="radio"
+                  name="documentPreparationMode"
+                  value="uritech"
+                  checked={formData.documentPreparationMode === 'uritech'}
+                  onChange={handleChange}
+                  className="sr-only"
+                />
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-blue-100 text-blue-700">
+                  <Building2 className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block pr-6 font-semibold text-gray-900">Документы готовит ЮРИТЕХ</span>
+                  <span className="mt-1 block text-sm leading-5 text-gray-600">
+                    Партнёр загружает базовые документы. Команда ЮРИТЕХ формирует комплект и передаёт его в суд.
+                  </span>
+                </span>
+                {formData.documentPreparationMode === 'uritech' ? (
+                  <Check className="absolute right-4 top-4 h-5 w-5 text-blue-600" aria-hidden="true" />
+                ) : null}
+              </label>
+
+              <label className="relative flex cursor-pointer items-start gap-4 rounded-xl border-2 border-gray-200 p-5 transition-colors hover:border-violet-400 has-[:checked]:border-violet-500 has-[:checked]:bg-violet-50">
+                <input
+                  type="radio"
+                  name="documentPreparationMode"
+                  value="partner"
+                  checked={formData.documentPreparationMode === 'partner'}
+                  onChange={handleChange}
+                  className="sr-only"
+                />
+                <span className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl bg-violet-100 text-violet-700">
+                  <WandSparkles className="h-5 w-5" aria-hidden="true" />
+                </span>
+                <span>
+                  <span className="block pr-6 font-semibold text-gray-900">Партнёр формирует документы сам</span>
+                  <span className="mt-1 block text-sm leading-5 text-gray-600">
+                    После создания карточки партнёр заполняет расширенные сведения и формирует три документа в кабинете.
+                  </span>
+                </span>
+                {formData.documentPreparationMode === 'partner' ? (
+                  <Check className="absolute right-4 top-4 h-5 w-5 text-violet-600" aria-hidden="true" />
+                ) : null}
+              </label>
+            </div>
+          </div>
+        ) : null}
         
         {/* Форма для клиента УЖЕ в суде */}
         {formData.type === 'in_court' && (
@@ -411,6 +486,26 @@ export default function ClientForm() {
                   placeholder="А40-123456/2026"
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              <div>
+                <label htmlFor="client-region-in-court" className="block text-sm font-medium text-gray-700 mb-1">
+                  Регион <span className="text-red-500">*</span>
+                </label>
+                <CustomSelect
+                  id="client-region-in-court"
+                  searchable
+                  value={formData.region}
+                  onChange={(val) => handleChange(syntheticChange('region', val))}
+                  groups={REGION_GROUPS.map((group) => ({
+                    label: group.district,
+                    options: group.regions.map((r) => ({ value: r.name, label: r.name })),
+                  }))}
+                  placeholder="Начните вводить регион"
+                  size="lg"
+                  triggerClassName={regionError ? 'border-red-500' : ''}
+                />
+                {regionError ? <p className="text-sm text-red-500 mt-1">{regionError}</p> : null}
               </div>
               
               <div>
@@ -500,12 +595,11 @@ export default function ClientForm() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Дата рождения <span className="text-red-500">*</span>
+                    Дата рождения
                   </label>
                   <DateInput
                     value={formData.dateOfBirth}
                     onChange={(val) => handleChange(syntheticChange('dateOfBirth', val))}
-                    required
                   />
                 </div>
 
@@ -553,7 +647,7 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Серия паспорта <span className="text-red-500">*</span>
+                      Серия паспорта
                     </label>
                     <input
                       type="text"
@@ -562,7 +656,6 @@ export default function ClientForm() {
                       name="passportSeries"
                       value={formData.passportSeries}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="1234"
                       maxLength={4}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -570,7 +663,7 @@ export default function ClientForm() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Номер паспорта <span className="text-red-500">*</span>
+                      Номер паспорта
                     </label>
                     <input
                       type="text"
@@ -579,7 +672,6 @@ export default function ClientForm() {
                       name="passportNumber"
                       value={formData.passportNumber}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="567890"
                       maxLength={6}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -590,25 +682,23 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Дата выдачи <span className="text-red-500">*</span>
+                      Дата выдачи
                     </label>
                     <DateInput
                       value={formData.passportIssueDate}
                       onChange={(val) => handleChange(syntheticChange('passportIssueDate', val))}
-                      required
                     />
                   </div>
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Кем выдан <span className="text-red-500">*</span>
+                    Кем выдан
                   </label>
                   <textarea
                     name="passportIssuedBy"
                     value={formData.passportIssuedBy}
                     onChange={handleChange}
-                    required
                     placeholder="Отделением УФМС России..."
                     rows={2}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -617,13 +707,12 @@ export default function ClientForm() {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Адрес регистрации <span className="text-red-500">*</span>
+                    Адрес регистрации
                   </label>
                   <textarea
                     name="registrationAddress"
                     value={formData.registrationAddress}
                     onChange={handleChange}
-                    required
                     placeholder="г. Москва, ул. Примерная, д. 1, кв. 1"
                     rows={2}
                     className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -633,7 +722,7 @@ export default function ClientForm() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      ИНН <span className="text-red-500">*</span>
+                      ИНН
                     </label>
                     <input
                       type="text"
@@ -642,7 +731,6 @@ export default function ClientForm() {
                       name="inn"
                       value={formData.inn}
                       onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
-                      required
                       placeholder="123456789012"
                       maxLength={12}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -650,7 +738,7 @@ export default function ClientForm() {
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-gray-700 mb-1">
-                      СНИЛС <span className="text-red-500">*</span>
+                      СНИЛС
                     </label>
                     <input
                       type="text"
@@ -658,7 +746,6 @@ export default function ClientForm() {
                       name="snils"
                       value={formData.snils}
                       onChange={(e) => { e.target.value = formatSnils(e.target.value); handleChange(e); }}
-                      required
                       placeholder="123-456-789 00"
                       maxLength={14}
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
@@ -675,24 +762,28 @@ export default function ClientForm() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Регион подачи <span className="text-red-500">*</span>
+                  <label htmlFor="client-region-before-court" className="block text-sm font-medium text-gray-700 mb-1">
+                    Регион подачи
                   </label>
                   <CustomSelect
+                    id="client-region-before-court"
+                    searchable
                     value={formData.region}
                     onChange={(val) => handleChange(syntheticChange('region', val))}
                     groups={REGION_GROUPS.map((group) => ({
                       label: group.district,
                       options: group.regions.map((r) => ({ value: r.name, label: r.name })),
                     }))}
-                    placeholder="Выберите регион"
+                    placeholder="Начните вводить регион"
                     size="lg"
+                    triggerClassName={regionError ? 'border-red-500' : ''}
                   />
+                  {regionError ? <p className="text-sm text-red-500 mt-1">{regionError}</p> : null}
                 </div>
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
-                    Арбитражный суд <span className="text-red-500">*</span>
+                    Арбитражный суд
                   </label>
                   {selectedCourt ? (
                     <div className="w-full px-4 py-2 border border-gray-300 rounded-lg bg-gray-50 text-gray-900">
@@ -711,7 +802,7 @@ export default function ClientForm() {
             </div>
 
             {/* Document Upload for Before Court */}
-            <div className="bg-white rounded-xl border border-gray-200 p-6 mb-6">
+            <div id="client-files" className="bg-white rounded-xl border border-gray-200 p-6 mb-6 scroll-mt-6">
               <div className="flex items-center justify-between mb-4">
                 <h2 className="text-lg font-semibold text-gray-900">
                   Загрузка документов
@@ -721,18 +812,17 @@ export default function ClientForm() {
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX. Максимальный размер файла: 10 МБ
+                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3. {FILE_SIZE_LIMITS_LABEL}.
               </p>
               
               <div className="space-y-3">
-                {requiredDocuments.map((doc) => (
+                {DOCUMENT_TYPES.map((doc) => (
                   <div key={doc.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <label className="text-sm font-medium text-gray-900">
                             {doc.label}
-                            {doc.required && <span className="text-red-500 ml-1">*</span>}
                           </label>
                           {documentUploads[doc.id]?.length > 0 && (
                             <div className="flex items-center gap-1 px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-medium">
@@ -771,7 +861,7 @@ export default function ClientForm() {
                           onChange={(e) => handleDocumentUpload(doc.id, e)}
                           className="hidden"
                           id={`doc-upload-${doc.id}`}
-                          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx"
+                          accept={ALLOWED_FILE_EXTENSIONS.join(',')}
                         />
                         <label
                           htmlFor={`doc-upload-${doc.id}`}
@@ -871,7 +961,9 @@ export default function ClientForm() {
                 ? 'Сохранение...'
                 : isEditMode
                   ? 'Сохранить изменения'
-                  : 'Создать карточку клиента'}
+                  : formData.type === 'before_court' && formData.documentPreparationMode === 'partner'
+                    ? 'Создать и перейти к документам'
+                    : 'Создать карточку клиента'}
           </button>
           <Link
             to={isEditMode ? `/dashboard/clients/${id}` : '/dashboard/clients'}

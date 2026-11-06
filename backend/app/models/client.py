@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, text
+from sqlalchemy import JSON, CheckConstraint, ForeignKey, Index, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, SoftDeleteMixin, TimestampMixin
@@ -20,6 +20,10 @@ class Client(Base, TimestampMixin, SoftDeleteMixin):
         CheckConstraint(
             "bitrix_sync_status IN ('not_scheduled', 'pending', 'processing', 'synced', 'failed')",
             name="ck_clients_bitrix_sync_status",
+        ),
+        CheckConstraint(
+            "document_preparation_mode IN ('uritech', 'partner')",
+            name="ck_clients_document_preparation_mode",
         ),
         Index("ix_clients_bitrix_sync_status", "bitrix_sync_status"),
         Index(
@@ -39,6 +43,8 @@ class Client(Base, TimestampMixin, SoftDeleteMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     partner_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("partners.id"), index=True)
     type: Mapped[str] = mapped_column(String(20), index=True)
+    document_preparation_mode: Mapped[str] = mapped_column(String(20), default="uritech", server_default="uritech")
+    document_generation_data: Mapped[dict] = mapped_column(JSON, default=dict, server_default=text("'{}'"))
     status: Mapped[str] = mapped_column(String(50), default="documents_collection", index=True)
 
     full_name: Mapped[str] = mapped_column(String(255))

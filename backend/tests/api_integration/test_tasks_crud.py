@@ -19,13 +19,14 @@ class TestTasksCRUD:
         )
         assert resp.status_code == 404
 
-    async def test_create_without_required(self, client: AsyncClient, partner_token):
+    async def test_create_general_outgoing_task(self, client: AsyncClient, partner_token):
         resp = await client.post(
             "/api/v1/tasks",
-            json={"title": "No client"},
+            json={"title": "No client", "assigned_to": "uritech"},
             headers=auth(partner_token),
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201
+        assert resp.json()["client_id"] is None
 
 
 class TestTasksFiltering:

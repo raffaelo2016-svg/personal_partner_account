@@ -20,16 +20,18 @@ class TestTaskCreate:
         t = await create_task(client, partner_token, c["id"], priority="high")
         assert t["priority"] == "high"
 
-    async def test_create_missing_client_id(self, client: AsyncClient, partner_token):
+    async def test_create_general_task_for_authenticated_partner(self, client: AsyncClient, partner_token):
         resp = await client.post(
             "/api/v1/tasks",
             json={
                 "title": "X",
+                "assigned_to": "uritech",
                 "due_date": str(date.today() + timedelta(days=1)),
             },
             headers=auth(partner_token),
         )
-        assert resp.status_code == 422
+        assert resp.status_code == 201
+        assert resp.json()["client_id"] is None
 
     async def test_create_missing_title(self, client: AsyncClient, partner_token):
         c = await create_client(client, partner_token)
@@ -63,6 +65,7 @@ class TestTaskCreate:
             json={
                 "client_id": c["id"],
                 "title": "А" * 255,
+                "assigned_to": "uritech",
                 "due_date": str(date.today()),
             },
             headers=auth(partner_token),

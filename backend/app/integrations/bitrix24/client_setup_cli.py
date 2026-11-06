@@ -1,4 +1,7 @@
-"""Provision stage-4 deal fields. Dry-run is the default; use ``--apply``."""
+"""Provision stage-4 deal fields and partner selector relation.
+
+Dry-run is the default; use ``--apply`` to change Bitrix24.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +27,7 @@ from app.integrations.bitrix24.partners import active_installation
 from app.integrations.bitrix24.survey_cli import _stored_credentials
 
 ENTITY_ID = "CRM_DEAL"
+DEAL_ENTITY_TYPE_ID = 2
 
 
 @dataclass(frozen=True)
@@ -45,7 +49,11 @@ FIELD_DEFINITIONS = (
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Prepare the Bitrix24 stage-4 client projection")
-    parser.add_argument("--apply", action="store_true", help="Create missing deal fields")
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Create missing deal fields and enable the partner selector in deal cards",
+    )
     return parser.parse_args()
 
 
@@ -75,6 +83,79 @@ async def _provision_field(client: Bitrix24Client, definition: FieldDefinition) 
     )
 
 
+def _is_enabled(value: object) -> bool:
+    return str(value).strip().lower() in {"1", "true", "y", "yes"}
+
+
+async def _partner_type(client: Bitrix24Client) -> dict[str, object]:
+    result = await client.call(
+        "crm.type.getByEntityTypeId",
+        {"entityTypeId": settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID},
+    )
+    partner_type = result.get("type") if isinstance(result, dict) else None
+    if not isinstance(partner_type, dict):
+        raise RuntimeError("Bitrix24 partner smart process was not found")
+    return partner_type
+
+
+def _deal_relation_is_enabled(partner_type: dict[str, object]) -> bool:
+    relations = partner_type.get("relations")
+    children = relations.get("child") if isinstance(relations, dict) else None
+    return isinstance(children, list) and any(
+        isinstance(relation, dict)
+        and str(relation.get("entityTypeId")) == str(DEAL_ENTITY_TYPE_ID)
+        for relation in children
+    )
+
+
+def _editable_relations(partner_type: dict[str, object]) -> dict[str, list[dict[str, object]]]:
+    """Copy custom relations because crm.type.update replaces the whole relation set."""
+    source = partner_type.get("relations")
+    result: dict[str, list[dict[str, object]]] = {"parent": [], "child": []}
+    for relation_kind in result:
+        relations = source.get(relation_kind) if isinstance(source, dict) else None
+        if not isinstance(relations, list):
+            continue
+        for relation in relations:
+            if not isinstance(relation, dict) or _is_enabled(relation.get("isPredefined")):
+                continue
+            entity_type_id = relation.get("entityTypeId")
+            if entity_type_id is None:
+                continue
+            result[relation_kind].append(
+                {
+                    "entityTypeId": int(entity_type_id),
+                    "isChildrenListEnabled": (
+                        "true" if _is_enabled(relation.get("isChildrenListEnabled")) else "false"
+                    ),
+                }
+            )
+    return result
+
+
+async def _enable_partner_deal_relation(
+    client: Bitrix24Client,
+    partner_type: dict[str, object],
+) -> None:
+    type_id = partner_type.get("id")
+    if type_id is None:
+        raise RuntimeError("Bitrix24 partner smart process has no type id")
+    relations = _editable_relations(partner_type)
+    relations["child"].append(
+        {
+            "entityTypeId": DEAL_ENTITY_TYPE_ID,
+            "isChildrenListEnabled": "false",
+        }
+    )
+    await client.call(
+        "crm.type.update",
+        {
+            "id": int(type_id),
+            "fields": {"relations": relations},
+        },
+    )
+
+
 async def _event_is_bound(client: Bitrix24Client, event_name: str, handler: str) -> bool:
     result = await client.call("event.get")
     events = result if isinstance(result, list) else []
@@ -98,6 +179,8 @@ async def run(*, apply: bool) -> None:
     async with Bitrix24Client(endpoint, token, timeout=60.0) as client:
         existing = await _existing_field_names(client)
         missing = [item for item in FIELD_DEFINITIONS if CLIENT_DEAL_FIELDS[item.key] not in existing]
+        partner_type = await _partner_type(client)
+        partner_deal_relation_enabled = _deal_relation_is_enabled(partner_type)
         event_bound = await _event_is_bound(client, CLIENT_DEAL_ADD_EVENT, CLIENT_EVENT_HANDLER)
         update_event_bound = await _event_is_bound(client, CLIENT_DEAL_UPDATE_EVENT, CLIENT_EVENT_HANDLER)
         document_event_bound = await _event_is_bound(
@@ -109,6 +192,9 @@ async def run(*, apply: bool) -> None:
         if apply:
             for definition in missing:
                 await _provision_field(client, definition)
+            if not partner_deal_relation_enabled:
+                await _enable_partner_deal_relation(client, partner_type)
+                partner_deal_relation_enabled = _deal_relation_is_enabled(await _partner_type(client))
             if not event_bound:
                 await client.call("event.bind", {"event": CLIENT_DEAL_ADD_EVENT, "handler": CLIENT_EVENT_HANDLER})
                 event_bound = await _event_is_bound(client, CLIENT_DEAL_ADD_EVENT, CLIENT_EVENT_HANDLER)
@@ -145,6 +231,8 @@ async def run(*, apply: bool) -> None:
 
     if apply and not event_bound:
         raise SystemExit("Bitrix24 client deal event was not registered")
+    if apply and not partner_deal_relation_enabled:
+        raise SystemExit("Bitrix24 partner selector relation was not enabled")
     if apply and not update_event_bound:
         raise SystemExit("Bitrix24 client deal update event was not registered")
     if apply and not document_event_bound:
@@ -153,6 +241,7 @@ async def run(*, apply: bool) -> None:
         raise SystemExit("Bitrix24 CRM activity event was not registered")
 
     print(f"client_deal_fields_{'created' if apply else 'missing'}={len(missing)}")
+    print(f"partner_deal_relation={'enabled' if partner_deal_relation_enabled else 'missing'}")
     print(f"client_deal_add_event_{'bound' if event_bound else 'missing'}={int(event_bound)}")
     print(f"client_deal_update_event_{'bound' if update_event_bound else 'missing'}={int(update_event_bound)}")
     print(f"timeline_comment_add_event_{'bound' if document_event_bound else 'missing'}={int(document_event_bound)}")

@@ -25,6 +25,46 @@ export interface PartnerStats {
   pending_partners: number;
 }
 
+/** «Не рабочие» (ни одного клиента) или «затихшие» (клиенты были, пауза затянулась). */
+export type PartnerClientPauseMode = 'no_clients' | 'stalled';
+
+export interface PartnerClientPause {
+  id: string;
+  company_name: string;
+  director_name: string;
+  email?: string | null;
+  phone: string;
+  status: string;
+  created_at: string;
+  last_client_at?: string | null;
+  clients_count: number;
+  days_without_client: number;
+  never_had_client: boolean;
+}
+
+export interface PartnerClientPauseCounts {
+  no_clients: number;
+  stalled: number;
+}
+
+export interface PartnerClientPauseResponse extends PaginatedResponse<PartnerClientPause> {
+  mode: PartnerClientPauseMode;
+  counts: PartnerClientPauseCounts;
+}
+
+export async function fetchPartnersWithoutClients(params: {
+  mode: PartnerClientPauseMode;
+  page?: number;
+  page_size?: number;
+}): Promise<PartnerClientPauseResponse> {
+  const search = new URLSearchParams({ mode: params.mode });
+  if (params.page) search.set('page', String(params.page));
+  if (params.page_size) search.set('page_size', String(params.page_size));
+
+  const { data } = await apiClient.get<PartnerClientPauseResponse>(`/admin/partners/without-clients?${search}`);
+  return data;
+}
+
 export async function fetchPartners(filters: PartnerFilters = {}): Promise<PaginatedResponse<Partner>> {
   const params = new URLSearchParams();
   if (filters.search) params.set('search', filters.search);

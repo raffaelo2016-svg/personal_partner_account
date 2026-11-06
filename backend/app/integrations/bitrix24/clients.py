@@ -13,6 +13,7 @@ from app.config import settings
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE, active_installation
+from app.integrations.bitrix24.preparation_notice import schedule_preparation_notice
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
@@ -25,8 +26,16 @@ CLIENT_CONTACT_ENTITY_TYPE = "client_contact"
 CLIENT_DEAL_ENTITY_TYPE = "client_deal"
 CLIENT_CONTACT_CREATE_METHOD = "crm.contact.add"
 CLIENT_DEAL_CREATE_METHOD = "crm.deal.add"
-CLIENT_DEAL_CATEGORY_ID = 3
-CLIENT_DEAL_STAGE_ID = "C3:NEW"
+CLIENT_DEAL_CATEGORY_ID = settings.BITRIX_DEAL_CATEGORY_ID
+CLIENT_DEAL_STAGE_ID = f"C{CLIENT_DEAL_CATEGORY_ID}:NEW"
+CLIENT_SUPPORT_DEAL_CATEGORY_ID = settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID
+# «Партнеры» is the initial stage of «Отдел сопровождения». Clients handed over
+# from the cabinet before court must start there, not in «Новый клиент» (C7:NEW).
+CLIENT_SUPPORT_DEAL_STAGE_ID = settings.BITRIX_SUPPORT_DEAL_STAGE_ID
+CLIENT_DEAL_CATEGORY_IDS = {
+    CLIENT_DEAL_CATEGORY_ID,
+    CLIENT_SUPPORT_DEAL_CATEGORY_ID,
+}
 CLIENT_UID_FIELD = "UF_CRM_P24_CUID_ITN"
 SELF_ORIGINATOR_ID = "partner_cabinet"
 CLIENT_DEAL_ADD_EVENT = "ONCRMDEALADD"
@@ -86,11 +95,19 @@ def build_client_contact_payload(client: Client) -> dict[str, Any]:
     return {"fields": fields}
 
 
+def client_deal_route(client_type: str) -> tuple[int, str]:
+    """Return the Bitrix24 deal pipeline and initial stage for a client."""
+    if client_type == ClientType.BEFORE_COURT.value:
+        return CLIENT_SUPPORT_DEAL_CATEGORY_ID, CLIENT_SUPPORT_DEAL_STAGE_ID
+    return CLIENT_DEAL_CATEGORY_ID, CLIENT_DEAL_STAGE_ID
+
+
 def build_client_deal_payload(client: Client, partner_item_id: str, contact_id: str) -> dict[str, Any]:
+    category_id, stage_id = client_deal_route(client.type)
     fields: dict[str, Any] = {
         "TITLE": f"Клиент: {client.full_name}",
-        "CATEGORY_ID": CLIENT_DEAL_CATEGORY_ID,
-        "STAGE_ID": CLIENT_DEAL_STAGE_ID,
+        "CATEGORY_ID": category_id,
+        "STAGE_ID": stage_id,
         "CONTACT_ID": contact_id,
         f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": partner_item_id,
         "ORIGINATOR_ID": SELF_ORIGINATOR_ID,
@@ -370,7 +387,7 @@ async def _complete_existing_client_update(
 
 
 async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInboundEvent) -> bool:
-    """Create or relink a cabinet client from an Arbitration deal event."""
+    """Create or relink a cabinet client from a managed deal pipeline event."""
     receipt.status = "processing"
     receipt.error_code = None
     await db.flush()
@@ -398,7 +415,11 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
             deal = await remote.call("crm.deal.get", {"ID": receipt.remote_entity_id})
             if not isinstance(deal, dict):
                 return _mark_inbound_failure(receipt, "INVALID_DEAL_RESPONSE")
-            if str(deal.get("CATEGORY_ID") or "") != str(CLIENT_DEAL_CATEGORY_ID):
+            try:
+                deal_category_id = int(deal.get("CATEGORY_ID"))
+            except (TypeError, ValueError):
+                deal_category_id = -1
+            if deal_category_id not in CLIENT_DEAL_CATEGORY_IDS:
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)
                 receipt.attempts += 1
@@ -426,6 +447,14 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_FOUND")
 
             if existing_client is not None:
+                await schedule_preparation_notice(
+                    db,
+                    client=existing_client,
+                    member_id=receipt.member_id,
+                    deal_id=receipt.remote_entity_id,
+                    category_id=deal_category_id,
+                    stage_id=deal.get("STAGE_ID"),
+                )
                 return await _complete_existing_client_update(
                     db,
                     receipt=receipt,

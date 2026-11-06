@@ -1,4 +1,7 @@
 import uuid
+from datetime import UTC, datetime, timedelta
+from hashlib import sha256
+from secrets import token_urlsafe
 
 import structlog
 from sqlalchemy import select
@@ -8,6 +11,7 @@ from app.core.exceptions import BadRequest, NotFound
 from app.core.security import hash_password, verify_password
 from app.models.settings import LoginHistory, NotificationPreference, SystemSetting
 from app.models.user import User
+from app.config import settings
 
 logger = structlog.get_logger()
 
@@ -73,6 +77,45 @@ async def update_notification_preferences(
     await db.refresh(pref)
     if changed:
         logger.info("notification_prefs_updated", user_id=str(user_id), fields=changed)
+    return pref
+
+
+def telegram_connection_status(pref: NotificationPreference) -> dict:
+    return {
+        "available": bool(settings.TELEGRAM_BOT_TOKEN and settings.TELEGRAM_BOT_USERNAME),
+        "connected": pref.telegram_chat_id is not None,
+        "username": pref.telegram_username,
+        "notifications_enabled": pref.telegram_notifications,
+    }
+
+
+async def create_telegram_connect_link(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+) -> tuple[str, datetime]:
+    if not settings.TELEGRAM_BOT_TOKEN or not settings.TELEGRAM_BOT_USERNAME:
+        raise BadRequest("Telegram bot is not configured")
+
+    pref = await get_notification_preferences(db, user_id)
+    token = token_urlsafe(24)
+    expires_at = datetime.now(UTC) + timedelta(minutes=settings.TELEGRAM_CONNECT_EXPIRE_MINUTES)
+    pref.telegram_connect_token_hash = sha256(token.encode()).hexdigest()
+    pref.telegram_connect_expires_at = expires_at
+    await db.commit()
+    username = settings.TELEGRAM_BOT_USERNAME.lstrip("@")
+    return f"https://t.me/{username}?start={token}", expires_at
+
+
+async def disconnect_telegram(db: AsyncSession, user_id: uuid.UUID) -> NotificationPreference:
+    pref = await get_notification_preferences(db, user_id)
+    pref.telegram_chat_id = None
+    pref.telegram_username = None
+    pref.telegram_connected_at = None
+    pref.telegram_connect_token_hash = None
+    pref.telegram_connect_expires_at = None
+    await db.commit()
+    await db.refresh(pref)
+    logger.info("telegram_disconnected", user_id=str(user_id))
     return pref
 
 

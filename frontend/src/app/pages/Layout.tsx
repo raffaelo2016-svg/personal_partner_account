@@ -9,6 +9,8 @@ import {
   Wallet,
   CheckSquare,
   GraduationCap,
+  Newspaper,
+  FileText,
   Settings,
   Menu,
   X,
@@ -16,9 +18,11 @@ import {
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-color.svg';
 import NotificationBell from '../components/NotificationBell';
+import SocialLinks from '../components/SocialLinks';
 import { useMe } from '../hooks/useAuth';
 import { useAuthStore } from '../store/authStore';
 import { fetchPartnerUnreadCount } from '../api/chat';
+import { fetchNewsCount } from '../api/news';
 
 function sidebarBadgeLabel(companyName: string | null | undefined): string {
   const t = companyName?.trim();
@@ -43,13 +47,21 @@ export default function Layout() {
     refetchInterval: 15000,
   });
 
+  const { data: newsUnreadCount = 0 } = useQuery({
+    queryKey: ['newsUnreadCount'],
+    queryFn: fetchNewsCount,
+    refetchInterval: 30_000,
+  });
+
   const navigation = [
     { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Клиенты', href: '/dashboard/clients', icon: Users, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+    { name: 'Реквизиты СРО', href: '/dashboard/sro', icon: FileText, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Добавить клиента', href: '/dashboard/clients/new', icon: UserPlus, color: 'text-green-600', bgColor: 'bg-green-50' },
     { name: 'Список задач', href: '/dashboard/tasks', icon: CheckSquare, color: 'text-pink-600', bgColor: 'bg-pink-50' },
     { name: 'Финансы', href: '/dashboard/finance/court-fees', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
     { name: 'Чат', href: '/dashboard/chat', icon: MessageSquare, color: 'text-teal-600', bgColor: 'bg-teal-50', badge: chatUnreadCount },
+    { name: 'Новости', href: '/dashboard/news', icon: Newspaper, color: 'text-blue-600', bgColor: 'bg-blue-50', badge: newsUnreadCount },
     { name: 'Обучение', href: '/dashboard/training', icon: GraduationCap, color: 'text-indigo-600', bgColor: 'bg-indigo-50' },
     { name: 'Настройки', href: '/dashboard/settings', icon: Settings, color: 'text-gray-600', bgColor: 'bg-gray-100' },
   ];
@@ -85,7 +97,7 @@ export default function Layout() {
                   active ? 'bg-blue-50 shadow-sm' : 'hover:bg-gray-50'
                 }`}
               >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center relative ${active ? item.bgColor : 'bg-gray-100'}`}>
+                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center relative ${active ? item.bgColor : 'bg-gray-100'}`}>
                   <Icon className={`w-5 h-5 ${active ? item.color : 'text-gray-500'}`} />
                   {!!badge && badge > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
@@ -96,6 +108,16 @@ export default function Layout() {
                 <span className={`font-medium ${active ? 'text-gray-900' : 'text-gray-700'}`}>
                   {item.name}
                 </span>
+                {item.href === '/dashboard/sro' && (
+                  <span className="ml-auto shrink-0 rounded-full bg-blue-100 px-1.5 py-px text-[10px] font-medium uppercase text-blue-700">
+                    Новое
+                  </span>
+                )}
+                {item.href === '/dashboard/news' && (
+                  <span className="ml-auto rounded-full bg-orange-600 px-1.5 py-px text-[11px] font-medium uppercase text-white">
+                    Новое
+                  </span>
+                )}
               </Link>
             );
           })}
@@ -165,7 +187,12 @@ export default function Layout() {
             <Menu className="w-5 h-5 text-gray-600" aria-hidden="true" />
           </button>
           <div className="flex-1" />
-          <NotificationBell />
+          <div className="flex shrink-0 items-center gap-3 sm:gap-5">
+            <SocialLinks />
+            <div className="border-l border-gray-200 pl-3 sm:pl-5">
+              <NotificationBell />
+            </div>
+          </div>
         </div>
         <main>
           <Outlet />

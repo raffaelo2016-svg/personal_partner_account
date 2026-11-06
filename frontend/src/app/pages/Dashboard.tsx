@@ -1,4 +1,4 @@
-import { Users, UserCheck, Clock, TrendingUp, AlertCircle, CheckSquare, BarChart3, AlertTriangle, CreditCard } from 'lucide-react';
+import { Users, UserCheck, Clock, TrendingUp, AlertCircle, CheckSquare, BarChart3, AlertTriangle, CreditCard, Newspaper, ArrowRight } from 'lucide-react';
 import { Link } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { fetchDashboard } from '../api/dashboard';
@@ -7,10 +7,14 @@ import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { SkeletonCard } from '../components/ui/skeleton';
 import OverdueDebtAlert from '../components/OverdueDebtAlert';
+import { PromotionIncentiveBanner } from '../components/PromotionIncentiveBanner';
+import NewsPreview from '../components/NewsPreview';
+import SroDetailsCard from '../components/SroDetailsCard';
+import { formatTaskDeadline, taskDeadlineTimestamp } from '../utils/taskDeadline';
 
 export default function Dashboard() {
   const tz = useTimezone();
-  const { data: dashboard, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboard });
+  const { data: dashboard, isLoading } = useQuery({ queryKey: ['dashboard'], queryFn: fetchDashboard, refetchInterval: 30_000 });
   const { data: feeSummary } = useQuery({ queryKey: ['courtFeeSummary'], queryFn: fetchCourtFeeSummary });
 
   const d = dashboard;
@@ -49,11 +53,12 @@ export default function Dashboard() {
   const urgentTasks = (d?.urgent_tasks ?? []).map((t) => ({
     id: t.id,
     title: t.title,
-    client: '',
-    clientId: t.id,
-    dueDate: formatDateShort(t.due_date, tz),
+    client: t.client_name ?? 'Общая задача партнёру',
+    clientId: t.client_id,
+    dueDate: formatTaskDeadline(t),
     priority: t.priority,
-    daysLeft: Math.max(0, Math.ceil((new Date(t.due_date).getTime() - Date.now()) / 86400000)),
+    daysLeft: taskDeadlineTimestamp(t) === null ? null
+      : Math.max(0, Math.ceil((taskDeadlineTimestamp(t)! - Date.now()) / 86400000)),
   }));
 
   const recentClients = (d?.recent_clients ?? []).map((c) => ({
@@ -78,6 +83,26 @@ export default function Dashboard() {
         </p>
       </div>
 
+      <SroDetailsCard />
+
+      <section className="flex flex-wrap items-center gap-3 rounded-xl border border-blue-200 bg-blue-50 px-4 py-3" aria-labelledby="news-announcement-title">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-100 text-blue-600">
+          <Newspaper className="h-4 w-4" aria-hidden="true" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 id="news-announcement-title" className="flex flex-wrap items-center gap-2 text-sm font-semibold text-blue-950">
+            <span className="rounded bg-orange-600 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white">Новое</span>
+            Новости для партнёров
+          </h2>
+          <p className="mt-0.5 text-xs text-blue-800">Важные объявления и обновления теперь в отдельном разделе.</p>
+        </div>
+        <Link to="/dashboard/news" className="inline-flex items-center gap-1 text-xs font-semibold text-blue-700 hover:underline">
+          Открыть <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
+        </Link>
+      </section>
+
+      <NewsPreview />
+
       {isLoading && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
           {Array.from({ length: 4 }).map((_, i) => <SkeletonCard key={i} />)}
@@ -89,6 +114,8 @@ export default function Dashboard() {
         currentDebt={(feeSummary?.current_debt ?? 0) / 100}
         unpaidCount={feeSummary?.unpaid_count}
       />
+
+      <PromotionIncentiveBanner summary={feeSummary} />
       
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -153,18 +180,18 @@ export default function Dashboard() {
                   <div className="flex-1 min-w-0">
                     <h4 className="font-medium text-gray-900 mb-1">{task.title}</h4>
                     <Link 
-                      to={`/dashboard/clients/${task.clientId}`}
+                      to={task.clientId ? `/dashboard/clients/${task.clientId}` : '/dashboard/tasks'}
                       className="text-sm text-blue-600 hover:text-blue-700 mb-2 inline-block"
                     >
                       {task.client}
                     </Link>
                     <div className="flex items-center gap-4 text-xs text-gray-500">
                       <span>Срок: {task.dueDate}</span>
-                      <span className={`px-2 py-1 rounded ${
+                      {task.daysLeft !== null && <span className={`px-2 py-1 rounded ${
                         task.daysLeft <= 2 ? 'bg-red-100 text-red-700' : 'bg-yellow-100 text-yellow-700'
                       }`}>
                         Осталось {task.daysLeft} дн.
-                      </span>
+                      </span>}
                     </div>
                   </div>
                 </div>

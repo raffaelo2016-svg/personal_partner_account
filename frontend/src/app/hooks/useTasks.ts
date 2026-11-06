@@ -16,6 +16,8 @@ export function useTasks(filters: TaskFilters = {}) {
   return useQuery({
     queryKey: ['tasks', filters],
     queryFn: () => fetchTasks(filters),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -23,6 +25,8 @@ export function useInfiniteTasks(filters: Omit<TaskFilters, 'page'> = {}) {
   return useInfiniteQuery({
     queryKey: ['tasks', 'infinite', filters],
     queryFn: ({ pageParam = 1 }) => fetchTasks({ ...filters, page: pageParam, page_size: 20 }),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
     initialPageParam: 1,
     getNextPageParam: (lastPage) =>
       lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
@@ -82,6 +86,8 @@ export function useTaskStats(params?: { assigned_to?: string }) {
   return useQuery({
     queryKey: ['taskStats', params],
     queryFn: () => fetchTaskStats(params),
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }
 
@@ -89,5 +95,7 @@ export function useUrgentTasks() {
   return useQuery({
     queryKey: ['urgentTasks'],
     queryFn: fetchUrgentTasks,
+    refetchInterval: 30_000,
+    refetchIntervalInBackground: false,
   });
 }

@@ -15,10 +15,10 @@ from app.database import async_session
 from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
-    CLIENT_DEAL_CATEGORY_ID,
     CLIENT_DEAL_ENTITY_TYPE,
     CLIENT_DEAL_FIELDS,
-    CLIENT_DEAL_STAGE_ID,
+    CLIENT_SUPPORT_DEAL_CATEGORY_ID,
+    CLIENT_SUPPORT_DEAL_STAGE_ID,
     schedule_client_creation,
 )
 from app.integrations.bitrix24.documents import FILE_ENTITY_TYPE, file_marker, schedule_file_creation
@@ -203,8 +203,8 @@ async def _create_and_verify_reverse_client(
         {
             "fields": {
                 "TITLE": "[SMOKE] Обратный импорт клиента",
-                "CATEGORY_ID": CLIENT_DEAL_CATEGORY_ID,
-                "STAGE_ID": CLIENT_DEAL_STAGE_ID,
+                "CATEGORY_ID": CLIENT_SUPPORT_DEAL_CATEGORY_ID,
+                "STAGE_ID": CLIENT_SUPPORT_DEAL_STAGE_ID,
                 "CONTACT_ID": remote_ids["reverse_contact"],
                 f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": partner_remote_id,
                 CLIENT_DEAL_FIELDS["client_type"]: "before_court",

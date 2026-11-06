@@ -27,11 +27,22 @@ from app.integrations.bitrix24.documents import (
     execute_file_creation,
     extract_crm_activity_event_reference,
     extract_timeline_comment_event_reference,
+    load_file_folder_context,
     schedule_file_creation,
 )
 from app.integrations.bitrix24.oauth import refresh_installation_tokens
 from app.integrations.bitrix24.partners import PARTNER_ENTITY_TYPE
-from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event_reference, schedule_task_creation
+from app.integrations.bitrix24.preparation_notice import (
+    PREPARATION_NOTICE_ENTITY_TYPE,
+    execute_preparation_notice,
+    schedule_preparation_notice,
+)
+from app.integrations.bitrix24.tasks import (
+    TASK_ENTITY_TYPE,
+    extract_task_event_reference,
+    refresh_task_create_payload,
+    schedule_task_creation,
+)
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
@@ -64,7 +75,7 @@ def event_fingerprint(payload: dict[str, Any]) -> tuple[str, str]:
         "event": str(payload.get("event", "UNKNOWN")).upper(),
         "event_id": payload.get("event_id"),
         "event_ts": payload.get("event_ts") or payload.get("ts"),
-        "data": payload.get("data"),
+        "data": payload.get("data") or {key: value for key, value in payload.items() if key.startswith("data[")},
     }
     payload_hash = hashlib.sha256(_canonical_json(safe_shape).encode()).hexdigest()
     supplied_key = str(payload.get("event_id") or "").strip()
@@ -260,13 +271,13 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
         access_token = await _access_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, access_token) as client:
             try:
-                result = await _execute_operation(client, operation)
+                result = await _execute_operation(client, operation, db=db)
             except Bitrix24Error as exc:
                 if exc.code.lower() not in {"expired_token", "invalid_token"}:
                     raise
                 access_token = await refresh_installation_tokens(db, installation)
                 async with Bitrix24Client(installation.client_endpoint, access_token) as retry_client:
-                    result = await _execute_operation(retry_client, operation)
+                    result = await _execute_operation(retry_client, operation, db=db)
     except Bitrix24Error as exc:
         operation.attempts += 1
         operation.error_code = exc.code[:100]
@@ -308,18 +319,30 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     return True
 
 
-async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOperation) -> Any:
+async def _execute_operation(
+    client: Bitrix24Client,
+    operation: BitrixOutboxOperation,
+    *,
+    db: AsyncSession | None = None,
+) -> Any:
     """Use CRM origin keys to make create operations safe after an uncertain response."""
     if operation.local_entity_type == FILE_ENTITY_TYPE:
-        return await execute_file_creation(client, operation)
+        if db is None:
+            raise RuntimeError("File synchronization requires a database session")
+        folder_context = await load_file_folder_context(db, operation)
+        return await execute_file_creation(client, operation, folder_context=folder_context)
     if operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
         return await execute_chat_message(client, operation)
+    if operation.local_entity_type == PREPARATION_NOTICE_ENTITY_TYPE:
+        return await execute_preparation_notice(client, operation)
     list_method = None
     if operation.local_entity_type == CLIENT_CONTACT_ENTITY_TYPE:
         list_method = "crm.contact.list"
     elif operation.local_entity_type == CLIENT_DEAL_ENTITY_TYPE:
         list_method = "crm.deal.list"
     elif operation.local_entity_type == TASK_ENTITY_TYPE:
+        if db is not None:
+            await refresh_task_create_payload(db, operation)
         existing = await client.call(
             "tasks.task.list",
             {
@@ -331,7 +354,13 @@ async def _execute_operation(client: Bitrix24Client, operation: BitrixOutboxOper
         if isinstance(tasks, list) and tasks:
             first = tasks[0]
             if isinstance(first, dict) and (first.get("id") or first.get("ID")):
-                return first.get("id") or first.get("ID")
+                task_id = first.get("id") or first.get("ID")
+                if db is not None:
+                    fields = dict(operation.payload.get("fields", {}))
+                    fields.pop("CREATED_BY", None)
+                    fields.setdefault("DEADLINE", "")
+                    await client.call("tasks.task.update", {"taskId": task_id, "fields": fields})
+                return task_id
     if list_method:
         fields = operation.payload.get("fields", {})
         originator_id = fields.get("ORIGINATOR_ID")
@@ -439,6 +468,14 @@ async def _complete_partner_projection(db: AsyncSession, operation: BitrixOutbox
 
         for client in pending_clients:
             await schedule_client_creation(db, client, partner=partner)
+    pending_tasks = list((await db.scalars(select(Task).where(
+        Task.partner_id == partner.id,
+        Task.client_id.is_(None),
+        Task.bitrix_sync_status == "pending",
+        Task.bitrix_sync_error_code == "PARTNER_NOT_SYNCED",
+    ))).all())
+    for task in pending_tasks:
+        await schedule_task_creation(db, task)
 
 
 async def _complete_client_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:
@@ -499,6 +536,15 @@ async def _complete_client_projection(db: AsyncSession, operation: BitrixOutboxO
         return
 
     client.bitrix_deal_id = remote_id
+    deal_fields = operation.payload.get("fields", {})
+    await schedule_preparation_notice(
+        db,
+        client=client,
+        member_id=operation.member_id,
+        deal_id=remote_id,
+        category_id=deal_fields.get("CATEGORY_ID"),
+        stage_id=deal_fields.get("STAGE_ID"),
+    )
     client.bitrix_sync_status = "synced"
     client.bitrix_sync_error_code = None
     client.bitrix_synced_at = now

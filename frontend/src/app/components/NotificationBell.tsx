@@ -17,6 +17,7 @@ const TYPE_ICONS: Record<string, string> = {
   new_client: '👤',
   overdue_payment: '⚠️',
   new_partner: '🤝',
+  news: '📰',
 };
 
 export default function NotificationBell() {

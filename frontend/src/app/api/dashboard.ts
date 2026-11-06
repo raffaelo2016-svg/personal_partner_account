@@ -13,7 +13,10 @@ export interface DashboardTask {
   title: string;
   status: string;
   priority: string;
-  due_date: string;
+  due_date: string | null;
+  due_at?: string | null;
+  client_id?: string | null;
+  client_name?: string | null;
 }
 
 export interface DashboardClient {

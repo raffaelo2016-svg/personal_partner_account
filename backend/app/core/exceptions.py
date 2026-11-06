@@ -61,8 +61,13 @@ class NotFound(AppException):
 
 
 class DuplicateEmail(AppException):
-    def __init__(self):
-        super().__init__(status_code=409, detail="Email already registered", code="DUPLICATE_EMAIL")
+    def __init__(self, detail: str = "Email already registered"):
+        super().__init__(status_code=409, detail=detail, code="DUPLICATE_EMAIL")
+
+
+class Conflict(AppException):
+    def __init__(self, detail: str = "Conflict", code: str = "CONFLICT"):
+        super().__init__(status_code=409, detail=detail, code=code)
 
 
 class FileTooLarge(AppException):

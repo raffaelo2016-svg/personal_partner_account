@@ -41,6 +41,20 @@ async def create_notification(
     session.add(notif)
     await session.flush()
     logger.info("notification_created", user_id=user_id, type=notif_type)
+    # Telegram delivery is best-effort: an unavailable external service must
+    # never prevent the in-cabinet notification from being stored.
+    try:
+        from app.services.telegram_service import deliver_notification
+
+        await deliver_notification(
+            session,
+            user_id=user_id,
+            title=title,
+            message=message,
+            link=link,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("telegram_notification_failed", user_id=user_id, error=str(exc))
     return notif
 
 

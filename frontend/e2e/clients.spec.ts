@@ -30,14 +30,24 @@ test.describe('Clients — CRUD', () => {
   test('create client with minimal fields', async ({ page }) => {
     const name = 'E2E_Client_' + Date.now();
     await page.goto('/dashboard/clients/new');
-    // Select "in_court" type — у него минимум required-полей (caseNumber + ФИО)
-    await page.getByText('Клиент в суде').click();
-    await page.getByPlaceholder('А40-123456/2026').fill('А40-1/2026');
+    // Для клиента до суда документы и юридические сведения необязательны.
     await page.getByLabel(/ФИО/i).first().fill(name);
     await page.getByRole('button', { name: /создать карточку|сохранить/i }).click();
     await page.waitForTimeout(2500);
     const found = await page.locator(`text=${name}`).count();
     expect(found).toBeGreaterThan(0);
+  });
+
+  test('document upload offers passport, SNILS, INN and other documents and stays optional', async ({ page }) => {
+    await page.goto('/dashboard/clients/new');
+
+    const uploads = page.locator('[id^="doc-upload-"]');
+    await expect(uploads).toHaveCount(4);
+    await expect(page.getByText('Паспорт', { exact: true })).toBeVisible();
+    await expect(page.getByText('СНИЛС', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('ИНН', { exact: true }).last()).toBeVisible();
+    await expect(page.getByText('Прочие документы', { exact: true })).toBeVisible();
+    await expect(page.getByText('Загрузка необязательна.')).toBeVisible();
   });
 
   test('create with empty name shows validation', async ({ page }) => {

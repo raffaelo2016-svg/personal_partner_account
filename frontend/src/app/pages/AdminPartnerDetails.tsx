@@ -1,8 +1,9 @@
 import {
   ArrowLeft, Mail, Phone, Calendar, Users, Briefcase,
   Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
+  WalletCards, CircleDollarSign, Clock3, Gift, CalendarClock, Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router';
 import {
   useBindPartnerBitrixCollab,
@@ -11,10 +12,16 @@ import {
   useRetryPartnerBitrixSync,
   useUpdatePartner,
 } from '@/app/hooks/usePartners';
-import { formatDate } from '@/app/utils/formatDate';
+import { useAdminClients } from '@/app/hooks/useClients';
+import { getStatusBadgeClass, getStatusLabel } from '@/app/data/clientStatuses';
+import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { toast } from 'sonner';
 import type { Partner, PartnerUpdate } from '@/app/types';
+import CaseArbitrLink from '../components/CaseArbitrLink';
+import CustomSelect from '../components/ui/CustomSelect';
+import { REGION_GROUPS } from '../data/arbitrageCourts';
+import { formatTimeInTimezone, getTimezoneMeta } from '../data/timezones';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Активный',
@@ -49,9 +56,96 @@ const BITRIX_SYNC_LABELS: Record<string, string> = {
   conflict: 'Изменено в Битрикс24',
 };
 
+const REGION_SELECT_GROUPS = REGION_GROUPS.map((group) => ({
+  label: group.district,
+  options: group.regions.map((region) => ({ value: region.name, label: region.name })),
+}));
+
+function PartnerRegionClock({
+  region,
+  timezone,
+  onEdit,
+}: {
+  region?: string | null;
+  timezone?: string | null;
+  onEdit: () => void;
+}) {
+  const [now, setNow] = useState(() => new Date());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 30_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (!region) {
+    return (
+      <div className="flex items-center gap-3 rounded-xl border border-dashed border-gray-300 bg-white px-4 py-2.5">
+        <div className="flex h-9 w-9 items-center justify-center rounded-full bg-gray-100">
+          <Clock3 className="h-4 w-4 text-gray-500" aria-hidden="true" />
+        </div>
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+            Время партнёра
+          </p>
+          <button onClick={onEdit} className="text-sm font-medium text-blue-600 hover:underline">
+            Указать регион
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const meta = getTimezoneMeta(timezone);
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-4 py-2.5 shadow-sm">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-blue-50">
+        <Clock3 className="h-4 w-4 text-blue-600" aria-hidden="true" />
+      </div>
+      <div>
+        <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+          Сейчас у партнёра
+        </p>
+        <div className="flex items-baseline gap-2">
+          <span
+            className="text-2xl font-bold tabular-nums leading-none"
+            style={{
+              backgroundImage: 'linear-gradient(180deg, #1e293b 0%, #475569 48%, #0f172a 100%)',
+              WebkitBackgroundClip: 'text',
+              backgroundClip: 'text',
+              color: 'transparent',
+              filter: 'drop-shadow(0 1px 1px rgba(15, 23, 42, 0.18))',
+            }}
+          >
+            {formatTimeInTimezone(timezone, now)}
+          </span>
+          <span className="rounded bg-gray-100 px-1.5 py-0.5 text-[11px] font-semibold text-gray-600">
+            {meta.short}
+          </span>
+          <span className="text-[11px] text-gray-400">{meta.offset}</span>
+        </div>
+        <p className="mt-0.5 text-xs text-gray-500">{region}</p>
+      </div>
+      <button
+        onClick={onEdit}
+        className="ml-1 rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-700"
+        aria-label="Изменить регион"
+      >
+        <Edit className="h-3.5 w-3.5" aria-hidden="true" />
+      </button>
+    </div>
+  );
+}
+
 function parseFio(full: string) {
   const parts = full.trim().split(/\s+/);
   return { lastName: parts[0] ?? '', firstName: parts[1] ?? '', middleName: parts.slice(2).join(' ') };
+}
+
+function formatDateOnly(value?: string | null) {
+  if (!value) return '—';
+  return new Intl.DateTimeFormat('ru-RU', { day: 'numeric', month: 'long', year: 'numeric' }).format(
+    new Date(`${value}T00:00:00`),
+  );
 }
 
 function EditPartnerModal({
@@ -83,8 +177,20 @@ function EditPartnerModal({
   const [postalAddress, setPostalAddress] = useState(partner.postal_address ?? '');
   const [courtFee, setCourtFee] = useState(String(partner.court_fee_per_client / 100));
   const [paymentDays, setPaymentDays] = useState(String(partner.payment_term_days));
+  const [promotionEnabled, setPromotionEnabled] = useState(partner.free_client_limit > 0);
+  const [freeClientLimit, setFreeClientLimit] = useState(String(partner.free_client_limit || 10));
+  const [promotionStartDate, setPromotionStartDate] = useState(partner.promotion_start_date ?? '');
 
   const handleSave = () => {
+    if (!courtFee || Number(courtFee) <= 0 || !paymentDays || Number(paymentDays) <= 0) {
+      toast.error('Проверьте стоимость клиента и срок оплаты');
+      return;
+    }
+    if (promotionEnabled && (!freeClientLimit || Number(freeClientLimit) <= 0)) {
+      toast.error('Укажите количество бесплатных клиентов');
+      return;
+    }
+
     const directorName =
       type === 'legal'
         ? companyName
@@ -102,6 +208,8 @@ function EditPartnerModal({
       postal_address: postalAddress || undefined,
       court_fee_per_client: Math.round(Number(courtFee) * 100),
       payment_term_days: Number(paymentDays),
+      free_client_limit: promotionEnabled ? Number(freeClientLimit) : 0,
+      promotion_start_date: promotionEnabled ? promotionStartDate || null : null,
     };
 
     updatePartner.mutate(
@@ -237,12 +345,98 @@ function EditPartnerModal({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className={labelCls}>Стоимость клиента (₽)</label>
+                <div className="flex flex-wrap gap-2 mb-2">
+                  {[10_000, 15_000, 17_000].map((price) => (
+                    <button
+                      key={price}
+                      type="button"
+                      onClick={() => setCourtFee(String(price))}
+                      className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                        Number(courtFee) === price
+                          ? 'border-blue-600 bg-blue-600 text-white'
+                          : 'border-gray-300 bg-white text-gray-700'
+                      }`}
+                    >
+                      {price.toLocaleString('ru-RU')} ₽
+                    </button>
+                  ))}
+                </div>
                 <input type="number" min="1" className={inputCls} value={courtFee} onChange={(e) => setCourtFee(e.target.value)} />
               </div>
               <div>
                 <label className={labelCls}>Срок оплаты (дней)</label>
                 <input type="number" min="1" className={inputCls} value={paymentDays} onChange={(e) => setPaymentDays(e.target.value)} />
               </div>
+            </div>
+
+            <div className="mt-4 rounded-xl border border-gray-200 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Gift className="w-5 h-5 text-emerald-600" />
+                <h5 className="text-sm font-semibold text-gray-900">Льготный месяц</h5>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
+                <button
+                  type="button"
+                  onClick={() => setPromotionEnabled(false)}
+                  className={`p-3 rounded-lg border text-left text-sm ${
+                    !promotionEnabled ? 'border-blue-600 bg-blue-50 font-medium' : 'border-gray-200'
+                  }`}
+                >
+                  Без льготы
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPromotionEnabled(true)}
+                  className={`p-3 rounded-lg border text-left text-sm ${
+                    promotionEnabled ? 'border-blue-600 bg-blue-50 font-medium' : 'border-gray-200'
+                  }`}
+                >
+                  Первые клиенты бесплатно
+                </button>
+              </div>
+              {promotionEnabled ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className={labelCls}>Количество бесплатных клиентов</label>
+                    <div className="flex gap-2 mb-2">
+                      {[5, 10].map((limit) => (
+                        <button
+                          key={limit}
+                          type="button"
+                          onClick={() => setFreeClientLimit(String(limit))}
+                          className={`px-3 py-1.5 rounded-lg border text-xs font-medium ${
+                            Number(freeClientLimit) === limit
+                              ? 'border-emerald-600 bg-emerald-600 text-white'
+                              : 'border-gray-300 bg-white text-gray-700'
+                          }`}
+                        >
+                          {limit}
+                        </button>
+                      ))}
+                    </div>
+                    <input
+                      type="number"
+                      min="1"
+                      className={inputCls}
+                      value={freeClientLimit}
+                      onChange={(e) => setFreeClientLimit(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Начало льготного месяца</label>
+                    <input
+                      type="date"
+                      className={inputCls}
+                      value={promotionStartDate}
+                      onChange={(e) => setPromotionStartDate(e.target.value)}
+                    />
+                  </div>
+                  <p className="sm:col-span-2 text-xs text-gray-500 flex items-center gap-1.5">
+                    <CalendarClock className="w-3.5 h-3.5" />
+                    Срок окончания будет рассчитан автоматически: один календарный месяц.
+                  </p>
+                </div>
+              ) : null}
             </div>
           </div>
         </div>
@@ -289,9 +483,25 @@ export default function AdminPartnerDetails() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
+  const [editingRegion, setEditingRegion] = useState(false);
   const [collabId, setCollabId] = useState('');
   const [chatId, setChatId] = useState('');
   const [rootFolderId, setRootFolderId] = useState('');
+  const [clientSearch, setClientSearch] = useState('');
+  const [clientPage, setClientPage] = useState(1);
+  const deferredClientSearch = useDeferredValue(clientSearch.trim());
+  const {
+    data: partnerClients,
+    isLoading: areClientsLoading,
+    isFetching: areClientsFetching,
+    isError: areClientsError,
+    refetch: refetchClients,
+  } = useAdminClients({
+    partner_id: id,
+    search: deferredClientSearch || undefined,
+    page: clientPage,
+    page_size: 10,
+  });
 
   if (isLoading) {
     return (
@@ -312,6 +522,19 @@ export default function AdminPartnerDetails() {
     );
   }
 
+  const handleRegionChange = (region: string) => {
+    updatePartner.mutate(
+      { id: partner.id, data: { region } },
+      {
+        onSuccess: () => {
+          setEditingRegion(false);
+          toast.success('Регион обновлён');
+        },
+        onError: () => toast.error('Не удалось сохранить регион'),
+      },
+    );
+  };
+
   const statusStyle = STATUS_STYLES[partner.status] || 'bg-gray-100 text-gray-700';
   const statusLabel = STATUS_LABELS[partner.status] || partner.status;
   const statusIcon = STATUS_ICONS[partner.status] ?? null;
@@ -319,7 +542,7 @@ export default function AdminPartnerDetails() {
   return (
     <div className="space-y-6">
       {/* Шапка */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div className="flex items-center gap-4">
           <Link
             to="/admin/partners"
@@ -332,7 +555,36 @@ export default function AdminPartnerDetails() {
             <p className="text-gray-600 mt-1">Детальная информация о партнере</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {editingRegion ? (
+            <div className="flex w-full max-w-[360px] items-center gap-2">
+              <CustomSelect
+                value={partner.region ?? ''}
+                onChange={handleRegionChange}
+                groups={REGION_SELECT_GROUPS}
+                placeholder="Выберите регион"
+                searchable
+                disabled={updatePartner.isPending}
+              />
+              {updatePartner.isPending ? (
+                <Loader2 className="h-4 w-4 flex-shrink-0 animate-spin text-blue-600" />
+              ) : (
+                <button
+                  onClick={() => setEditingRegion(false)}
+                  className="rounded-lg p-2 text-gray-400 hover:bg-gray-100 hover:text-gray-700"
+                  aria-label="Отменить изменение региона"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          ) : (
+            <PartnerRegionClock
+              region={partner.region}
+              timezone={partner.timezone}
+              onEdit={() => setEditingRegion(true)}
+            />
+          )}
           <button
             onClick={() => setShowEdit(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -391,6 +643,54 @@ export default function AdminPartnerDetails() {
             </div>
             <div className={`p-3 rounded-lg ${statusStyle}`}>
               {statusIcon}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Финансовая информация */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <h2 className="text-lg font-semibold text-gray-900 mb-4">Финансовая информация</h2>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="rounded-xl border border-gray-200 bg-gray-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-gray-600">Общая задолженность</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {((partner.finance_total_cost ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-gray-200">
+                <WalletCards className="w-6 h-6 text-gray-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-amber-700">Текущая задолженность</p>
+                <p className="text-2xl font-semibold text-amber-900 mt-1">
+                  {((partner.finance_current_debt ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-amber-200">
+                <Clock3 className="w-6 h-6 text-amber-600" />
+              </div>
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-red-200 bg-red-50 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm text-red-700">Просроченная задолженность</p>
+                <p className="text-2xl font-semibold text-red-900 mt-1">
+                  {((partner.finance_overdue_debt ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                </p>
+              </div>
+              <div className="p-3 bg-white rounded-lg border border-red-200">
+                <CircleDollarSign className="w-6 h-6 text-red-600" />
+              </div>
             </div>
           </div>
         </div>
@@ -495,6 +795,26 @@ export default function AdminPartnerDetails() {
                 <p className="text-gray-900 font-medium">{partner.payment_term_days} дней</p>
               </div>
             </div>
+            {partner.free_client_limit > 0 ? (
+              <div className="mt-5 rounded-xl border border-emerald-200 bg-emerald-50 p-4">
+                <div className="flex items-start gap-3">
+                  <Gift className="w-5 h-5 text-emerald-700 mt-0.5" />
+                  <div>
+                    <p className="font-medium text-emerald-900">
+                      Первые {partner.free_client_limit} клиентов бесплатно
+                    </p>
+                    <p className="text-sm text-emerald-800 mt-1">
+                      Период: {formatDateOnly(partner.promotion_start_date)} — {formatDateOnly(partner.promotion_end_date)}
+                    </p>
+                    <p className="text-xs text-emerald-700 mt-2">
+                      Льгота завершается по исчерпании лимита или окончании месяца — что наступит раньше.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-gray-500">Льготное предложение не установлено.</p>
+            )}
           </div>
         </div>
 
@@ -604,6 +924,169 @@ export default function AdminPartnerDetails() {
           </div>
         </div>
       </div>
+
+      {/* Клиенты партнёра */}
+      <section className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="p-6 border-b border-gray-200">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-gray-900">Клиенты партнёра</h2>
+              <span className="inline-flex min-w-6 h-6 items-center justify-center rounded-md bg-blue-50 px-2 text-xs font-semibold text-blue-700">
+                {partner.clients_count ?? partnerClients?.total ?? 0}
+              </span>
+            </div>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+              <div className="relative sm:w-72">
+                <label htmlFor="partner-clients-search" className="sr-only">
+                  Поиск по клиентам партнёра
+                </label>
+                <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
+                <input
+                  id="partner-clients-search"
+                  type="search"
+                  value={clientSearch}
+                  onChange={(event) => {
+                    setClientSearch(event.target.value);
+                    setClientPage(1);
+                  }}
+                  placeholder="Поиск по клиентам"
+                  className="w-full rounded-lg border border-gray-300 py-2 pl-9 pr-3 text-sm outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <Link
+                to={`/admin/clients?partner=${partner.id}`}
+                className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline whitespace-nowrap"
+              >
+                Все клиенты
+              </Link>
+            </div>
+          </div>
+          {deferredClientSearch ? (
+            <p className="mt-3 text-xs text-gray-500">
+              Найдено: {partnerClients?.total ?? 0}
+            </p>
+          ) : null}
+        </div>
+
+        {areClientsLoading ? (
+          <div className="flex items-center justify-center gap-2 px-6 py-12 text-sm text-gray-500">
+            <Loader2 className="h-5 w-5 animate-spin text-blue-600" />
+            Загрузка клиентов...
+          </div>
+        ) : areClientsError ? (
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <AlertCircle className="mb-3 h-9 w-9 text-red-400" />
+            <p className="text-sm font-medium text-gray-900">Не удалось загрузить клиентов</p>
+            <button
+              type="button"
+              onClick={() => refetchClients()}
+              className="mt-3 text-sm font-medium text-blue-600 hover:underline"
+            >
+              Повторить
+            </button>
+          </div>
+        ) : partnerClients?.items.length ? (
+          <>
+            <div className={`overflow-x-auto transition-opacity ${areClientsFetching ? 'opacity-60' : ''}`}>
+              <table className="w-full min-w-[900px]">
+                <thead className="bg-gray-50 border-b border-gray-200">
+                  <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-600">Клиент</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Телефон</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Статус</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Тип</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Стоимость</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-600">Дата добавления</th>
+                    <th className="px-6 py-3 text-right text-xs font-medium text-gray-600">Действия</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-200">
+                  {partnerClients.items.map((client) => (
+                    <tr key={client.id} className="hover:bg-blue-50/40 transition-colors">
+                      <td className="px-6 py-4">
+                        <Link
+                          to={`/admin/clients/${client.id}`}
+                          className="text-sm font-medium text-gray-900 hover:text-blue-700 hover:underline"
+                        >
+                          {client.full_name}
+                        </Link>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          <CaseArbitrLink caseNumber={client.case_number} emptyLabel="Дело не указано" />
+                        </p>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">{client.phone || '—'}</td>
+                      <td className="px-4 py-4">
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${getStatusBadgeClass(client.status)}`}>
+                          {getStatusLabel(client.status)}
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {client.type === 'before_court' ? 'До суда' : 'В суде'}
+                      </td>
+                      <td className="px-4 py-4 text-sm font-medium text-gray-900">
+                        {client.court_fee_per_client == null
+                          ? '—'
+                          : `${(client.court_fee_per_client / 100).toLocaleString('ru-RU')} ₽`}
+                      </td>
+                      <td className="px-4 py-4 text-sm text-gray-600">
+                        {formatDateShort(client.created_at, tz)}
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <Link
+                          to={`/admin/clients/${client.id}`}
+                          className="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+                        >
+                          Открыть
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {(partnerClients.pages > 1) ? (
+              <div className="flex items-center justify-between gap-4 border-t border-gray-200 px-6 py-4">
+                <p className="text-xs text-gray-500">
+                  Страница {partnerClients.page} из {partnerClients.pages}
+                </p>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setClientPage((page) => Math.max(1, page - 1))}
+                    disabled={partnerClients.page <= 1 || areClientsFetching}
+                    aria-label="Предыдущая страница клиентов"
+                    className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setClientPage((page) => Math.min(partnerClients.pages, page + 1))}
+                    disabled={partnerClients.page >= partnerClients.pages || areClientsFetching}
+                    aria-label="Следующая страница клиентов"
+                    className="rounded-lg border border-gray-300 p-2 text-gray-600 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </>
+        ) : (
+          <div className="flex flex-col items-center px-6 py-12 text-center">
+            <Users className="mb-3 h-10 w-10 text-gray-300" />
+            <p className="text-sm font-medium text-gray-900">
+              {deferredClientSearch ? 'Клиенты не найдены' : 'У партнёра пока нет клиентов'}
+            </p>
+            <p className="mt-1 text-xs text-gray-500">
+              {deferredClientSearch
+                ? 'Попробуйте изменить поисковый запрос.'
+                : 'Новые клиенты появятся здесь после добавления.'}
+            </p>
+          </div>
+        )}
+      </section>
 
       {showConfirm && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">

@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, func
+from sqlalchemy import BigInteger, Boolean, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -39,6 +39,12 @@ class NotificationPreference(Base, TimestampMixin):
     email_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
     new_partner_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
     critical_events: Mapped[bool] = mapped_column(Boolean, default=True)
+    telegram_notifications: Mapped[bool] = mapped_column(Boolean, default=True)
+    telegram_chat_id: Mapped[int | None] = mapped_column(BigInteger, unique=True, default=None)
+    telegram_username: Mapped[str | None] = mapped_column(String(64), default=None)
+    telegram_connected_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    telegram_connect_token_hash: Mapped[str | None] = mapped_column(String(64), index=True, default=None)
+    telegram_connect_expires_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     user: Mapped[User] = relationship("User")
 

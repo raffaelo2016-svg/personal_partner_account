@@ -10,12 +10,20 @@ describe('registrationStep1Schema', () => {
     partnerType: 'legal' as const,
     companyName: 'ООО Ромашка',
     inn: '1234567890',
+    kpp: '770401001',
     ogrn: '1234567890123',
     legalAddress: 'г. Москва',
+    region: 'Белгородская область',
   };
 
   it('accepts valid input', () => {
     expect(registrationStep1Schema.safeParse(valid).success).toBe(true);
+  });
+
+  it('requires region', () => {
+    const result = registrationStep1Schema.safeParse({ ...valid, region: '' });
+    expect(result.success).toBe(false);
+    expect(flattenZodErrors(result).region).toBe('Обязательное поле');
   });
 
   it('rejects INN with wrong length', () => {
@@ -36,9 +44,22 @@ describe('registrationStep1Schema', () => {
       inn: '',
       ogrn: '',
       legalAddress: '',
+      region: 'Москва',
     });
     const errors = flattenZodErrors(result);
-    expect(Object.keys(errors).length).toBe(4);
+    expect(Object.keys(errors).length).toBe(5);
+  });
+
+  it('rejects a missing KPP for a legal entity', () => {
+    const result = registrationStep1Schema.safeParse({ ...valid, kpp: '' });
+    expect(flattenZodErrors(result).kpp).toBe('Обязательное поле');
+  });
+
+  it('rejects KPP with an invalid reason code', () => {
+    const result = registrationStep1Schema.safeParse({ ...valid, kpp: '770400001' });
+    expect(flattenZodErrors(result).kpp).toBe(
+      'Проверьте КПП (код причины постановки на учёт)',
+    );
   });
 
   it('accepts individual input without INN and company fields', () => {
@@ -47,6 +68,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       middleName: 'Иванович',
+      region: 'Москва',
     });
     expect(result.success).toBe(true);
   });
@@ -57,6 +79,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '500100732259',
+      region: 'Москва',
     });
     expect(result.success).toBe(true);
   });
@@ -67,6 +90,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '1234567890',
+      region: 'Москва',
     });
     expect(flattenZodErrors(result).inn).toBe('ИНН должен содержать 12 цифр');
   });
@@ -160,8 +184,10 @@ describe('flattenZodErrors', () => {
       partnerType: 'legal' as const,
       companyName: 'ООО Ромашка',
       inn: '1234567890',
+      kpp: '770401001',
       ogrn: '1234567890123',
       legalAddress: 'г. Москва',
+      region: 'Москва',
     };
     const result = registrationStep1Schema.safeParse(valid);
     expect(flattenZodErrors(result)).toEqual({});
@@ -172,8 +198,10 @@ describe('flattenZodErrors', () => {
       companyName: 'ок',
       partnerType: 'legal',
       inn: 'abc',
+      kpp: '770401001',
       ogrn: '1234567890123',
       legalAddress: 'ок',
+      region: 'Москва',
     });
     const errors = flattenZodErrors(result);
     expect(Object.keys(errors)).toEqual(['inn']);

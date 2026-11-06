@@ -15,9 +15,9 @@ class TestTaskCreate:
         assert t.priority == "medium"
         assert t.assigned_to == "partner"
 
-    def test_missing_client_id(self):
-        with pytest.raises(ValidationError):
-            TaskCreate(title="X", due_date="2026-06-01")  # type: ignore
+    def test_recipient_can_be_inferred_from_authenticated_partner(self):
+        task = TaskCreate(title="X", assigned_to="uritech", due_date="2026-06-01")
+        assert task.client_id is None and task.partner_id is None
 
     def test_missing_title(self):
         with pytest.raises(ValidationError):
@@ -36,8 +36,16 @@ class TestTaskCreate:
             TaskCreate(client_id="a", title="Б" * 256, due_date="2026-06-01")
 
     def test_missing_due_date(self):
+        t = TaskCreate(client_id="a", title="X")
+        assert t.due_date is None and t.due_at is None
+
+    def test_general_partner_task(self):
+        t = TaskCreate(partner_id="partner", title="Подписать договор")
+        assert t.client_id is None
+
+    def test_precise_deadline_requires_timezone(self):
         with pytest.raises(ValidationError):
-            TaskCreate(client_id="a", title="X")  # type: ignore
+            TaskCreate(client_id="a", title="X", due_at="2026-12-01T12:00:00")
 
     def test_invalid_due_date(self):
         with pytest.raises(ValidationError):

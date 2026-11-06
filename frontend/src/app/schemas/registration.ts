@@ -9,8 +9,10 @@ export const registrationStep1Schema = z.object({
   firstName: z.string().optional(),
   middleName: z.string().optional(),
   inn: z.string().optional(),
+  kpp: z.string().optional(),
   ogrn: z.string().optional(),
   legalAddress: z.string().optional(),
+  region: z.string().min(1, REQUIRED),
 }).superRefine((data, ctx) => {
   const add = (path: string, message = REQUIRED) => {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });
@@ -21,6 +23,9 @@ export const registrationStep1Schema = z.object({
     if (!data.legalAddress) add('legalAddress');
     if (!data.inn) add('inn');
     else if (!/^\d{10}$/.test(data.inn)) add('inn', 'ИНН должен содержать 10 цифр');
+    if (!data.kpp) add('kpp');
+    else if (!/^\d{9}$/.test(data.kpp)) add('kpp', 'КПП должен содержать 9 цифр');
+    else if (data.kpp.slice(4, 6) === '00') add('kpp', 'Проверьте КПП (код причины постановки на учёт)');
     if (!data.ogrn) add('ogrn');
     else if (!/^\d{13}$/.test(data.ogrn)) add('ogrn', 'ОГРН должен содержать 13 цифр');
     return;

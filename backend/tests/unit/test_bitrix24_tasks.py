@@ -451,6 +451,7 @@ async def test_remote_added_task_is_imported_for_known_client(db_session: AsyncS
             "priority": "2",
             "deadline": "2026-08-12T18:00:00+03:00",
             "xmlId": "",
+            "tags": ["ЛКП"],
             "ufCrmTask": ["D_456"],
         }
     }

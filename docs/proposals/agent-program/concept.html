@@ -1,0 +1,1014 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ЮРИТЕХ · Агентская сеть — концепт</title>
+<style>
+  :root{
+    --bg:#F7F6FB;
+    --surface:#FFFFFF;
+    --ink:#12101A;
+    --muted:#6B6880;
+    --soft:#9A97A8;
+    --line:#ECE9F4;
+    --violet:#6D28D9;
+    --violet-2:#8B5CF6;
+    --violet-3:#A78BFA;
+    --lavender:#F3EFFF;
+    --green:#059669;
+    --green-soft:#E7F7F0;
+    --amber:#B45309;
+    --amber-soft:#FEF3C7;
+    --red:#DC2626;
+    --red-soft:#FEE2E2;
+    --slate:#1E293B;
+    --radius:22px;
+    --shadow:0 10px 30px rgba(18,16,26,.045);
+    --shadow-lg:0 18px 50px rgba(76,29,149,.12);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Segoe UI",Roboto,Inter,sans-serif;
+    background:
+      radial-gradient(900px 500px at 85% -5%, #EFE9FF 0%, rgba(239,233,255,0) 60%),
+      radial-gradient(700px 400px at 5% 5%, #F4F1FF 0%, rgba(244,241,255,0) 55%),
+      var(--bg);
+    color:var(--ink);
+    -webkit-font-smoothing:antialiased;
+  }
+  .page{max-width:1480px;margin:0 auto;padding:34px 34px 80px}
+  .concept-bar{
+    display:flex;align-items:center;justify-content:space-between;gap:20px;
+    padding:12px 18px;margin-bottom:26px;border:1px solid var(--line);
+    background:rgba(255,255,255,.72);backdrop-filter:blur(14px);
+    border-radius:16px;font-size:12px;color:var(--muted);
+  }
+  .concept-bar b{color:var(--ink);font-weight:600}
+  .concept-bar .dot{width:7px;height:7px;border-radius:50%;background:var(--green);display:inline-block;margin-right:8px}
+  .concept-bar .right{display:flex;gap:18px;align-items:center}
+  .section-head{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin:44px 0 18px}
+  .section-head:first-of-type{margin-top:0}
+  .section-kicker{display:flex;align-items:center;gap:10px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--violet);font-weight:700}
+  .section-kicker .num{width:26px;height:26px;border-radius:9px;background:var(--violet);color:#fff;display:grid;place-items:center;font-size:11px;letter-spacing:0}
+  .section-title{font-size:30px;line-height:1.1;letter-spacing:-.03em;font-weight:700;margin-top:10px}
+  .section-sub{font-size:13px;color:var(--muted);max-width:560px;line-height:1.55;margin-top:8px}
+  .section-tag{font-size:11px;color:var(--muted);border:1px solid var(--line);background:#fff;padding:8px 12px;border-radius:999px;white-space:nowrap}
+
+  /* ── shared card ── */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--radius);box-shadow:var(--shadow)}
+  .card-pad{padding:22px}
+  .money{font-variant-numeric:tabular-nums;letter-spacing:-.03em}
+
+  /* ══════════════ AGENT APP ══════════════ */
+  .agent-shell{
+    display:grid;grid-template-columns:236px 1fr;min-height:920px;
+    background:var(--surface);border:1px solid var(--line);border-radius:26px;
+    overflow:hidden;box-shadow:0 24px 70px rgba(30,20,60,.08)
+  }
+  .agent-side{
+    background:#FCFBFE;border-right:1px solid var(--line);padding:22px 16px 18px;
+    display:flex;flex-direction:column;gap:22px
+  }
+  .brand{display:flex;align-items:center;gap:11px;padding:0 6px}
+  .brand-mark{
+    width:38px;height:38px;border-radius:12px;display:grid;place-items:center;
+    background:linear-gradient(135deg,#5B21B6,#7C3AED 60%,#A78BFA);
+    color:#fff;font-weight:800;font-size:18px;box-shadow:0 8px 18px rgba(109,40,217,.28)
+  }
+  .brand-name{font-size:15px;font-weight:800;letter-spacing:-.02em}
+  .brand-sub{font-size:10px;color:var(--muted);letter-spacing:.08em;text-transform:uppercase;margin-top:2px}
+  .nav-label{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--soft);font-weight:700;padding:0 10px}
+  .nav{display:flex;flex-direction:column;gap:4px}
+  .nav-item{
+    display:flex;align-items:center;gap:11px;padding:10px 11px;border-radius:12px;
+    color:#514D63;font-size:13px;font-weight:500;text-decoration:none;position:relative
+  }
+  .nav-item svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.85}
+  .nav-item.active{background:var(--lavender);color:var(--violet);font-weight:600}
+  .nav-item.active:before{content:"";position:absolute;left:-16px;top:12px;bottom:12px;width:3px;border-radius:0 4px 4px 0;background:var(--violet)}
+  .nav-item .badge{margin-left:auto;background:#EDE7FF;color:var(--violet);font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px}
+  .nav-item .badge.green{background:var(--green-soft);color:var(--green)}
+  .side-foot{margin-top:auto;padding-top:16px;border-top:1px solid var(--line)}
+  .profile{display:flex;align-items:center;gap:10px;padding:8px 6px}
+  .avatar{width:34px;height:34px;border-radius:11px;display:grid;place-items:center;font-size:11px;font-weight:800;color:#fff;flex:specific}
+  .avatar.v{background:linear-gradient(135deg,#7C3AED,#A78BFA)}
+  .avatar.g{background:linear-gradient(135deg,#059669,#34D399)}
+  .avatar.a{background:linear-gradient(135deg,#D97706,#FBBF24)}
+  .avatar.b{background:linear-gradient(135deg,#2563EB,#60A5FA)}
+  .avatar.p{background:linear-gradient(135deg,#DB2777,#F472B6)}
+  .profile-name{font-size:12px;font-weight:700;line-height:1.2}
+  .profile-role{font-size:10px;color:var(--muted);margin-top:2px}
+
+  .agent-main{padding:24px 28px 30px;background:#FEFDFF;min-width:0}
+  .topbar{display:flex;align-items:center;justify-content:space-between;gap:18px;margin-bottom:22px}
+  .hello h1{font-size:24px;letter-spacing:-.03em;font-weight:750}
+  .hello p{font-size:12px;color:var(--muted);margin-top:4px}
+  .top-actions{display:flex;align-items:center;gap:10px}
+  .icon-btn{width:38px;height:38px;border-radius:12px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:#5B576B;position:relative}
+  
+  .icon-btn svg,.payout-icon svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .btn{
+    display:inline-flex;align-items:center;gap:8px;padding:10px 15px;border-radius:12px;
+    font-size:13px;font-weight:650;border:1px solid transparent;cursor:pointer;text-decoration:none
+  }
+  .btn svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+  .btn-primary{background:var(--violet);color:#fff;box-shadow:0 8px 18px rgba(109,40,217,.22)}
+  .btn-ghost{background:#fff;border-color:var(--line);color:#3F3B4F}
+
+  .hero{display:grid;grid-template-columns:1.45fr 1fr;gap:16px}
+  .hero-main{
+    position:relative;overflow:hidden;border-radius:24px;padding:24px 26px;
+    background:linear-gradient(125deg,#4C1D95 0%,#6D28D9 48%,#8B5CF6 100%);
+    color:#fff;min-height:186px;box-shadow:var(--shadow-lg)
+  }
+  .hero-main:before,.hero-main:after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
+  .hero-main:before{width:280px;height:280px;right:-80px;top:-120px}
+  .hero-main:after{width:180px;height:180px;right:40px;bottom:-120px;background:rgba(255,255,255,.06)}
+  .hero-label{font-size:11px;letter-spacing:.12em;text-transform:uppercase;opacity:.72;font-weight:700}
+  .hero-amount{font-size:42px;font-weight:800;letter-spacing:-.045em;margin-top:8px;line-height:1}
+  .hero-amount span{font-size:20px;font-weight:600;opacity:.8;margin-left:4px}
+  .hero-note{font-size:12px;opacity:.78;margin-top:8px}
+  .hero-split{display:flex;gap:28px;margin-top:20px;position:relative;z-index:1}
+  .hero-mini .k{font-size:10px;text-transform:uppercase;letter-spacing:.09em;opacity:.65;font-weight:700}
+  .hero-mini .v{font-size:15px;font-weight:700;margin-top:3px}
+  .hero-btn{
+    position:absolute;right:22px;bottom:20px;z-index:2;background:rgba(255,255,255,.14);
+    border:1px solid rgba(255,255,255,.24);color:#fff;padding:8px 12px;border-radius:10px;font-size:12px;font-weight:650
+  }
+  .hero-side{display:flex;flex-direction:column;gap:14px}
+  .pending-card{padding:20px 22px;border-radius:22px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);flex:1}
+  .pending-top{display:flex;align-items:center;justify-content:space-between}
+  .pending-top .k{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--muted);font-weight:700}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;padding:4px 8px;border-radius:999px;letter-spacing:.02em}
+  .pill.amber{background:var(--amber-soft);color:var(--amber)}
+  .pill.green{background:var(--green-soft);color:var(--green)}
+  .pill.violet{background:var(--lavender);color:var(--violet)}
+  .pill.red{background:var(--red-soft);color:var(--red)}
+  .pill.slate{background:#F1F5F9;color:#475569}
+  .pending-amount{font-size:28px;font-weight:800;letter-spacing:-.04em;margin-top:12px}
+  .pending-amount span{font-size:13px;color:var(--muted);font-weight:500;margin-left:4px}
+  .progress{height:7px;background:#F1EEF8;border-radius:999px;overflow:hidden;margin-top:16px}
+  .progress i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#F59E0B,#FBBF24)}
+  .pending-foot{display:flex;justify-content:space-between;font-size:11px;color:var(--muted);margin-top:8px}
+  .payout-card{padding:16px 20px;border-radius:18px;background:linear-gradient(135deg,#F7F4FF,#FDFCFF);border:1px solid #EDE7FD;display:flex;align-items:center;gap:12px}
+  .payout-icon{width:36px;height:36px;border-radius:11px;background:#fff;display:grid;place-items:center;color:var(--violet);border:1px solid #EDE7FD}
+  .payout-card .t{font-size:10px;text-transform:uppercase;letter-spacing:.09em;color:var(--muted);font-weight:700}
+  .payout-card .d{font-size:14px;font-weight:750;margin-top:2px}
+
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-top:16px}
+  .kpi{padding:16px 18px;border-radius:18px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .kpi-top{display:flex;align-items:center;justify-content:space-between}
+  .kpi-ico{width:34px;height:34px;border-radius:10px;display:grid;place-items:center}
+  .kpi-ico svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .kpi-ico.v{background:var(--lavender);color:var(--violet)}
+  .kpi-ico.g{background:var(--green-soft);color:var(--green)}
+  .kpi-ico.a{background:var(--amber-soft);color:var(--amber)}
+  .kpi-ico.b{background:#EAF2FF;color:#2563EB}
+  .delta{font-size:10px;font-weight:750;padding:3px 7px;border-radius:999px}
+  .delta.up{color:var(--green);background:var(--green-soft)}
+  .delta.flat{color:var(--muted);background:#F4F3F8}
+  .kpi-val{font-size:23px;font-weight:800;letter-spacing:-.035em;margin-top:12px}
+  .kpi-lab{font-size:11px;color:var(--muted);margin-top:3px}
+
+  .mid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:16px}
+  .chart-card{padding:20px 22px;border-radius:22px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:14px}
+  .card-title{font-size:14px;font-weight:750;letter-spacing:-.01em}
+  .card-sub{font-size:11px;color:var(--muted);margin-top:3px}
+  .legend{display:flex;align-items:center;gap:12px;font-size:10px;color:var(--muted)}
+  .legend i{width:8px;height:8px;border-radius:3px;display:inline-block;margin-right:5px}
+  .chart{position:relative;height:150px;margin-top:18px;display:flex;align-items:flex-end;gap:7px;padding-top:8px}
+  .chart:before{content:"";position:absolute;inset:8px 0 0;background:repeating-linear-gradient(to top,transparent 0,transparent 36px,#F5F3FA 36px,#F5F3FA 37px);pointer-events:none}
+  .bar{flex:1;position:relative;display:flex;flex-direction:column;justify-content:flex-end;height:100%;z-index:1}
+  .bar i{display:block;background:linear-gradient(180deg,#A78BFA,#7C3AED);border-radius:6px 6px 3px 3px;min-height:6px}
+  .bar.soft i{background:linear-gradient(180deg,#E9E3FB,#D8CCF8)}
+  .bar:hover i{filter:brightness(1.06)}
+  .bar b{position:absolute;bottom:calc(100% + 5px);left:50%;transform:translateX(-50%);font-size:9px;font-weight:700;background:var(--ink);color:#fff;padding:3px 6px;border-radius:6px;opacity:0;white-space:nowrap}
+  .bar:hover b{opacity:1}
+  .months{display:flex;gap:7px;margin-top:8px}
+  .months span{flex:1;text-align:center;font-size:9px;color:var(--soft)}
+  .tier{padding:20px 22px;border-radius:22px;background:linear-gradient(160deg,#FBF9FF,#F4EFFF);border:1px solid #EDE6FD;box-shadow:var(--shadow);display:flex;flex-direction:column}
+  .tier-top{display:flex;align-items:center;gap:10px}
+  .tier-badge{width:38px;height:38px;border-radius:12px;background:#fff;border:1px solid #E7DDFB;display:grid;place-items:center}
+  .tier-badge svg{width:19px;height:19px;fill:none;stroke:#6D28D9;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+  .tier-name{font-size:13px;font-weight:800}
+  .tier-sub{font-size:10px;color:var(--muted);margin-top:2px}
+  .tier-line{display:flex;justify-content:space-between;font-size:10px;color:var(--muted);margin-top:18px}
+  .tier-line b{color:var(--violet);font-weight:750}
+  .tier .progress{background:#E7DDFB;margin-top:8px}
+  .tier .progress i{background:linear-gradient(90deg,#7C3AED,#A78BFA)}
+  .tier-list{margin-top:16px;display:flex;flex-direction:column;gap:8px}
+  .tier-list div{display:flex;gap:8px;align-items:flex-start;font-size:11px;color:#4B4660;line-height:1.4}
+  .tier-list svg{width:14px;height:14px;stroke:var(--green);fill:none;stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none;margin-top:1px}
+  .tier-btn{margin-top:16px;text-align:center;font-size:11px;font-weight:700;color:var(--violet);padding:9px;border-radius:10px;background:#fff;border:1px solid #E7DDFB}
+
+  .bottom{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:16px}
+  .partners-card{padding:20px 22px;border-radius:22px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .partners-table{width:100%;border-collapse:collapse;margin-top:12px}
+  .partners-table th{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--soft);font-weight:750;text-align:left;padding:8px 8px;border-bottom:1px solid var(--line)}
+  .partners-table td{padding:10px 8px;border-bottom:1px solid #F5F3F9;font-size:11px;color:#3F3B4F;vertical-align:middle}
+  .partners-table tr:last-child td{border-bottom:none}
+  .partner-cell{display:flex;align-items:center;gap:9px}
+  .partner-cell .avatar{width:28px;height:28px;border-radius:9px;font-size:9px}
+  .partner-name{font-weight:700;font-size:11px}
+  .partner-meta{font-size:9px;color:var(--soft);margin-top:1px}
+  .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:650}
+  .events{padding:20px 22px;border-radius:22px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .event{display:flex;gap:11px;padding:11px 0;border-bottom:1px solid #F5F3F9}
+  .event:last-child{border-bottom:none;padding-bottom:0}
+  .event-dot{width:28px;height:28px;border-radius:9px;display:grid;place-items:center;flex:none;background:var(--green-soft);color:var(--green)}
+  .event-dot.v{background:var(--lavender);color:var(--violet)}
+  .event-dot.a{background:var(--amber-soft);color:var(--amber)}
+  .event-dot svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2.2;stroke-linecap:round;stroke-linejoin:round}
+  .event-t{font-size:11px;font-weight:600;line-height:1.35}
+  .event-m{font-size:9px;color:var(--soft);margin-top:2px}
+  .event-amt{margin-left:auto;font-size:11px;font-weight:750;color:var(--green);white-space:nowrap}
+  .event-amt.v{color:var(--violet)}
+
+  /* ══════════════ ADMIN ══════════════ */
+  .admin-shell{display:grid;grid-template-columns:224px 1fr;min-height:760px;background:#F7F7F9;border:1px solid var(--line);border-radius:26px;overflow:hidden;box-shadow:0 24px 70px rgba(15,23,42,.10)}
+  .admin-side{background:#1E293B;color:#fff;padding:22px 14px;display:flex;flex-direction:column;gap:20px}
+  .admin-brand{display:flex;align-items:center;gap:10px;padding:0 8px}
+  .admin-brand .mark{width:34px;height:34px;border-radius:10px;background:#fff;color:#1E293B;display:grid;place-items:center;font-weight:800;font-size:16px}
+  .admin-brand .n{font-size:13px;font-weight:750}
+  .admin-brand .s{font-size:9px;color:#94A3B8;text-transform:uppercase;letter-spacing:.09em;margin-top:2px}
+  .admin-nav{display:flex;flex-direction:column;gap:3px}
+  .admin-nav a{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;color:#CBD5E1;font-size:12px;text-decoration:none;font-weight:500}
+  .admin-nav a svg{width:16px;height:16px;stroke:currentColor;fill:none;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round;opacity:.8}
+  .admin-nav a.active{background:#334155;color:#fff;font-weight:650}
+  .admin-nav a .b{margin-left:auto;background:#EF4444;color:#fff;font-size:9px;font-weight:750;padding:1px 5px;border-radius:999px}
+  .admin-main{padding:22px 26px 28px;background:#F7F7F9;min-width:0}
+  .admin-top{display:flex;align-items:flex-start;justify-content:space-between;gap:18px;margin-bottom:20px}
+  .admin-top h2{font-size:22px;letter-spacing:-.03em;font-weight:750}
+  .admin-top p{font-size:11px;color:#64748B;margin-top:4px}
+  .admin-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:16px}
+  .admin-kpi{background:#fff;border:1px solid #E9E7EF;border-radius:15px;padding:14px 15px;box-shadow:0 4px 14px rgba(15,23,42,.03)}
+  .admin-kpi .k{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;font-weight:750}
+  .admin-kpi .v{font-size:21px;font-weight:800;letter-spacing:-.03em;margin-top:7px}
+  .admin-kpi .d{font-size:9px;margin-top:4px;color:#64748B}
+  .admin-kpi .d b{color:#059669;font-weight:750}
+  .admin-table-card{background:#fff;border:1px solid #E9E7EF;border-radius:18px;overflow:hidden;box-shadow:0 4px 14px rgba(15,23,42,.03)}
+  .admin-toolbar{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 16px;border-bottom:1px solid #F1F0F5}
+  .tabs{display:flex;gap:4px;background:#F4F3F8;padding:3px;border-radius:10px}
+  .tabs span{font-size:10px;font-weight:650;padding:6px 10px;border-radius:8px;color:#64748B}
+  .tabs span.on{background:#fff;color:#0F172A;box-shadow:0 2px 6px rgba(15,23,42,.06)}
+  .search{display:flex;align-items:center;gap:7px;border:1px solid #E9E7EF;border-radius:9px;padding:7px 10px;font-size:10px;color:#94A3B8;min-width:190px}
+  .search svg{width:13px;height:13px;stroke:currentColor;fill:none;stroke-width:2}
+  .admin-table{width:100%;border-collapse:collapse}
+  .admin-table th{font-size:8.5px;text-transform:uppercase;letter-spacing:.08em;color:#94A3B8;font-weight:750;text-align:left;padding:11px 14px;background:#FBFAFC;border-bottom:1px solid #F1F0F5}
+  .admin-table td{padding:11px 14px;border-bottom:1px solid #F5F4F8;font-size:10.5px;color:#334155;vertical-align:middle}
+  .admin-table tr:last-child td{border-bottom:none}
+  .admin-table tr:hover td{background:#FCFBFE}
+  .a-agent{display:flex;align-items:center;gap:8px}
+  .a-agent .avatar{width:27px;height:27px;border-radius:8px;font-size:8.5px}
+  .a-agent .n{font-weight:700;font-size:10.5px;color:#0F172A}
+  .a-agent .m{font-size:8.5px;color:#94A3B8;margin-top:1px}
+  .stat-pill{font-size:8.5px;font-weight:750;padding:3px 7px;border-radius:999px;display:inline-flex;align-items:center;gap:4px}
+  .stat-pill:before{content:"";width:5px;height:5px;border-radius:50%;background:currentColor}
+  .stat-pill.on{background:#E7F7F0;color:#059669}
+  .stat-pill.wait{background:#FEF3C7;color:#B45309}
+  .stat-pill.off{background:#F1F5F9;color:#64748B}
+  .tier-pill{font-size:8.5px;font-weight:700;padding:3px 7px;border-radius:6px;background:#F4F1FB;color:#6D28D9}
+  .tier-pill.gold{background:#FEF3C7;color:#B45309}
+  .tier-pill.silver{background:#F1F5F9;color:#475569}
+  .row-actions{display:flex;gap:6px;justify-content:flex-end}
+  .mini-btn{width:24px;height:24px;border-radius:7px;border:1px solid #E9E7EF;display:grid;place-items:center;color:#64748B;background:#fff}
+  .mini-btn svg{width:12px;height:12px;stroke:currentColor;fill:none;stroke-width:2}
+  .table-foot{display:flex;align-items:center;justify-content:space-between;padding:11px 16px;font-size:9.5px;color:#94A3B8;border-top:1px solid #F1F0F5}
+  .pager{display:flex;gap:4px}
+  .pager span{width:22px;height:22px;border-radius:6px;display:grid;place-items:center;border:1px solid #E9E7EF;background:#fff;font-size:9px}
+  .pager span.on{background:#6D28D9;color:#fff;border-color:#6D28D9}
+
+  .admin-bottom{display:grid;grid-template-columns:1.15fr 1fr 1fr;gap:12px;margin-top:14px}
+  .admin-mini{background:#fff;border:1px solid #E9E7EF;border-radius:16px;padding:15px 16px;box-shadow:0 4px 14px rgba(15,23,42,.03)}
+  .admin-mini .ah{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .admin-mini .at{font-size:10px;font-weight:750;color:#0F172A}
+  .admin-mini .as{font-size:8.5px;color:#94A3B8;margin-top:2px}
+  .admin-mini .big{font-size:23px;font-weight:800;letter-spacing:-.03em;color:#0F172A}
+  .admin-mini .hint{font-size:8.5px;color:#64748B;margin-top:3px}
+  .admin-mini .mini-progress{height:6px;border-radius:999px;background:#F1EEF8;overflow:hidden;margin-top:10px}
+  .admin-mini .mini-progress i{display:block;height:100%;border-radius:999px;background:linear-gradient(90deg,#7C3AED,#A78BFA)}
+  .admin-mini .link{font-size:9px;font-weight:750;color:#6D28D9}
+  .top-agent{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid #F5F4F8}
+  .top-agent:last-child{border-bottom:none;padding-bottom:0}
+  .top-agent .avatar{width:24px;height:24px;border-radius:8px;font-size:7.5px}
+  .top-agent .n{font-size:9.5px;font-weight:700;color:#0F172A}
+  .top-agent .m{font-size:8px;color:#94A3B8;margin-top:1px}
+  .top-agent .v{margin-left:auto;font-size:9.5px;font-weight:750;color:#0F172A}
+  .attention-row{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #F5F4F8}
+  .attention-row:last-child{border-bottom:none;padding-bottom:0}
+  .attention-dot{width:7px;height:7px;border-radius:50%;margin-top:4px;flex:none}
+  .attention-row .n{font-size:9.5px;font-weight:650;color:#0F172A;line-height:1.35}
+  .attention-row .m{font-size:8px;color:#94A3B8;margin-top:2px}
+  .attention-row .cnt{margin-left:auto;font-size:8.5px;font-weight:750;color:#B45309;white-space:nowrap}
+
+  /* ══════════════ PARTNER + NETWORK ══════════════ */
+  .duo{display:grid;grid-template-columns:1fr 1.1fr;gap:16px}
+  .partner-card{padding:24px;border-radius:24px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .pc-head{display:flex;align-items:center;gap:13px;padding-bottom:18px;border-bottom:1px solid var(--line)}
+  .pc-logo{width:48px;height:48px;border-radius:15px;background:linear-gradient(135deg,#1E293B,#475569);color:#fff;display:grid;place-items:center;font-weight:800;font-size:15px}
+  .pc-name{font-size:16px;font-weight:800;letter-spacing:-.02em}
+  .pc-meta{font-size:11px;color:var(--muted);margin-top:3px}
+  .pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;padding:18px 0;border-bottom:1px solid var(--line)}
+  .pc-k{font-size:9px;text-transform:uppercase;letter-spacing:.09em;color:var(--soft);font-weight:750}
+  .pc-v{font-size:13px;font-weight:700;margin-top:4px}
+  .agent-block{margin-top:18px;border:1px solid #E9E1FB;background:linear-gradient(160deg,#FBF9FF,#F6F1FF);border-radius:18px;padding:16px}
+  .ab-head{display:flex;align-items:center;justify-content:space-between}
+  .ab-label{font-size:9px;text-transform:uppercase;letter-spacing:.12em;color:var(--violet);font-weight:800}
+  .ab-person{display:flex;align-items:center;gap:10px;margin-top:11px}
+  .ab-person .avatar{width:36px;height:36px;border-radius:11px;font-size:11px}
+  .ab-name{font-size:12px;font-weight:750}
+  .ab-meta{font-size:9.5px;color:var(--muted);margin-top:2px}
+  .ab-stats{display:flex;gap:18px;margin-top:14px;padding-top:12px;border-top:1px solid #E9E1FB}
+  .ab-stat .k{font-size:8.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--soft);font-weight:750}
+  .ab-stat .v{font-size:13px;font-weight:750;margin-top:3px}
+  .ab-foot{display:flex;gap:8px;margin-top:14px}
+  .ab-btn{flex:1;text-align:center;font-size:10px;font-weight:700;padding:8px;border-radius:9px;background:#fff;border:1px solid #E9E1FB;color:var(--violet);text-decoration:none}
+  .ab-btn.primary{background:var(--violet);color:#fff;border-color:var(--violet)}
+  .network-card{padding:22px;border-radius:24px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow);position:relative;overflow:hidden}
+  .network-card:before{content:"";position:absolute;inset:0;background-image:radial-gradient(#E9E4F5 1px,transparent 1px);background-size:18px 18px;opacity:.7;pointer-events:none}
+  .network-head{position:relative;z-index:1;display:flex;align-items:flex-start;justify-content:space-between}
+  .network-svg{position:relative;z-index:1;width:100%;height:360px;margin-top:6px}
+  .network-legend{position:relative;z-index:1;display:flex;gap:14px;font-size:9px;color:var(--muted);margin-top:4px}
+  .network-legend i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+
+  /* ── mobile ── */
+  .mobile-wrap{max-width:1020px;margin:16px auto 0;background:linear-gradient(135deg,#F5F1FF 0%,#FDFCFF 70%);border:1px solid #EDE6FD;border-radius:30px;padding:34px 40px;display:grid;grid-template-columns:1fr 310px;gap:42px;align-items:center;box-shadow:var(--shadow)}
+  .mobile-copy .kicker{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--violet);font-weight:800}
+  .mobile-copy h3{font-size:25px;letter-spacing:-.035em;line-height:1.15;margin-top:10px;max-width:420px}
+  .mobile-copy p{font-size:12px;color:var(--muted);line-height:1.6;margin-top:10px;max-width:430px}
+  .mobile-points{margin-top:18px;display:flex;flex-direction:column;gap:10px}
+  .mobile-points div{display:flex;gap:9px;align-items:flex-start;font-size:11.5px;color:#3F3B4F;line-height:1.45}
+  .mobile-points svg{width:15px;height:15px;fill:none;stroke:var(--green);stroke-width:2.4;stroke-linecap:round;stroke-linejoin:round;flex:none;margin-top:1px}
+  .mobile-stats{display:flex;gap:26px;margin-top:22px;padding-top:18px;border-top:1px solid #E9E1FB}
+  .mobile-stats .k{font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:var(--soft);font-weight:750}
+  .mobile-stats .v{font-size:18px;font-weight:800;letter-spacing:-.03em;margin-top:3px}
+  .phone{width:310px;height:610px;border-radius:38px;background:#12101A;padding:9px;box-shadow:0 30px 70px rgba(18,16,26,.20);position:relative}
+  .phone:after{content:"";position:absolute;top:9px;left:50%;transform:translateX(-50%);width:96px;height:24px;background:#12101A;border-radius:0 0 16px 16px;z-index:3}
+  .phone-screen{background:#FBF9FF;border-radius:30px;height:100%;overflow:hidden;position:relative}
+  .ph-status{display:flex;justify-content:space-between;padding:12px 18px 2px;font-size:9px;font-weight:700;color:#12101A}
+  .ph-top{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 10px}
+  .ph-title{font-size:16px;font-weight:800;letter-spacing:-.03em}
+  .ph-sub{font-size:9px;color:var(--muted);margin-top:2px}
+  .ph-avatar{width:30px;height:30px;border-radius:10px;background:linear-gradient(135deg,#7C3AED,#A78BFA);color:#fff;display:grid;place-items:center;font-size:9px;font-weight:800}
+  .ph-card{margin:8px 14px;padding:16px;border-radius:18px;background:linear-gradient(135deg,#5B21B6,#7C3AED);color:#fff;position:relative;overflow:hidden}
+  .ph-card:after{content:"";position:absolute;width:140px;height:140px;border-radius:50%;background:rgba(255,255,255,.1);right:-40px;top:-60px}
+  .ph-k{font-size:8px;text-transform:uppercase;letter-spacing:.1em;opacity:.7;font-weight:750}
+  .ph-v{font-size:26px;font-weight:800;letter-spacing:-.04em;margin-top:5px}
+  .ph-note{font-size:8.5px;opacity:.75;margin-top:5px}
+  .ph-row{display:flex;gap:8px;margin:10px 14px}
+  .ph-mini{flex:1;background:#fff;border:1px solid var(--line);border-radius:13px;padding:10px}
+  .ph-mini .k{font-size:7.5px;text-transform:uppercase;color:var(--soft);letter-spacing:.06em;font-weight:750}
+  .ph-mini .v{font-size:14px;font-weight:800;margin-top:3px}
+  .ph-list{margin:10px 14px;background:#fff;border:1px solid var(--line);border-radius:15px;overflow:hidden}
+  .ph-list-head{display:flex;justify-content:space-between;padding:10px 12px;font-size:9px;font-weight:750;border-bottom:1px solid #F3F0F9}
+  .ph-list-head span{color:var(--violet);font-size:8px}
+  .ph-item{display:flex;align-items:center;gap:8px;padding:9px 12px;border-bottom:1px solid #F7F5FB}
+  .ph-item:last-child{border-bottom:none}
+  .ph-item .avatar{width:24px;height:24px;border-radius:8px;font-size:7.5px}
+  .ph-item .n{font-size:9px;font-weight:700}
+  .ph-item .m{font-size:7.5px;color:var(--soft);margin-top:1px}
+  .ph-item .amt{margin-left:auto;font-size:8.5px;font-weight:750;color:var(--green)}
+  .ph-pay{margin:10px 14px;padding:11px 12px;border-radius:13px;background:#fff;border:1px solid var(--line);display:flex;align-items:center;gap:9px}
+  .ph-pay .ic{width:26px;height:26px;border-radius:8px;background:var(--lavender);color:var(--violet);display:grid;place-items:center;flex:none}
+  .ph-pay .ic svg{width:13px;height:13px;fill:none;stroke:currentColor;stroke-width:2}
+  .ph-pay .k{font-size:7px;text-transform:uppercase;letter-spacing:.06em;color:var(--soft);font-weight:750}
+  .ph-pay .v{font-size:10px;font-weight:750;margin-top:1px}
+  .ph-pay .amt{margin-left:auto;font-size:10px;font-weight:800}
+  .ph-academy{margin:10px 14px 70px;padding:10px 12px;border-radius:13px;background:#fff;border:1px solid var(--line)}
+  .ph-academy .row{display:flex;justify-content:space-between;font-size:8px;color:var(--muted);font-weight:650}
+  .ph-academy .bar{height:5px;background:#F1EEF8;border-radius:999px;margin-top:7px;overflow:hidden}
+  .ph-academy .bar i{display:block;height:100%;width:60%;background:linear-gradient(90deg,#7C3AED,#A78BFA);border-radius:999px}
+  .ph-nav{position:absolute;bottom:0;left:0;right:0;background:#fff;border-top:1px solid var(--line);display:flex;justify-content:space-around;padding:9px 6px 14px}
+  .ph-nav div{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:6.5px;color:var(--soft);font-weight:650}
+  .ph-nav div.on{color:var(--violet)}
+  .ph-nav svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+  /* ── design system ── */
+  .system{display:grid;grid-template-columns:1.05fr 1fr 1fr;gap:16px}
+  .sys-card{padding:22px;border-radius:22px;background:#fff;border:1px solid var(--line);box-shadow:var(--shadow)}
+  .sys-title{font-size:12px;font-weight:750;margin-bottom:14px}
+  .swatches{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+  .swatch{border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+  .swatch .c{height:48px}
+  .swatch .l{padding:6px 8px;font-size:8px;color:var(--muted);background:#fff}
+  .swatch .l b{display:block;color:var(--ink);font-size:8.5px;margin-bottom:1px}
+  .type-row{display:flex;align-items:baseline;justify-content:space-between;padding:8px 0;border-bottom:1px solid #F5F3F9}
+  .type-row:last-child{border-bottom:none}
+  .type-row .sample{font-weight:750;letter-spacing:-.03em}
+  .type-row .meta{font-size:8px;color:var(--soft)}
+  .comp-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .comp-btn{padding:8px 12px;border-radius:9px;font-size:10px;font-weight:700;background:var(--violet);color:#fff}
+  .comp-btn.ghost{background:#fff;border:1px solid var(--line);color:#3F3B4F}
+  .comp-btn.soft{background:var(--lavender);color:var(--violet)}
+  .comp-pill{font-size:9px;font-weight:750;padding:4px 8px;border-radius:999px;background:var(--green-soft);color:var(--green)}
+  .comp-pill.amber{background:var(--amber-soft);color:var(--amber)}
+  .comp-pill.violet{background:var(--lavender);color:var(--violet)}
+  .comp-input{border:1px solid var(--line);border-radius:9px;padding:7px 10px;font-size:10px;color:var(--soft);min-width:120px}
+  .comp-note{font-size:9px;color:var(--muted);line-height:1.5;margin-top:12px}
+
+  .footnote{margin-top:38px;font-size:10px;color:var(--soft);text-align:center;line-height:1.6}
+
+  @media (max-width:1100px){
+    .hero,.mid,.bottom,.duo,.system{grid-template-columns:1fr}
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .admin-kpis{grid-template-columns:repeat(3,1fr)}
+    .admin-bottom{grid-template-columns:1fr 1fr}
+    .mobile-wrap{grid-template-columns:1fr;max-width:640px;padding:26px}
+    .phone{margin:0 auto}
+    .agent-shell,.admin-shell{grid-template-columns:1fr}
+    .agent-side,.admin-side{display:none}
+    .network-svg{height:320px}
+  }
+  @media (max-width:640px){
+    .page{padding:18px 14px 50px}
+    .section-title{font-size:23px}
+    .kpis,.admin-kpis,.admin-bottom{grid-template-columns:1fr 1fr}
+    .mobile-stats{gap:16px;flex-wrap:wrap}
+    .hero-amount{font-size:34px}
+    .partners-table th:nth-child(4),.partners-table td:nth-child(4){display:none}
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></symbol>
+    <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+    <symbol id="i-user" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M21 12V7H5a2 2 0 0 1 0-4h14v4"/><path d="M3 5v14a2 2 0 0 0 2 2h16v-5"/><path d="M18 12a2 2 0 0 0 0 4h4v-4Z"/></symbol>
+    <symbol id="i-chart" viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M7 16v-5"/><path d="M12 16V8"/><path d="M17 16v-3"/></symbol>
+    <symbol id="i-cap" viewBox="0 0 24 24"><path d="M22 10 12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></symbol>
+    <symbol id="i-folder" viewBox="0 0 24 24"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/></symbol>
+    <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 2-3 4"/><path d="M12 17h.01"/></symbol>
+    <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14"/><path d="M5 12h14"/></symbol>
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9"/><path d="M13.7 21a2 2 0 0 1-3.4 0"/></symbol>
+    <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-arrow" viewBox="0 0 24 24"><path d="M5 12h14"/><path d="m13 6 6 6-6 6"/></symbol>
+    <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 3 1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9Z"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></symbol>
+    <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></symbol>
+    <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21a2 2 0 1 1-4 0v-.09A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H3a2 2 0 1 1 0-4h.09A1.7 1.7 0 0 0 4.6 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1V3a2 2 0 1 1 4 0v.09A1.7 1.7 0 0 0 15.4 4.6a1.7 1.7 0 0 0 1.88-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.7 1.7 0 0 0 19.4 9c.1.36.3.7.6 1 .3.3.7.4 1.1.4H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51.6Z"/></symbol>
+    <symbol id="i-target" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <div class="concept-bar">
+    <div><span class="dot"></span><b>Концепт-борд</b> · Агентская сеть ЮРИТЕХ · статичный макет, не подключён к данным</div>
+    <div class="right">
+      <span>Октябрь 2026</span>
+      <span>Версия 0.1</span>
+    </div>
+  </div>
+
+  <!-- ═══════════ 01 AGENT ═══════════ -->
+  <div class="section-head">
+    <div>
+      <div class="section-kicker"><span class="num">01</span> Кабинет агента</div>
+      <div class="section-title">«Моя сеть»: деньги, партнёры, движение</div>
+      <div class="section-sub">Первый экран отвечает на три вопроса: сколько я заработал, когда выплата и что происходит в сети. Никаких таблиц «на входе» — только крупные цифры и события.</div>
+    </div>
+    <div class="section-tag">Desktop · 1440</div>
+  </div>
+
+  <div class="agent-shell">
+    <aside class="agent-side">
+      <div class="brand">
+        <div class="brand-mark">Ю</div>
+        <div><div class="brand-name">ЮРИТЕХ</div><div class="brand-sub">Агентская сеть</div></div>
+      </div>
+      <div>
+        <div class="nav-label">Кабинет</div>
+        <nav class="nav" style="margin-top:8px">
+          <a class="nav-item active" href="#"><svg><use href="#i-grid"/></svg>Моя сеть</a>
+          <a class="nav-item" href="#"><svg><use href="#i-users"/></svg>Партнёры<span class="badge">5</span></a>
+          <a class="nav-item" href="#"><svg><use href="#i-user"/></svg>Клиенты</a>
+          <a class="nav-item" href="#"><svg><use href="#i-wallet"/></svg>Начисления<span class="badge green">+12</span></a>
+          <a class="nav-item" href="#"><svg><use href="#i-chart"/></svg>Выплаты</a>
+        </nav>
+      </div>
+      <div>
+        <div class="nav-label">Рост</div>
+        <nav class="nav" style="margin-top:8px">
+          <a class="nav-item" href="#"><svg><use href="#i-cap"/></svg>Академия</a>
+          <a class="nav-item" href="#"><svg><use href="#i-folder"/></svg>Материалы</a>
+          <a class="nav-item" href="#"><svg><use href="#i-file"/></svg>Документы</a>
+          <a class="nav-item" href="#"><svg><use href="#i-help"/></svg>Поддержка</a>
+        </nav>
+      </div>
+      <div class="side-foot">
+        <div class="profile">
+          <div class="avatar v">ИИ</div>
+          <div><div class="profile-name">Иван Иванов</div><div class="profile-role">Агент · Старт</div></div>
+        </div>
+      </div>
+    </aside>
+
+    <main class="agent-main">
+      <div class="topbar">
+        <div class="hello">
+          <h1>Добрый день, Иван</h1>
+          <p>Среда, 28 октября · ваша сеть растёт на 2 партнёра за месяц</p>
+        </div>
+        <div class="top-actions">
+          <div class="icon-btn"><svg width="17" height="17"><use href="#i-bell"/></svg></div>
+          <a class="btn btn-primary" href="#"><svg><use href="#i-plus"/></svg>Пригласить партнёра</a>
+        </div>
+      </div>
+
+      <div class="hero">
+        <div class="hero-main">
+          <div class="hero-label">Доступно к выплате</div>
+          <div class="hero-amount money">28 400 <span>₽</span></div>
+          <div class="hero-note">Ближайшая выплата — 10 ноября · реестр уже формируется</div>
+          <div class="hero-split">
+            <div class="hero-mini"><div class="k">В ожидании</div><div class="v money">13 400 ₽</div></div>
+            <div class="hero-mini"><div class="k">За месяц</div><div class="v money">+12 600 ₽</div></div>
+            <div class="hero-mini"><div class="k">Всего выплачено</div><div class="v money">84 200 ₽</div></div>
+          </div>
+          <a class="hero-btn" href="#">Как это работает →</a>
+        </div>
+        <div class="hero-side">
+          <div class="pending-card">
+            <div class="pending-top"><div class="k">В ожидании</div><span class="pill amber">Холд 14 дней</span></div>
+            <div class="pending-amount money">13 400 <span>₽</span></div>
+            <div class="progress"><i style="width:62%"></i></div>
+            <div class="pending-foot"><span>Разблокируется 24 ноября</span><span>62%</span></div>
+          </div>
+          <div class="payout-card">
+            <div class="payout-icon"><svg width="17" height="17"><use href="#i-clock"/></svg></div>
+            <div><div class="t">Следующая выплата</div><div class="d">10 ноября · 28 400 ₽</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kpis">
+        <div class="kpi">
+          <div class="kpi-top"><div class="kpi-ico v"><svg><use href="#i-users"/></svg></div><span class="delta up">+2</span></div>
+          <div class="kpi-val money">5</div><div class="kpi-lab">партнёров в сети</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-top"><div class="kpi-ico b"><svg><use href="#i-user"/></svg></div><span class="delta up">+14</span></div>
+          <div class="kpi-val money">84</div><div class="kpi-lab">клиентов за 12 месяцев</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-top"><div class="kpi-ico g"><svg><use href="#i-chart"/></svg></div><span class="delta up">+18%</span></div>
+          <div class="kpi-val money">1,26 млн ₽</div><div class="kpi-lab">выручка партнёров</div>
+        </div>
+        <div class="kpi">
+          <div class="kpi-top"><div class="kpi-ico a"><svg><use href="#i-wallet"/></svg></div><span class="delta flat">10%</span></div>
+          <div class="kpi-val money">126 000 ₽</div><div class="kpi-lab">комиссия за 12 месяцев</div>
+        </div>
+      </div>
+
+      <div class="mid">
+        <div class="chart-card">
+          <div class="card-head">
+            <div><div class="card-title">Выручка партнёров по месяцам</div><div class="card-sub">Фактические оплаты партнёров, ₽</div></div>
+            <div class="legend"><span><i style="background:#7C3AED"></i>2026</span></div>
+          </div>
+          <div class="chart">
+            <div class="bar" style="height:100%"><b>82 000 ₽</b><i style="height:56%"></i></div>
+            <div class="bar" style="height:100%"><b>91 000 ₽</b><i style="height:62%"></i></div>
+            <div class="bar" style="height:100%"><b>88 000 ₽</b><i style="height:60%"></i></div>
+            <div class="bar" style="height:100%"><b>104 000 ₽</b><i style="height:71%"></i></div>
+            <div class="bar" style="height:100%"><b>99 000 ₽</b><i style="height:68%"></i></div>
+            <div class="bar" style="height:100%"><b>118 000 ₽</b><i style="height:81%"></i></div>
+            <div class="bar" style="height:100%"><b>112 000 ₽</b><i style="height:77%"></i></div>
+            <div class="bar" style="height:100%"><b>134 000 ₽</b><i style="height:92%"></i></div>
+            <div class="bar" style="height:100%"><b>128 000 ₽</b><i style="height:88%"></i></div>
+            <div class="bar" style="height:100%"><b>146 000 ₽</b><i style="height:100%"></i></div>
+            <div class="bar" style="height:100%"><b>126 000 ₽</b><i style="height:86%"></i></div>
+            <div class="bar" style="height:100%"><b>132 000 ₽</b><i style="height:90%"></i></div>
+          </div>
+          <div class="months">
+            <span>Ноя</span><span>Дек</span><span>Янв</span><span>Фев</span><span>Мар</span><span>Апр</span><span>Май</span><span>Июн</span><span>Июл</span><span>Авг</span><span>Сен</span><span>Окт</span>
+          </div>
+        </div>
+
+        <div class="tier">
+          <div class="tier-top">
+            <div class="tier-badge"><svg><use href="#i-spark"/></svg></div>
+            <div><div class="tier-name">Уровень «Старт»</div><div class="tier-sub">Следующий — «Серебро»</div></div>
+          </div>
+          <div class="tier-line"><span>До Серебра</span><b>2 партнёра</b></div>
+          <div class="progress"><i style="width:60%"></i></div>
+          <div class="tier-list">
+            <div><svg><use href="#i-check"/></svg><span>12% на новых клиентов вместо 10%</span></div>
+            <div><svg><use href="#i-check"/></svg><span>Приоритетная поддержка менеджера</span></div>
+            <div><svg><use href="#i-check"/></svg><span>Доступ к закрытым материалам</span></div>
+          </div>
+          <div class="tier-btn">Как повысить уровень →</div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="partners-card">
+          <div class="card-head">
+            <div><div class="card-title">Партнёры</div><div class="card-sub">5 активных · 2 на проверке</div></div>
+            <a class="btn btn-ghost" style="padding:7px 11px;font-size:11px" href="#">Все партнёры <svg><use href="#i-arrow"/></svg></a>
+          </div>
+          <table class="partners-table">
+            <thead><tr><th>Партнёр</th><th>Статус</th><th class="num">Клиенты</th><th class="num">Выручка</th><th class="num">Комиссия</th><th></th></tr></thead>
+            <tbody>
+              <tr>
+                <td><div class="partner-cell"><div class="avatar b">ПР</div><div><div class="partner-name">ООО «Право»</div><div class="partner-meta">Москва · с 12.09.2026</div></div></div></td>
+                <td><span class="pill green">Активен</span></td>
+                <td class="num">32</td><td class="num">480 000 ₽</td><td class="num" style="color:#059669">48 000 ₽</td>
+                <td class="num"><svg width="13" height="13" style="stroke:#9A97A8;fill:none;stroke-width:2"><use href="#i-arrow"/></svg></td>
+              </tr>
+              <tr>
+                <td><div class="partner-cell"><div class="avatar p">ЮК</div><div><div class="partner-name">ЮК «Фемида»</div><div class="partner-meta">Казань · с 03.08.2026</div></div></div></td>
+                <td><span class="pill green">Активен</span></td>
+                <td class="num">24</td><td class="num">360 000 ₽</td><td class="num" style="color:#059669">36 000 ₽</td>
+                <td class="num"><svg width="13" height="13" style="stroke:#9A97A8;fill:none;stroke-width:2"><use href="#i-arrow"/></svg></td>
+              </tr>
+              <tr>
+                <td><div class="partner-cell"><div class="avatar a">АБ</div><div><div class="partner-name">Адвокат Белов</div><div class="partner-meta">Екатеринбург · с 21.10.2026</div></div></div></td>
+                <td><span class="pill amber">Проверка</span></td>
+                <td class="num">—</td><td class="num">—</td><td class="num">—</td>
+                <td class="num"><svg width="13" height="13" style="stroke:#9A97A8;fill:none;stroke-width:2"><use href="#i-arrow"/></svg></td>
+              </tr>
+              <tr>
+                <td><div class="partner-cell"><div class="avatar g">ИП</div><div><div class="partner-name">ИП Соколова</div><div class="partner-meta">Новосибирск · с 14.06.2026</div></div></div></td>
+                <td><span class="pill green">Активен</span></td>
+                <td class="num">18</td><td class="num">270 000 ₽</td><td class="num" style="color:#059669">27 000 ₽</td>
+                <td class="num"><svg width="13" height="13" style="stroke:#9A97A8;fill:none;stroke-width:2"><use href="#i-arrow"/></svg></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="events">
+          <div class="card-head"><div><div class="card-title">Последние события</div><div class="card-sub">Что произошло в сети</div></div><span class="pill violet">Сегодня</span></div>
+          <div style="margin-top:6px">
+            <div class="event">
+              <div class="event-dot"><svg><use href="#i-check"/></svg></div>
+              <div><div class="event-t">ООО «Право» активирован</div><div class="event-m">Партнёр закреплён за вами · 12:40</div></div>
+              <div class="event-amt v">+5 000 ₽</div>
+            </div>
+            <div class="event">
+              <div class="event-dot"><svg><use href="#i-wallet"/></svg></div>
+              <div><div class="event-t">Клиент оплатил 15 000 ₽</div><div class="event-m">Клиент #A-1042 · партнёр «Фемида» · 11:15</div></div>
+              <div class="event-amt">+1 500 ₽</div>
+            </div>
+            <div class="event">
+              <div class="event-dot a"><svg><use href="#i-clock"/></svg></div>
+              <div><div class="event-t">Начисление доступно</div><div class="event-m">Холд завершён · 09:00</div></div>
+              <div class="event-amt">+12 300 ₽</div>
+            </div>
+            <div class="event">
+              <div class="event-dot v"><svg><use href="#i-users"/></svg></div>
+              <div><div class="event-t">Новый партнёр на проверке</div><div class="event-m">Адвокат Белов · вчера</div></div>
+              <div class="event-amt v" style="color:#B45309">ожидает</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════ 02 ADMIN ═══════════ -->
+  <div class="section-head">
+    <div>
+      <div class="section-kicker"><span class="num">02</span> Админка</div>
+      <div class="section-title">Раздел «Агенты»: сеть под контролем</div>
+      <div class="section-sub">Список — это пульт: статусы, партнёры, клиенты, выручка, начисления. В карточке — договор, реквизиты, история закреплений и реестр выплат.</div>
+    </div>
+    <div class="section-tag">Desktop · 1440</div>
+  </div>
+
+  <div class="admin-shell">
+    <aside class="admin-side">
+      <div class="admin-brand"><div class="mark">Ю</div><div><div class="n">ЮРИТЕХ</div><div class="s">Администратор</div></div></div>
+      <nav class="admin-nav">
+        <a href="#"><svg><use href="#i-grid"/></svg>Дашборд</a>
+        <a href="#"><svg><use href="#i-users"/></svg>Партнёры</a>
+        <a class="active" href="#"><svg><use href="#i-target"/></svg>Агенты<span class="b">24</span></a>
+        <a href="#"><svg><use href="#i-user"/></svg>Все клиенты</a>
+        <a href="#"><svg><use href="#i-wallet"/></svg>Транзакции</a>
+        <a href="#"><svg><use href="#i-chart"/></svg>Выплаты</a>
+        <a href="#"><svg><use href="#i-shield"/></svg>Требует внимания<span class="b">3</span></a>
+        <a href="#"><svg><use href="#i-settings"/></svg>Настройки</a>
+      </nav>
+    </aside>
+    <main class="admin-main">
+      <div class="admin-top">
+        <div><h2>Агенты</h2><p>24 активных · 87 партнёров · 1 240 клиентов</p></div>
+        <div style="display:flex;gap:8px">
+          <a class="btn btn-ghost" style="padding:8px 12px;font-size:11px" href="#">Экспорт</a>
+          <a class="btn btn-primary" style="padding:8px 12px;font-size:11px" href="#"><svg><use href="#i-plus"/></svg>Создать агента</a>
+        </div>
+      </div>
+
+      <div class="admin-kpis">
+        <div class="admin-kpi"><div class="k">Активные агенты</div><div class="v money">24</div><div class="d"><b>+3</b> за месяц</div></div>
+        <div class="admin-kpi"><div class="k">Партнёры</div><div class="v money">87</div><div class="d"><b>+12</b> за месяц</div></div>
+        <div class="admin-kpi"><div class="k">Клиенты</div><div class="v money">1 240</div><div class="d"><b>+186</b> за месяц</div></div>
+        <div class="admin-kpi"><div class="k">Начислено</div><div class="v money">2,4 млн ₽</div><div class="d">за 12 месяцев</div></div>
+        <div class="admin-kpi"><div class="k">К выплате</div><div class="v money">860 тыс. ₽</div><div class="d">реестр на 10.11</div></div>
+      </div>
+
+      <div class="admin-table-card">
+        <div class="admin-toolbar">
+          <div class="tabs"><span class="on">Все 24</span><span>Активные</span><span>На проверке</span><span>Приостановлены</span></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <div class="search"><svg><use href="#i-search"/></svg>Поиск по имени или ИНН</div>
+            <div class="mini-btn"><svg><use href="#i-settings"/></svg></div>
+          </div>
+        </div>
+        <table class="admin-table">
+          <thead><tr><th>Агент</th><th>Статус</th><th>Уровень</th><th>Партнёры</th><th>Клиенты</th><th>Выручка</th><th>Начислено</th><th>Выплачено</th><th></th></tr></thead>
+          <tbody>
+            <tr>
+              <td><div class="a-agent"><div class="avatar v">ИИ</div><div><div class="n">Иванов Иван</div><div class="m">AG-000123 · физлицо</div></div></div></td>
+              <td><span class="stat-pill on">Активен</span></td>
+              <td><span class="tier-pill silver">Серебро</span></td>
+              <td class="money">5 / 5</td><td class="money">84</td><td class="money">1,26 млн ₽</td><td class="money">126 000 ₽</td><td class="money">84 200 ₽</td>
+              <td><div class="row-actions"><div class="mini-btn"><svg><use href="#i-eye"/></svg></div><div class="mini-btn"><svg><use href="#i-more"/></svg></div></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-agent"><div class="avatar p">ПА</div><div><div class="n">Петрова Анна</div><div class="m">AG-000118 · самозанятая</div></div></div></td>
+              <td><span class="stat-pill on">Активен</span></td>
+              <td><span class="tier-pill">Старт</span></td>
+              <td class="money">2 / 2</td><td class="money">21</td><td class="money">315 000 ₽</td><td class="money">31 500 ₽</td><td class="money">18 000 ₽</td>
+              <td><div class="row-actions"><div class="mini-btn"><svg><use href="#i-eye"/></svg></div><div class="mini-btn"><svg><use href="#i-more"/></svg></div></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-agent"><div class="avatar b">МД</div><div><div class="n">ООО «Медиа»</div><div class="m">AG-000131 · юрлицо</div></div></div></td>
+              <td><span class="stat-pill wait">Проверка</span></td>
+              <td><span class="tier-pill silver">—</span></td>
+              <td class="money">0 / 0</td><td class="money">0</td><td class="money">—</td><td class="money">—</td><td class="money">—</td>
+              <td><div class="row-actions"><div class="mini-btn"><svg><use href="#i-eye"/></svg></div><div class="mini-btn"><svg><use href="#i-more"/></svg></div></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-agent"><div class="avatar a">СК</div><div><div class="n">Соколов Кирилл</div><div class="m">AG-000104 · ИП</div></div></div></td>
+              <td><span class="stat-pill on">Активен</span></td>
+              <td><span class="tier-pill gold">Золото</span></td>
+              <td class="money">18 / 20</td><td class="money">312</td><td class="money">4,68 млн ₽</td><td class="money">561 000 ₽</td><td class="money">402 000 ₽</td>
+              <td><div class="row-actions"><div class="mini-btn"><svg><use href="#i-eye"/></svg></div><div class="mini-btn"><svg><use href="#i-more"/></svg></div></div></td>
+            </tr>
+            <tr>
+              <td><div class="a-agent"><div class="avatar g">НС</div><div><div class="n">Новикова Светлана</div><div class="m">AG-000099 · физлицо</div></div></div></td>
+              <td><span class="stat-pill off">Приостановлен</span></td>
+              <td><span class="tier-pill">Старт</span></td>
+              <td class="money">1 / 1</td><td class="money">8</td><td class="money">120 000 ₽</td><td class="money">12 000 ₽</td><td class="money">12 000 ₽</td>
+              <td><div class="row-actions"><div class="mini-btn"><svg><use href="#i-eye"/></svg></div><div class="mini-btn"><svg><use href="#i-more"/></svg></div></div></td>
+            </tr>
+          </tbody>
+        </table>
+        <div class="table-foot"><span>Показано 5 из 24</span><div class="pager"><span>‹</span><span class="on">1</span><span>2</span><span>3</span><span>›</span></div></div>
+      </div>
+
+      <div class="admin-bottom">
+        <div class="admin-mini">
+          <div class="ah"><div><div class="at">Ближайшая выплата</div><div class="as">Реестр за октябрь · 18 агентов</div></div><span class="pill green">Готов</span></div>
+          <div class="big money">860 400 ₽</div>
+          <div class="hint">К выплате 10 ноября · удержано НДФЛ 64 200 ₽</div>
+          <div class="mini-progress"><i style="width:78%"></i></div>
+          <div style="display:flex;justify-content:space-between;margin-top:8px"><span class="hint">Собрано 78%</span><span class="link">Открыть реестр →</span></div>
+        </div>
+        <div class="admin-mini">
+          <div class="ah"><div><div class="at">Топ агентов</div><div class="as">По начислениям за 12 месяцев</div></div><span class="link">Все →</span></div>
+          <div class="top-agent"><div class="avatar a">СК</div><div><div class="n">Соколов Кирилл</div><div class="m">18 партнёров</div></div><div class="v money">561 000 ₽</div></div>
+          <div class="top-agent"><div class="avatar v">ИИ</div><div><div class="n">Иванов Иван</div><div class="m">5 партнёров</div></div><div class="v money">126 000 ₽</div></div>
+          <div class="top-agent"><div class="avatar p">ПА</div><div><div class="n">Петрова Анна</div><div class="m">2 партнёра</div></div><div class="v money">31 500 ₽</div></div>
+        </div>
+        <div class="admin-mini">
+          <div class="ah"><div><div class="at">Требуют внимания</div><div class="as">3 задачи на сегодня</div></div><span class="pill amber">3</span></div>
+          <div class="attention-row"><div class="attention-dot" style="background:#B45309"></div><div><div class="n">ООО «Медиа» — проверка ИНН</div><div class="m">Заявка от 27.10 · 2 часа</div></div><div class="cnt">1</div></div>
+          <div class="attention-row"><div class="attention-dot" style="background:#DC2626"></div><div><div class="n">Спор по партнёру «Фемида»</div><div class="m">Два агента · до 30.10</div></div><div class="cnt">1</div></div>
+          <div class="attention-row"><div class="attention-dot" style="background:#6D28D9"></div><div><div class="n">Новикова — реквизиты</div><div class="m">Не подтверждены · выплата</div></div><div class="cnt">1</div></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- ═══════════ 03 PARTNER + NETWORK + MOBILE ═══════════ -->
+  <div class="section-head">
+    <div>
+      <div class="section-kicker"><span class="num">03</span> Партнёр и сеть</div>
+      <div class="section-title">Связь видна в обе стороны</div>
+      <div class="section-sub">В карточке партнёра — блок «Агент»: кто привёл, когда, сколько клиентов. В карточке агента — граф сети. И мобильный кабинет, потому что агент живёт в телефоне.</div>
+    </div>
+    <div class="section-tag">Desktop + Mobile</div>
+  </div>
+
+  <div class="duo">
+    <div class="partner-card">
+      <div class="pc-head">
+        <div class="pc-logo">ПР</div>
+        <div style="flex:1"><div class="pc-name">ООО «Право»</div><div class="pc-meta">Юридическая компания · Москва · партнёр с 12.09.2026</div></div>
+        <span class="pill green">Активен</span>
+      </div>
+      <div class="pc-grid">
+        <div><div class="pc-k">Клиентов</div><div class="pc-v money">32</div></div>
+        <div><div class="pc-k">Оплатили</div><div class="pc-v money">24</div></div>
+        <div><div class="pc-k">Выручка</div><div class="pc-v money">480 000 ₽</div></div>
+        <div><div class="pc-k">Задолженность</div><div class="pc-v money" style="color:#B45309">45 000 ₽</div></div>
+      </div>
+      <div class="agent-block">
+        <div class="ab-head"><div class="ab-label">Агент</div><span class="pill green">Активен</span></div>
+        <div class="ab-person">
+          <div class="avatar v">ИИ</div>
+          <div style="flex:1"><div class="ab-name">Иванов Иван</div><div class="ab-meta">AG-000123 · закреплён с 12.09.2026</div></div>
+          <a class="btn btn-ghost" style="padding:6px 9px;font-size:10px" href="#">Открыть</a>
+        </div>
+        <div class="ab-stats">
+          <div class="ab-stat"><div class="k">Клиентов</div><div class="v money">32</div></div>
+          <div class="ab-stat"><div class="k">Комиссия</div><div class="v money">10%</div></div>
+          <div class="ab-stat"><div class="k">Начислено</div><div class="v money">48 000 ₽</div></div>
+        </div>
+        <div class="ab-foot"><a class="ab-btn" href="#">История закреплений</a><a class="ab-btn primary" href="#">Открыть агента</a></div>
+      </div>
+    </div>
+
+    <div class="network-card">
+      <div class="network-head">
+        <div><div class="card-title">Карта сети</div><div class="card-sub">Агент → партнёры → клиенты</div></div>
+        <span class="pill violet">Интерактив</span>
+      </div>
+      <svg class="network-svg" viewBox="0 0 620 360">
+        <defs>
+          <linearGradient id="ag" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#6D28D9"/><stop offset="1" stop-color="#A78BFA"/></linearGradient>
+          <filter id="sh" x="-30%" y="-30%" width="160%" height="160%"><feDropShadow dx="0" dy="5" stdDeviation="7" flood-color="#4C1D95" flood-opacity=".20"/></filter>
+        </defs>
+        <!-- links -->
+        <path d="M145 180 C 215 180, 235 82, 320 82" fill="none" stroke="#D8CCF8" stroke-width="2.5"/>
+        <path d="M145 180 C 215 180, 235 180, 320 180" fill="none" stroke="#D8CCF8" stroke-width="2.5"/>
+        <path d="M145 180 C 215 180, 235 278, 320 278" fill="none" stroke="#D8CCF8" stroke-width="2.5"/>
+        <path d="M320 82 C 390 82, 400 42, 470 42" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+        <path d="M320 82 C 390 82, 400 112, 470 112" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+        <path d="M320 180 C 390 180, 400 150, 470 150" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+        <path d="M320 180 C 390 180, 400 210, 470 210" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+        <path d="M320 278 C 390 278, 400 248, 470 248" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+        <path d="M320 278 C 390 278, 400 308, 470 308" fill="none" stroke="#EFE9FB" stroke-width="2"/>
+
+        <!-- agent -->
+        <circle cx="112" cy="180" r="38" fill="url(#ag)" filter="url(#sh)"/>
+        <text x="112" y="176" text-anchor="middle" fill="#fff" font-size="14" font-weight="800">ИИ</text>
+        <text x="112" y="193" text-anchor="middle" fill="#fff" font-size="8" opacity=".8">АГЕНТ</text>
+        <text x="112" y="238" text-anchor="middle" fill="#12101A" font-size="10" font-weight="700">Иван Иванов</text>
+        <text x="112" y="252" text-anchor="middle" fill="#9A97A8" font-size="8">5 партнёров · 84 клиента</text>
+
+        <!-- partners -->
+        <g>
+          <circle cx="320" cy="82" r="26" fill="#fff" stroke="#E9E1FB" stroke-width="1.5" filter="url(#sh)"/>
+          <text x="320" y="86" text-anchor="middle" fill="#6D28D9" font-size="9" font-weight="800">ПР</text>
+          <text x="320" y="124" text-anchor="middle" fill="#3F3B4F" font-size="9" font-weight="700">ООО «Право»</text>
+          <text x="320" y="136" text-anchor="middle" fill="#9A97A8" font-size="7.5">32 клиента</text>
+        </g>
+        <g>
+          <circle cx="320" cy="180" r="26" fill="#fff" stroke="#E9E1FB" stroke-width="1.5" filter="url(#sh)"/>
+          <text x="320" y="184" text-anchor="middle" fill="#DB2777" font-size="9" font-weight="800">ЮК</text>
+          <text x="320" y="222" text-anchor="middle" fill="#3F3B4F" font-size="9" font-weight="700">ЮК «Фемида»</text>
+          <text x="320" y="234" text-anchor="middle" fill="#9A97A8" font-size="7.5">24 клиента</text>
+        </g>
+        <g>
+          <circle cx="320" cy="278" r="26" fill="#fff" stroke="#E9E1FB" stroke-width="1.5" filter="url(#sh)"/>
+          <text x="320" y="282" text-anchor="middle" fill="#059669" font-size="9" font-weight="800">ИП</text>
+          <text x="320" y="320" text-anchor="middle" fill="#3F3B4F" font-size="9" font-weight="700">ИП Соколова</text>
+          <text x="320" y="332" text-anchor="middle" fill="#9A97A8" font-size="7.5">18 клиентов</text>
+        </g>
+
+        <!-- clients -->
+        <g fill="#EDE7FF">
+          <circle cx="470" cy="42" r="7"/><circle cx="470" cy="112" r="7"/><circle cx="470" cy="150" r="7"/>
+          <circle cx="470" cy="210" r="7"/><circle cx="470" cy="248" r="7"/><circle cx="470" cy="308" r="7"/>
+        </g>
+        <text x="500" y="24" fill="#9A97A8" font-size="8">клиенты</text>
+        <g fill="#A78BFA">
+          <circle cx="470" cy="42" r="3"/><circle cx="470" cy="112" r="3"/><circle cx="470" cy="150" r="3"/>
+          <circle cx="470" cy="210" r="3"/><circle cx="470" cy="248" r="3"/><circle cx="470" cy="308" r="3"/>
+        </g>
+                                                      </svg>
+      <div class="network-legend"><span><i style="background:#6D28D9"></i>агент</span><span><i style="background:#fff;border:1px solid #D8CCF8"></i>партнёр</span><span><i style="background:#A78BFA"></i>клиент</span></div>
+    </div>
+  </div>
+
+  <div class="mobile-wrap">
+    <div class="mobile-copy">
+      <div class="kicker">Mobile first</div>
+      <h3>Агент проверяет деньги с телефона, а не в Excel</h3>
+      <p>Партнёры, клиенты и выплаты — в одном экране. Push или Telegram напоминают о новой комиссии, а ссылку на партнёра можно отправить из телефона за 10 секунд.</p>
+      <div class="mobile-points">
+        <div><svg><use href="#i-check"/></svg><span>Баланс, холд и дата выплаты — на первом экране</span></div>
+        <div><svg><use href="#i-check"/></svg><span>Ссылка, QR и текст сообщения — в один тап</span></div>
+        <div><svg><use href="#i-check"/></svg><span>Уведомление, когда партнёр активирован или клиент оплатил</span></div>
+      </div>
+      <div class="mobile-stats">
+        <div><div class="k">Доля мобильного трафика</div><div class="v">68%</div></div>
+        <div><div class="k">Действий в день</div><div class="v">3–5</div></div>
+        <div><div class="k">Время до выплаты</div><div class="v">10 дней</div></div>
+      </div>
+    </div>
+
+    <div class="phone">
+      <div class="phone-screen">
+        <div class="ph-status"><span>9:41</span><span>●●●</span></div>
+        <div class="ph-top">
+          <div><div class="ph-title">Моя сеть</div><div class="ph-sub">Добрый день, Иван</div></div>
+          <div class="ph-avatar">ИИ</div>
+        </div>
+        <div class="ph-card">
+          <div class="ph-k">Доступно к выплате</div>
+          <div class="ph-v">28 400 ₽</div>
+          <div class="ph-note">Выплата 10 ноября · в ожидании 13 400 ₽</div>
+        </div>
+        <div class="ph-row">
+          <div class="ph-mini"><div class="k">Партнёры</div><div class="v">5</div></div>
+          <div class="ph-mini"><div class="k">Клиенты</div><div class="v">84</div></div>
+          <div class="ph-mini"><div class="k">За месяц</div><div class="v">+12,6к</div></div>
+        </div>
+        <div class="ph-list">
+          <div class="ph-list-head">Партнёры <span>все →</span></div>
+          <div class="ph-item"><div class="avatar b">ПР</div><div><div class="n">ООО «Право»</div><div class="m">32 клиента · активен</div></div><div class="amt">48 000 ₽</div></div>
+          <div class="ph-item"><div class="avatar p">ЮК</div><div><div class="n">ЮК «Фемида»</div><div class="m">24 клиента · активен</div></div><div class="amt">36 000 ₽</div></div>
+          <div class="ph-item"><div class="avatar a">АБ</div><div><div class="n">Адвокат Белов</div><div class="m">на проверке</div></div><div class="amt" style="color:#B45309">—</div></div>
+        </div>
+        <div class="ph-pay">
+          <div class="ic"><svg><use href="#i-clock"/></svg></div>
+          <div><div class="k">Ближайшая выплата</div><div class="v">10 ноября</div></div>
+          <div class="amt">28 400 ₽</div>
+        </div>
+        <div class="ph-academy">
+          <div class="row"><span>Академия · 3 из 5 курсов</span><span>60%</span></div>
+          <div class="bar"><i></i></div>
+        </div>
+        <div class="ph-nav">
+          <div class="on"><svg><use href="#i-grid"/></svg>Сеть</div>
+          <div><svg><use href="#i-users"/></svg>Партнёры</div>
+          <div><svg><use href="#i-wallet"/></svg>Выплаты</div>
+          <div><svg><use href="#i-cap"/></svg>Академия</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════ 04 SYSTEM ═══════════ -->
+  <div class="section-head">
+    <div>
+      <div class="section-kicker"><span class="num">04</span> Визуальная система</div>
+      <div class="section-title">Фиолетовый — цвет агентского контура</div>
+      <div class="section-sub">Партнёрский кабинет остаётся синим, админка — графитовой. Агентский контур получает собственный акцент, чтобы пользователь всегда понимал, где он находится.</div>
+    </div>
+    <div class="section-tag">Tokens</div>
+  </div>
+
+  <div class="system">
+    <div class="sys-card">
+      <div class="sys-title">Палитра</div>
+      <div class="swatches">
+        <div class="swatch"><div class="c" style="background:#6D28D9"></div><div class="l"><b>Violet 700</b>#6D28D9</div></div>
+        <div class="swatch"><div class="c" style="background:#8B5CF6"></div><div class="l"><b>Violet 500</b>#8B5CF6</div></div>
+        <div class="swatch"><div class="c" style="background:#F3EFFF"></div><div class="l"><b>Lavender</b>#F3EFFF</div></div>
+        <div class="swatch"><div class="c" style="background:#059669"></div><div class="l"><b>Emerald</b>#059669</div></div>
+        <div class="swatch"><div class="c" style="background:#B45309"></div><div class="l"><b>Amber</b>#B45309</div></div>
+        <div class="swatch"><div class="c" style="background:#12101A"></div><div class="l"><b>Ink</b>#12101A</div></div>
+      </div>
+      <div class="comp-note">Фиолетовый — только для агентского контура. Деньги — зелёный, ожидание — янтарный, ошибки — красный. Не смешивать с синим партнёрского кабинета.</div>
+    </div>
+
+    <div class="sys-card">
+      <div class="sys-title">Типографика</div>
+      <div class="type-row"><span class="sample" style="font-size:26px">28 400 ₽</span><span class="meta">H1 · 32/38 · 750</span></div>
+      <div class="type-row"><span class="sample" style="font-size:18px">Моя сеть</span><span class="meta">H2 · 20/26 · 700</span></div>
+      <div class="type-row"><span class="sample" style="font-size:13px;font-weight:600">ООО «Право» активирован</span><span class="meta">Body · 14/20 · 600</span></div>
+      <div class="type-row"><span class="sample" style="font-size:10px;font-weight:500;color:#6B6880">Партнёр закреплён за вами · 12:40</span><span class="meta">Caption · 11/16 · 500</span></div>
+      <div class="comp-note">Цифры — tabular nums, чтобы суммы не «прыгали». Заголовки — плотный трекинг, тело — свободный. Один шрифт на весь продукт.</div>
+    </div>
+
+    <div class="sys-card">
+      <div class="sys-title">Компоненты</div>
+      <div class="comp-row" style="margin-bottom:10px">
+        <span class="comp-btn">Пригласить партнёра</span>
+        <span class="comp-btn ghost">Экспорт</span>
+        <span class="comp-btn soft">Как это работает</span>
+      </div>
+      <div class="comp-row" style="margin-bottom:10px">
+        <span class="comp-pill">Активен</span>
+        <span class="comp-pill amber">Проверка</span>
+        <span class="comp-pill violet">Серебро</span>
+      </div>
+      <div class="comp-row">
+        <span class="comp-input">Поиск по имени</span>
+        <span class="comp-btn ghost" style="font-size:9px">10% lifetime</span>
+      </div>
+      <div class="comp-note">Карточки 22 px, кнопки 10–12 px, пилюли 999 px. Тени мягкие, без жёстких рамок. Иконки — Lucide, толщина 1.7–2.</div>
+    </div>
+  </div>
+
+  <div class="footnote">
+    Концепт-борд подготовлен для обсуждения. Не является финальным дизайном или ТЗ.<br/>
+    Данные вымышлены. Следующий шаг — выбрать модель вознаграждения и собрать MVP.
+  </div>
+</div>
+</body>
+</html>

@@ -3,6 +3,8 @@ import { Link } from 'react-router';
 import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo-color.svg';
 import { PhoneField } from '@/app/components/PhoneField';
+import CustomSelect from '@/app/components/ui/CustomSelect';
+import { REGION_GROUPS } from '@/app/data/arbitrageCourts';
 import { registerApi } from '../api/auth';
 import { normalizePhoneForApi, validatePhoneField } from '../utils/phone';
 import {
@@ -43,8 +45,10 @@ export default function Registration() {
     firstName: '',
     middleName: '',
     inn: '',
+    kpp: '',
     ogrn: '',
     legalAddress: '',
+    region: '',
     
     // Контактное лицо
     contactName: '',
@@ -86,6 +90,7 @@ export default function Registration() {
       firstName: '',
       middleName: '',
       inn: '',
+      kpp: '',
       ogrn: '',
       legalAddress: '',
     });
@@ -100,8 +105,10 @@ export default function Registration() {
       firstName: formData.firstName,
       middleName: formData.middleName,
       inn: formData.inn,
+      kpp: formData.kpp,
       ogrn: formData.ogrn,
       legalAddress: formData.legalAddress,
+      region: formData.region,
     });
     const newErrors = flattenZodErrors(result);
     setErrors(newErrors);
@@ -183,9 +190,11 @@ export default function Registration() {
         company_name: displayName,
         director_name: isPerson ? fullName : formData.contactName,
         inn: formData.partnerType === 'individual' ? '' : formData.inn,
+        kpp: formData.partnerType === 'legal' ? formData.kpp : undefined,
         phone: phoneE164,
         full_legal_name: formData.partnerType === 'legal' ? formData.companyName : undefined,
         legal_address: formData.partnerType === 'legal' ? formData.legalAddress : undefined,
+        region: formData.region,
         captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });
       setStep(3);
@@ -194,9 +203,12 @@ export default function Registration() {
       const data = axiosErr.response?.data;
       const detail = data?.detail as { code?: string; loc?: unknown; msg?: string } | unknown;
       const detailObj = detail && typeof detail === 'object' ? (detail as Record<string, unknown>) : null;
-      if (detailObj?.code === 'DUPLICATE_EMAIL') {
+      const errorCode =
+        (typeof data?.code === 'string' ? data.code : undefined) ??
+        (typeof detailObj?.code === 'string' ? detailObj.code : undefined);
+      if (errorCode === 'DUPLICATE_EMAIL') {
         setApiError('Пользователь с таким email уже зарегистрирован.');
-      } else if (detailObj?.code === 'CAPTCHA_REQUIRED' || detailObj?.code === 'CAPTCHA_INVALID') {
+      } else if (errorCode === 'CAPTCHA_REQUIRED' || errorCode === 'CAPTCHA_INVALID') {
         setApiError('Подтвердите, что вы не робот, и повторите отправку.');
         setCaptchaToken('');
         if (captchaWidgetIdRef.current !== null) {
@@ -212,6 +224,8 @@ export default function Registration() {
           else if (loc.includes('director_name')) fieldErrors.contactName = msg;
           else if (loc.includes('company_name')) fieldErrors.companyName = msg;
           else if (loc.includes('inn')) fieldErrors.inn = msg;
+          else if (loc.includes('kpp')) fieldErrors.kpp = msg;
+          else if (loc.includes('region')) fieldErrors.region = msg;
           else if (loc.includes('password')) fieldErrors.password = msg;
         }
         const mapped = Object.keys(fieldErrors).length;
@@ -364,7 +378,7 @@ export default function Registration() {
                       )}
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-1">
                           ИНН <span className="text-red-500">*</span>
@@ -384,6 +398,28 @@ export default function Registration() {
                         />
                         {errors.inn && (
                           <p className="text-sm text-red-500 mt-1">{errors.inn}</p>
+                        )}
+                      </div>
+
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700 mb-1">
+                          КПП <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="\d*"
+                          name="kpp"
+                          value={formData.kpp}
+                          onChange={(e) => { e.target.value = e.target.value.replace(/\D/g, ''); handleChange(e); }}
+                          placeholder="770401001"
+                          maxLength={9}
+                          className={`w-full px-4 py-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 ${
+                            errors.kpp ? 'border-red-500' : 'border-gray-300'
+                          }`}
+                        />
+                        {errors.kpp && (
+                          <p className="text-sm text-red-500 mt-1">{errors.kpp}</p>
                         )}
                       </div>
 
@@ -507,6 +543,35 @@ export default function Registration() {
                     )}
                   </>
                 )}
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Регион <span className="text-red-500">*</span>
+                  </label>
+                  <CustomSelect
+                    value={formData.region}
+                    onChange={(value) => {
+                      setFormData({ ...formData, region: value });
+                      if (errors.region) setErrors({ ...errors, region: '' });
+                    }}
+                    groups={REGION_GROUPS.map((group) => ({
+                      label: group.district,
+                      options: group.regions.map((region) => ({
+                        value: region.name,
+                        label: region.name,
+                      })),
+                    }))}
+                    placeholder="Выберите регион"
+                    searchable
+                    size="lg"
+                  />
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    Укажите регион, в котором работаете. По нему автоматически определим часовой пояс.
+                  </p>
+                  {errors.region && (
+                    <p className="text-sm text-red-500 mt-1">{errors.region}</p>
+                  )}
+                </div>
               </div>
 
               <div className="mt-8 flex justify-between">

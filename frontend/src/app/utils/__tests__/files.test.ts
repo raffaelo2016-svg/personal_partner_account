@@ -1,12 +1,55 @@
 import { describe, it, expect } from 'vitest';
-import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_BYTES } from '../files';
+import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_BYTES, MAX_ZIP_FILE_SIZE_BYTES } from '../files';
 
 function makeFile(name: string, size: number, type = ''): File {
-  const blob = new Blob([new Uint8Array(size)], { type });
-  return new File([blob], name, { type });
+  const file = new File([], name, { type });
+  Object.defineProperty(file, 'size', { value: size });
+  return file;
 }
 
 describe('partitionFiles', () => {
+  it.each(['application/zip', 'application/x-zip-compressed', ''])('принимает ZIP с MIME %s', (type) => {
+    const file = makeFile('documents.ZIP', 100, type);
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it('принимает ZIP больше 10 МБ', () => {
+    const file = makeFile('documents.zip', MAX_FILE_SIZE_BYTES + 1, 'application/zip');
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it('принимает ZIP ровно 100 МБ независимо от регистра расширения', () => {
+    const file = makeFile('documents.ZIP', MAX_ZIP_FILE_SIZE_BYTES, 'application/zip');
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it('отвергает ZIP больше 100 МБ на один байт', () => {
+    const file = makeFile('documents.zip', MAX_ZIP_FILE_SIZE_BYTES + 1, 'application/zip');
+    expect(partitionFiles([file]).tooLarge).toEqual(['documents.zip']);
+  });
+
+  it('не увеличивает лимит PDF из-за MIME-типа ZIP', () => {
+    const file = makeFile('documents.pdf', MAX_FILE_SIZE_BYTES + 1, 'application/zip');
+    expect(partitionFiles([file]).tooLarge).toEqual(['documents.pdf']);
+  });
+
+  it.each(['audio/mpeg', 'audio/mp3', 'audio/x-mp3'])('принимает MP3 по MIME %s', (type) => {
+    const file = makeFile('recording', 100, type);
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it.each(['', 'application/octet-stream'])('принимает MP3 по расширению с MIME %s', (type) => {
+    const file = makeFile('recording.MP3', 100, type);
+    expect(partitionFiles([file]).valid).toEqual([file]);
+  });
+
+  it('отвергает MP3 больше лимита', () => {
+    const file = makeFile('recording.mp3', MAX_FILE_SIZE_BYTES + 1, 'audio/mpeg');
+    const result = partitionFiles([file]);
+    expect(result.tooLarge).toEqual(['recording.mp3']);
+    expect(result.valid).toEqual([]);
+  });
+
   it('принимает разрешённые форматы по MIME', () => {
     const f = makeFile('a.pdf', 100, 'application/pdf');
     const r = partitionFiles([f]);

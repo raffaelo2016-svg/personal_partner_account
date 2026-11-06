@@ -26,6 +26,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.files import router as files_router
 from app.api.finance import router as finance_router
 from app.api.notifications import router as notifications_router
+from app.api.news import admin_router as admin_news_router, router as news_router
 from app.api.partner_settings import router as partner_settings_router
 from app.api.tasks import router as tasks_router
 from app.api.training import router as training_router
@@ -279,10 +280,16 @@ async def global_exception_handler(request: Request, exc: Exception):
         path=request.url.path,
         error=str(exc),
         error_type=type(exc).__name__,
+        exc_info=True,
     )
+    request_id = structlog.contextvars.get_contextvars().get("request_id")
+    content: dict[str, str] = {"detail": "Internal server error", "code": "INTERNAL_ERROR"}
+    if request_id:
+        # По этому id можно найти трейсбек в логах бэкенда.
+        content["request_id"] = str(request_id)
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error", "code": "INTERNAL_ERROR"},
+        content=content,
         headers=_cors_headers(request),
     )
 
@@ -320,6 +327,8 @@ app.include_router(dashboard_router, prefix="/api/v1")
 app.include_router(files_router, prefix="/api/v1")
 app.include_router(finance_router, prefix="/api/v1")
 app.include_router(notifications_router, prefix="/api/v1")
+app.include_router(news_router, prefix="/api/v1")
+app.include_router(admin_news_router, prefix="/api/v1")
 app.include_router(tasks_router, prefix="/api/v1")
 app.include_router(admin_partners_router, prefix="/api/v1")
 app.include_router(admin_clients_router, prefix="/api/v1")

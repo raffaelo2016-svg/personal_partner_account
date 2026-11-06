@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Настройка условий судебных расходов</title>
+  <style>
+    *{box-sizing:border-box} body{margin:0;background:#f4f7fb;color:#172033;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    .app{display:grid;grid-template-columns:250px 1fr;min-height:100vh}.side{background:#fff;border-right:1px solid #e4eaf2;padding:28px 20px}.logo{font-weight:800;color:#1463e2;font-size:24px;letter-spacing:.4px;margin:0 12px 34px}.nav{display:grid;gap:8px}.nav div{padding:12px 14px;border-radius:10px;color:#64748b;font-size:14px}.nav .active{background:#eaf2ff;color:#1463e2;font-weight:700}
+    main{padding:34px 48px 64px;max-width:1220px}.back{font-size:13px;color:#64748b;margin-bottom:12px}.head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}h1{font-size:29px;margin:0 0 7px} .sub{color:#64748b;font-size:14px}.status{padding:8px 12px;background:#e9f8ef;color:#187447;border-radius:999px;font-size:13px;font-weight:700}
+    .card{background:#fff;border:1px solid #e1e7ef;border-radius:16px;box-shadow:0 4px 16px rgba(34,54,84,.05);padding:26px;margin-bottom:20px}.title{display:flex;gap:13px;align-items:flex-start;margin-bottom:23px}.icon{width:38px;height:38px;border-radius:10px;background:#eaf2ff;color:#1769e8;display:grid;place-items:center;font-weight:800;font-size:19px}.title h2{font-size:18px;margin:0 0 4px}.title p{margin:0;color:#64748b;font-size:13px}
+    .label{font-size:13px;font-weight:700;margin:0 0 10px}.chips{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:25px}.chip{min-width:128px;text-align:center;padding:13px 18px;border:1px solid #d7dfeb;border-radius:10px;background:#fff;font-size:14px;font-weight:700}.chip.selected{background:#1769e8;border-color:#1769e8;color:#fff;box-shadow:0 5px 13px rgba(23,105,232,.2)}
+    .conditions{display:grid;grid-template-columns:1fr 1fr;gap:18px}.option{border:1px solid #dfe6f0;border-radius:12px;padding:16px;display:flex;gap:12px}.option.selected{border:2px solid #1769e8;background:#f7faff}.radio{width:18px;height:18px;border:2px solid #b8c3d2;border-radius:50%;margin-top:1px}.selected .radio{border:5px solid #1769e8}.option strong{display:block;font-size:14px;margin-bottom:4px}.option span{font-size:12px;color:#64748b}.controls{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}.field{border:1px solid #d8e0eb;background:#fafcff;border-radius:10px;padding:13px 14px}.field small{display:block;color:#64748b;margin-bottom:5px}.field b{font-size:15px}.fixed{display:inline-block;margin-left:8px;padding:3px 7px;background:#eaf2ff;color:#1769e8;border-radius:999px;font-size:11px}
+    .timeline-card{background:linear-gradient(135deg,#f7faff,#eef5ff);border:1px solid #cfe0fb;border-radius:14px;padding:20px;margin-top:22px}.tl-top{display:flex;justify-content:space-between;align-items:center}.tl-top b{font-size:15px}.badge{font-size:12px;color:#1769e8;background:#fff;border:1px solid #cfe0fb;border-radius:999px;padding:6px 9px}.timeline{height:10px;background:#d9e7fb;border-radius:99px;margin:30px 0 13px;position:relative}.timeline .fill{width:46%;height:100%;background:#1769e8;border-radius:99px}.dot{position:absolute;top:50%;width:18px;height:18px;border-radius:50%;background:#fff;border:5px solid #1769e8;transform:translate(-50%,-50%);left:46%}.ends{display:flex;justify-content:space-between;font-size:12px;color:#64748b}.ends b{display:block;color:#27364b;margin-bottom:3px}.now{width:max-content;text-align:center;color:#1769e8;background:#fff;border:1px solid #cfe0fb;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;margin:-5px auto 10px}
+    .summary{display:grid;grid-template-columns:1fr auto;gap:24px;align-items:center;background:#f0f8f4;border:1px solid #cce9d9;border-radius:14px;padding:20px;margin-top:20px}.summary h3{font-size:16px;margin:0 0 8px;color:#145c39}.summary p{margin:4px 0;color:#425466;font-size:13px}.price{font-size:25px;font-weight:800;color:#172033;text-align:right}.price small{display:block;font-size:11px;color:#64748b;font-weight:500}.actions{display:flex;justify-content:flex-end;gap:12px;margin-top:24px}.btn{padding:12px 19px;border-radius:10px;border:1px solid #d7dfeb;background:#fff;font-weight:700}.primary{background:#1769e8;border-color:#1769e8;color:#fff}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <aside class="side"><div class="logo">ЮРИ.ТЕХ</div><div class="nav"><div>Панель управления</div><div class="active">Партнёры</div><div>Клиенты</div><div>Финансы</div><div>Настройки</div></div></aside>
+    <main>
+      <div class="back">← Назад к карточке партнёра</div>
+      <div class="head"><div><h1>Редактирование партнёра</h1><div class="sub">ООО «Правовой центр» · индивидуальные условия сотрудничества</div></div><div class="status">Активный партнёр</div></div>
+      <section class="card">
+        <div class="title"><div class="icon">₽</div><div><h2>Условия судебных расходов</h2><p>Настройте стоимость и ограниченное предложение для новых клиентов партнёра</p></div></div>
+        <div class="label">Стоимость одного клиента</div>
+        <div class="chips"><div class="chip">10 000 ₽</div><div class="chip selected">15 000 ₽</div><div class="chip">17 000 ₽</div><div class="chip">Другая сумма</div></div>
+        <div class="label">Льготное условие</div>
+        <div class="conditions">
+          <div class="option"><div class="radio"></div><div><strong>Без льготы</strong><span>Оплата с первого переданного клиента</span></div></div>
+          <div class="option selected"><div class="radio"></div><div><strong>Первые клиенты бесплатно</strong><span>Ограничение одновременно по количеству и сроку</span></div></div>
+        </div>
+        <div class="controls">
+          <div><div class="label">Количество бесплатных клиентов</div><div class="field"><small>Лимит</small><b>10 клиентов</b></div></div>
+          <div><div class="label">Срок действия предложения</div><div class="field"><small>Продолжительность</small><b>1 календарный месяц</b><span class="fixed">фиксировано</span></div></div>
+        </div>
+        <div class="timeline-card">
+          <div class="tl-top"><b>Период действия льготы</b><span class="badge">Действует до 7 октября 2026</span></div>
+          <div class="timeline"><div class="fill"></div><div class="dot"></div></div>
+          <div class="now">Сегодня · 21 сентября</div>
+          <div class="ends"><div><b>7 сентября</b>Начало предложения</div><div style="text-align:right"><b>7 октября</b>Окончание предложения</div></div>
+        </div>
+        <div class="summary"><div><h3>Итоговые условия</h3><p>Первые 10 клиентов — бесплатно, если они переданы до 7 октября 2026 года.</p><p><b>Льгота завершится, когда будет использован лимит или закончится месяц — что наступит раньше.</b></p></div><div class="price">15 000 ₽<small>с каждого следующего клиента</small></div></div>
+        <div class="actions"><button class="btn">Отменить</button><button class="btn primary">Сохранить условия</button></div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

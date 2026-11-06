@@ -6,6 +6,7 @@ import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import CustomSelect from '../components/ui/CustomSelect';
 import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import CaseArbitrLink from '../components/CaseArbitrLink';
 
 export default function AdminClients() {
   const tz = useTimezone();
@@ -234,7 +235,9 @@ export default function AdminClients() {
                         <p className="text-sm text-gray-600">{client.region ?? '—'}</p>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="text-sm font-mono text-gray-700">{client.case_number ?? '—'}</p>
+                        <p className="text-sm font-mono text-gray-700">
+                          <CaseArbitrLink caseNumber={client.case_number} />
+                        </p>
                       </td>
                       <td className="px-3 py-3">
                         <p className="text-sm font-semibold text-gray-900">

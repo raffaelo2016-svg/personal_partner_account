@@ -60,7 +60,7 @@ class TestTasks:
                 "client_id": client_id,
                 "title": "Собрать документы",
                 "due_date": str(date.today() + timedelta(days=7)),
-                "assigned_to": "partner",
+                "assigned_to": "uritech",
             },
             headers=auth(token),
         )
@@ -121,7 +121,7 @@ class TestTasks:
         token, client_id = await _setup_partner_with_client(client, setup_db)
         await client.post(
             "/api/v1/tasks",
-            json={"client_id": client_id, "title": "Task 1", "due_date": str(date.today()), "assigned_to": "partner"},
+            json={"client_id": client_id, "title": "Task 1", "due_date": str(date.today()), "assigned_to": "uritech"},
             headers=auth(token),
         )
         resp = await client.get("/api/v1/tasks", headers=auth(token))
@@ -132,7 +132,7 @@ class TestTasks:
         token, client_id = await _setup_partner_with_client(client, setup_db)
         create_resp = await client.post(
             "/api/v1/tasks",
-            json={"client_id": client_id, "title": "Task", "due_date": str(date.today()), "assigned_to": "partner"},
+            json={"client_id": client_id, "title": "Task", "due_date": str(date.today()), "assigned_to": "uritech"},
             headers=auth(token),
         )
         task_id = create_resp.json()["id"]
@@ -152,7 +152,12 @@ class TestTasks:
         token, client_id = await _setup_partner_with_client(client, setup_db)
         create_resp = await client.post(
             "/api/v1/tasks",
-            json={"client_id": client_id, "title": "Linked task", "due_date": str(date.today())},
+            json={
+                "client_id": client_id,
+                "title": "Linked task",
+                "due_date": str(date.today()),
+                "assigned_to": "uritech",
+            },
             headers=auth(token),
         )
         task_id = create_resp.json()["id"]
@@ -179,7 +184,7 @@ class TestTasks:
         token, client_id = await _setup_partner_with_client(client, setup_db)
         await client.post(
             "/api/v1/tasks",
-            json={"client_id": client_id, "title": "Task", "due_date": str(date.today()), "assigned_to": "partner"},
+            json={"client_id": client_id, "title": "Task", "due_date": str(date.today()), "assigned_to": "uritech"},
             headers=auth(token),
         )
         resp = await client.get("/api/v1/tasks/stats", headers=auth(token))
@@ -194,7 +199,7 @@ class TestTasks:
                 "client_id": client_id,
                 "title": "Urgent!",
                 "due_date": str(date.today()),
-                "assigned_to": "partner",
+                "assigned_to": "uritech",
                 "priority": "high",
             },
             headers=auth(token),

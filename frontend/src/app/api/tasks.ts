@@ -3,18 +3,21 @@ import type { BitrixSyncStatus } from './clients';
 
 export interface TaskData {
   id: string;
-  client_id: string;
+  client_id: string | null;
   title: string;
   description?: string | null;
   status: string;
   priority: string;
   assigned_to: string;
   created_by: string;
-  due_date: string;
+  due_date: string | null;
+  due_at?: string | null;
   completed_at?: string | null;
   created_at: string;
   updated_at: string;
   client_name?: string | null;
+  partner_id?: string | null;
+  partner_name?: string | null;
   bitrix_sync_status: BitrixSyncStatus;
   bitrix_sync_error_code?: string | null;
   bitrix_task_id?: string | null;
@@ -33,12 +36,14 @@ export interface TaskFilters {
 }
 
 export interface TaskCreatePayload {
-  client_id: string;
+  client_id?: string | null;
+  partner_id?: string;
   title: string;
   description?: string;
   priority?: string;
   assigned_to?: string;
-  due_date: string;
+  due_date?: string | null;
+  due_at?: string | null;
 }
 
 export interface TaskUpdatePayload {
@@ -47,7 +52,8 @@ export interface TaskUpdatePayload {
   status?: string;
   priority?: string;
   assigned_to?: string;
-  due_date?: string;
+  due_date?: string | null;
+  due_at?: string | null;
 }
 
 export interface TaskStats {

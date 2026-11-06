@@ -1,16 +1,26 @@
+<!DOCTYPE html>
+<html lang="ru" translate="no">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <title>Партнерский кабинет</title>
+  </head>
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-      <title>Партнерский кабинет</title>
-    </head>
+  <body>
+    <!--
+      Кабинет — русскоязычная рабочая среда: сообщения чата, ФИО партнёров,
+      названия дел. Браузерный перевод переписывает текстовые узлы и значения
+      полей прямо в DOM, поэтому в отправку уходил перевод, а «Техподдержка»
+      превращалась в «остановка».
 
-    <body>
-      <div id="root"></div>
-      <script src="https://smartcaptcha.yandexcloud.net/captcha.js" defer></script>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
+      lang="ru" — чтобы Chrome не считал страницу английской и не запускал
+      автоперевод RU → RU.
+      translate="no" на <html> и на #root — чтобы перевод не применялся
+      к приложению вообще, даже если автоперевод включён в браузере.
+    -->
+    <div id="root" translate="no" class="notranslate"></div>
+    <script src="https://smartcaptcha.yandexcloud.net/captcha.js" defer></script>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

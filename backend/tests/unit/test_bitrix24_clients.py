@@ -9,15 +9,26 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.integrations.bitrix24.client_setup_cli import ENTITY_ID, FIELD_DEFINITIONS, _provision_field
+from app.integrations.bitrix24.client_setup_cli import (
+    DEAL_ENTITY_TYPE_ID,
+    ENTITY_ID,
+    FIELD_DEFINITIONS,
+    _deal_relation_is_enabled,
+    _editable_relations,
+    _enable_partner_deal_relation,
+    _provision_field,
+)
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
     CLIENT_DEAL_CATEGORY_ID,
     CLIENT_DEAL_FIELDS,
     CLIENT_DEAL_STAGE_ID,
     CLIENT_DEAL_UPDATE_EVENT,
+    CLIENT_SUPPORT_DEAL_CATEGORY_ID,
+    CLIENT_SUPPORT_DEAL_STAGE_ID,
     build_client_contact_payload,
     build_client_deal_payload,
+    client_deal_route,
     extract_client_deal_event_reference,
     process_client_deal_add_event,
     schedule_client_creation,
@@ -68,16 +79,31 @@ def test_contact_payload_excludes_sensitive_identity_data():
     assert client.registration_address not in serialized
 
 
-def test_deal_payload_links_contact_and_partner_without_changing_workflow():
+def test_before_court_deal_routes_to_support_department_partner_stage():
     client = _client()
+
+    payload = build_client_deal_payload(client, "321", "654")["fields"]
+
+    assert payload["CATEGORY_ID"] == CLIENT_SUPPORT_DEAL_CATEGORY_ID == 7
+    assert payload["STAGE_ID"] == CLIENT_SUPPORT_DEAL_STAGE_ID == "C7:UC_X16U4C"
+    assert payload["CONTACT_ID"] == "654"
+    assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
+    assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
+
+
+def test_client_deal_route_maps_client_types_to_pipelines():
+    assert client_deal_route("before_court") == (CLIENT_SUPPORT_DEAL_CATEGORY_ID, "C7:UC_X16U4C")
+    assert client_deal_route("in_court") == (CLIENT_DEAL_CATEGORY_ID, "C3:NEW")
+
+
+def test_in_court_deal_routes_to_arbitration():
+    client = _client()
+    client.type = "in_court"
 
     payload = build_client_deal_payload(client, "321", "654")["fields"]
 
     assert payload["CATEGORY_ID"] == CLIENT_DEAL_CATEGORY_ID == 3
     assert payload["STAGE_ID"] == CLIENT_DEAL_STAGE_ID == "C3:NEW"
-    assert payload["CONTACT_ID"] == "654"
-    assert payload[f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}"] == "321"
-    assert payload[CLIENT_DEAL_FIELDS["case_number"]] == client.case_number
 
 
 @pytest.mark.parametrize(
@@ -102,6 +128,66 @@ async def test_client_field_setup_uses_deal_entity_and_full_name():
     params = remote.call.await_args.args[1]
     assert params["field"]["entityId"] == ENTITY_ID == "CRM_DEAL"
     assert params["field"]["fieldName"] == CLIENT_DEAL_FIELDS["region"]
+
+
+def test_partner_selector_detects_deal_child_relation():
+    partner_type = {
+        "relations": {
+            "parent": [],
+            "child": [{"entityTypeId": DEAL_ENTITY_TYPE_ID, "isChildrenListEnabled": "N"}],
+        }
+    }
+
+    assert _deal_relation_is_enabled(partner_type) is True
+
+
+def test_partner_selector_preserves_only_editable_relations():
+    partner_type = {
+        "relations": {
+            "parent": [
+                {"entityTypeId": 3, "isChildrenListEnabled": "Y", "isPredefined": "Y"},
+                {"entityTypeId": 4, "isChildrenListEnabled": "Y", "isPredefined": "N"},
+            ],
+            "child": [
+                {"entityTypeId": 1, "isChildrenListEnabled": "N", "isPredefined": "N"},
+            ],
+        }
+    }
+
+    assert _editable_relations(partner_type) == {
+        "parent": [{"entityTypeId": 4, "isChildrenListEnabled": "true"}],
+        "child": [{"entityTypeId": 1, "isChildrenListEnabled": "false"}],
+    }
+
+
+@pytest.mark.asyncio
+async def test_partner_selector_adds_deal_relation_without_losing_existing_relations():
+    remote = AsyncMock()
+    partner_type = {
+        "id": 16,
+        "relations": {
+            "parent": [],
+            "child": [{"entityTypeId": 1, "isChildrenListEnabled": "Y", "isPredefined": "N"}],
+        },
+    }
+
+    await _enable_partner_deal_relation(remote, partner_type)
+
+    remote.call.assert_awaited_once_with(
+        "crm.type.update",
+        {
+            "id": 16,
+            "fields": {
+                "relations": {
+                    "parent": [],
+                    "child": [
+                        {"entityTypeId": 1, "isChildrenListEnabled": "true"},
+                        {"entityTypeId": DEAL_ENTITY_TYPE_ID, "isChildrenListEnabled": "false"},
+                    ],
+                }
+            },
+        },
+    )
 
 
 async def _saved_entities(db: AsyncSession, *, partner_synced: bool = True) -> tuple[Partner, Client]:
@@ -188,7 +274,7 @@ async def test_create_recovers_existing_remote_contact_before_retrying_add():
 
 
 @pytest.mark.asyncio
-async def test_external_arbitration_deal_creates_linked_client(db_session: AsyncSession):
+async def test_external_support_deal_creates_linked_client(db_session: AsyncSession):
     partner, _ = await _saved_entities(db_session)
     db_session.add(
         BitrixEntityMap(
@@ -214,7 +300,7 @@ async def test_external_arbitration_deal_creates_linked_client(db_session: Async
     remote.call.side_effect = [
         {
             "ID": "900",
-            "CATEGORY_ID": "3",
+            "CATEGORY_ID": "7",
             "CONTACT_ID": "901",
             f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": "321",
             CLIENT_DEAL_FIELDS["client_type"]: "before_court",

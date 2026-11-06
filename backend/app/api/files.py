@@ -1,15 +1,17 @@
 import hashlib
-import os
 
+import structlog
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, UploadFile
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
 from app.core.rate_limit import limiter
 from app.database import get_db
-from app.integrations.bitrix24.documents import schedule_file_creation
+from app.integrations.bitrix24.documents import schedule_file_creation, sync_client_initial_documents
 from app.models.client import Client
+from app.models.file_deletion_tombstone import FileDeletionTombstone
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.models.user import User
@@ -23,12 +25,15 @@ from app.services.s3_service import (
 )
 from app.validation.files import (
     ALLOWED_EXTENSIONS,
-    ALLOWED_MIME_TYPES,
     MAX_FILE_SIZE_BYTES,
+    file_extension,
     has_valid_signature,
+    max_file_size_for_filename,
+    normalize_mime_type,
 )
 
 router = APIRouter(tags=["files"])
+logger = structlog.get_logger()
 
 
 async def _check_client_access(db: AsyncSession, client_id: str, user: User) -> None:
@@ -70,13 +75,22 @@ async def list_client_files(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
     await _check_client_access(db, client_id, current_user)
+    try:
+        await sync_client_initial_documents(db, client_id)
+    except Exception as exc:  # noqa: BLE001
+        await db.rollback()
+        logger.warning(
+            "bitrix_initial_documents_sync_failed",
+            client_id=client_id,
+            error_type=type(exc).__name__,
+        )
     result = await db.execute(
         select(FileUpload).where(FileUpload.client_id == client_id).order_by(FileUpload.created_at.desc())
     )
     records = result.scalars().all()
     # Presign — чисто CPU (HMAC), без сетевых вызовов. Вызываем синхронно,
     # чтобы не плодить task-switch'ы через asyncio.to_thread в цикле.
-    return [_read_response(r, get_presigned_url(r.s3_key)) for r in records]
+    return [_read_response(r, get_presigned_url(r.s3_key, filename=r.original_name)) for r in records]
 
 
 @router.post("/upload", response_model=FileUploadRead, status_code=201)
@@ -93,25 +107,26 @@ async def upload_endpoint(
     if not file.filename:
         raise HTTPException(status_code=400, detail={"code": "INVALID_FILE", "message": "No filename"})
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = file_extension(file.filename)
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
             status_code=415,
             detail={"code": "UNSUPPORTED_FILE_TYPE", "message": f"Extension {ext} not allowed"},
         )
 
-    content_type = file.content_type or ""
-    if content_type not in ALLOWED_MIME_TYPES:
+    content_type = normalize_mime_type(file.filename, file.content_type)
+    if content_type is None:
         raise HTTPException(
             status_code=415,
-            detail={"code": "UNSUPPORTED_FILE_TYPE", "message": f"MIME {content_type} not allowed"},
+            detail={"code": "UNSUPPORTED_FILE_TYPE", "message": f"MIME {file.content_type or ''} not allowed"},
         )
 
-    data = await file.read()
-    if len(data) > MAX_FILE_SIZE_BYTES:
+    max_size = max_file_size_for_filename(file.filename)
+    data = await file.read(max_size + 1)
+    if len(data) > max_size:
         raise HTTPException(
             status_code=413,
-            detail={"code": "FILE_TOO_LARGE", "message": f"Max size is {UPLOAD_MAX_SIZE_MB} MB"},
+            detail={"code": "FILE_TOO_LARGE", "message": f"Max size is {max_size // (1024 * 1024)} MB"},
         )
     if not _has_valid_signature(data, ext):
         raise HTTPException(
@@ -127,7 +142,9 @@ async def upload_endpoint(
         )
     )
     if duplicate is not None:
-        return _read_response(duplicate, await get_presigned_url_async(duplicate.s3_key))
+        return _read_response(
+            duplicate, await get_presigned_url_async(duplicate.s3_key, filename=duplicate.original_name)
+        )
 
     s3_key = await upload_file_async(data, file.filename, content_type)
 
@@ -151,7 +168,7 @@ async def upload_endpoint(
         await delete_file_async(s3_key)
         raise
 
-    url = await get_presigned_url_async(s3_key)
+    url = await get_presigned_url_async(s3_key, filename=record.original_name)
 
     audit_log(action="upload_file", target_id=str(record.id), target_type="file")
 
@@ -168,7 +185,7 @@ async def get_file_url(
     if not record:
         raise HTTPException(status_code=404, detail={"code": "NOT_FOUND", "message": "File not found"})
     await _check_client_access(db, str(record.client_id), current_user)
-    url = await get_presigned_url_async(record.s3_key)
+    url = await get_presigned_url_async(record.s3_key, filename=record.original_name)
     return FilePresignedURL(file_id=str(record.id), url=url, filename=record.original_name)
 
 
@@ -185,7 +202,7 @@ async def retry_file_bitrix_endpoint(
 
     await schedule_file_creation(db, record, retry=True)
     await db.commit()
-    url = await get_presigned_url_async(record.s3_key)
+    url = await get_presigned_url_async(record.s3_key, filename=record.original_name)
 
     audit_log(action="retry_file_bitrix_sync", target_id=str(record.id), target_type="file")
     return _read_response(record, url)
@@ -206,6 +223,15 @@ async def delete_file_endpoint(
             status_code=409,
             detail={"code": "BITRIX_SYNC_IN_PROGRESS", "message": "Document synchronization is in progress"},
         )
+    # The Bitrix24 copy stays on the Disk and in the deal timeline by design, so a
+    # tombstone keeps the folder/timeline reconciler from importing it back. Only
+    # the remote file ID is retained; the document itself is removed below.
+    if record.bitrix_disk_file_id:
+        await db.execute(
+            insert(FileDeletionTombstone)
+            .values(client_id=record.client_id, bitrix_disk_file_id=record.bitrix_disk_file_id)
+            .on_conflict_do_nothing(constraint="uq_file_deletion_tombstones_client_disk_file")
+        )
     # Delete DB row first; if that succeeds, remove S3 object. If S3 delete fails,
     # we keep the DB row deleted and rely on a periodic sweep to clean orphans.
     s3_key = record.s3_key
@@ -215,7 +241,5 @@ async def delete_file_endpoint(
     try:
         await delete_file_async(s3_key)
     except Exception as e:  # noqa: BLE001
-        import structlog
-
-        structlog.get_logger().warning("s3_delete_failed", s3_key=s3_key, error=str(e))
+        logger.warning("s3_delete_failed", s3_key=s3_key, error=str(e))
     audit_log(action="delete_file", target_id=record_id, target_type="file")

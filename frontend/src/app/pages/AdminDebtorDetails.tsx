@@ -17,19 +17,24 @@ import {
   Loader2,
   BarChart3,
   Trash2,
+  Upload,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdminClient, useRetryAdminClientBitrix, useUpdateAdminClient } from '@/app/hooks/useClients';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { formatFileSize } from '@/app/utils/files';
-import { fetchClientFiles, retryFileBitrix, type UploadedFileResponse } from '../api/upload';
+import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles, uploadAllSettled } from '@/app/utils/files';
+import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
+import CaseArbitrLink from '../components/CaseArbitrLink';
+import CaseNumberCard from '../components/CaseNumberCard';
+import { captureError } from '@/app/sentry';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import DocumentDeleteButton from '../components/DocumentDeleteButton';
 import {
   CLIENT_STATUSES,
   STATUS_LABELS,
@@ -55,6 +60,7 @@ const DOC_TYPE_LABELS: Record<string, string> = {
   court_fee: 'Квитанция госпошлины',
   criminal_record: 'Справка о судимости',
   deposit_payment: 'Квитанция на депозит',
+  uritech_review: 'На проверку от ЮРИТЕХ',
   other: 'Прочее',
 };
 
@@ -82,6 +88,8 @@ export default function AdminDebtorDetails() {
   const updateClient = useUpdateAdminClient();
   const retryClientBitrix = useRetryAdminClientBitrix();
   const queryClient = useQueryClient();
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isUploadingForPartner, setIsUploadingForPartner] = useState(false);
   const retryFileMutation = useMutation({
     mutationFn: retryFileBitrix,
     onSuccess: () => {
@@ -115,6 +123,45 @@ export default function AdminDebtorDetails() {
   });
 
   const bankruptcyDate = client?.court_procedure_date ?? '';
+
+  const handleUploadForPartner = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFiles = event.target.files;
+    if (!selectedFiles || selectedFiles.length === 0 || !id) return;
+
+    const { valid, invalidFormat, tooLarge } = partitionFiles(selectedFiles);
+    if (invalidFormat.length > 0) {
+      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+    }
+    if (tooLarge.length > 0) {
+      toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
+    }
+    if (valid.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setIsUploadingForPartner(true);
+    try {
+      const result = await uploadAllSettled(valid, (file) => uploadFile(file, id, 'uritech_review'));
+      await queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
+
+      if (result.failed.length === 0) {
+        toast.success(`Документы для партнёра загружены: ${result.succeeded.length}`);
+      } else {
+        result.failed.forEach(({ item, error }) => {
+          captureError(error, { context: 'admin_partner_document_upload', fileName: item.name });
+        });
+        const failedNames = result.failed.map(({ item }) => item.name).join(', ');
+        const message = result.succeeded.length > 0
+          ? `Загружено: ${result.succeeded.length}. Не удалось: ${failedNames}`
+          : `Не удалось загрузить: ${failedNames}`;
+        result.succeeded.length > 0 ? toast.warning(message) : toast.error(message);
+      }
+    } finally {
+      setIsUploadingForPartner(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   if (isLoading) {
     return (
@@ -203,17 +250,23 @@ export default function AdminDebtorDetails() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Номер дела</p>
-              <p className="font-semibold text-gray-900 font-mono">{client.case_number || '—'}</p>
-            </div>
-          </div>
-        </div>
+        <CaseNumberCard
+          value={client.case_number}
+          onSave={async (caseNumber) => {
+            await new Promise<void>((resolve, reject) => {
+              updateClient.mutate(
+                { id: client.id, data: { case_number: caseNumber } },
+                {
+                  onSuccess: () => {
+                    toast.success(caseNumber ? 'Номер дела сохранён' : 'Номер дела удалён');
+                    resolve();
+                  },
+                  onError: () => reject(new Error('case_number_update_failed')),
+                },
+              );
+            });
+          }}
+        />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -355,7 +408,9 @@ export default function AdminDebtorDetails() {
                 {client.case_number && (
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Номер дела</p>
-                    <p className="text-gray-900 font-mono">{client.case_number}</p>
+                    <p className="text-gray-900 font-mono">
+                      <CaseArbitrLink caseNumber={client.case_number} />
+                    </p>
                   </div>
                 )}
                 {client.court_procedure_date && (
@@ -547,18 +602,29 @@ export default function AdminDebtorDetails() {
               </div>
             ) : (
               <div className="space-y-3">
-                {clientFees.map((fee: { id: string; amount: number; status: string; due_date: string | null; paid_at: string | null; created_at: string }) => {
-                  const statusCfg = fee.status === 'paid'
-                    ? { label: 'Оплачено', color: 'bg-green-100 text-green-700 border-green-300' }
-                    : fee.status === 'overdue'
-                      ? { label: 'Просрочено', color: 'bg-red-100 text-red-700 border-red-300' }
-                      : { label: 'Ожидает оплаты', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' };
+                {clientFees.map((fee: { id: string; base_amount?: number; discount_amount?: number; amount: number; status: string; due_date: string | null; paid_at: string | null; created_at: string }) => {
+                  const statusCfg = fee.status === 'promo_free'
+                    ? { label: 'Бесплатно по предложению', color: 'bg-emerald-100 text-emerald-700 border-emerald-300' }
+                    : fee.status === 'paid'
+                      ? { label: 'Оплачено', color: 'bg-green-100 text-green-700 border-green-300' }
+                      : fee.status === 'overdue'
+                        ? { label: 'Просрочено', color: 'bg-red-100 text-red-700 border-red-300' }
+                        : { label: 'Ожидает оплаты', color: 'bg-yellow-100 text-yellow-700 border-yellow-300' };
                   return (
                     <div key={fee.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">
-                          {(fee.amount / 100).toLocaleString('ru-RU')} ₽
-                        </p>
+                        {fee.status === 'promo_free' ? (
+                          <p className="text-sm font-medium text-emerald-700">
+                            <span className="text-xs text-gray-400 line-through mr-2">
+                              {((fee.base_amount ?? 0) / 100).toLocaleString('ru-RU')} ₽
+                            </span>
+                            0 ₽
+                          </p>
+                        ) : (
+                          <p className="text-sm font-medium text-gray-900">
+                            {(fee.amount / 100).toLocaleString('ru-RU')} ₽
+                          </p>
+                        )}
                         <p className="text-xs text-gray-500">
                           {fee.due_date ? `Срок: ${formatDateShort(fee.due_date, tz)}` : 'Срок не установлен'}
                           {fee.paid_at ? ` · Оплачено ${formatDateShort(fee.paid_at, tz)}` : ''}
@@ -576,15 +642,43 @@ export default function AdminDebtorDetails() {
 
           {/* Документы */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
-            <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FileText className="w-5 h-5" />
-              Документы
-              {clientFiles.length > 0 && (
-                <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
-                  {clientFiles.length}
-                </span>
-              )}
-            </h3>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Первоначальные документы
+                  {clientFiles.length > 0 ? (
+                    <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                      {clientFiles.length}
+                    </span>
+                  ) : null}
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Загруженные здесь файлы сразу видны партнёру и синхронизируются с Битрикс24.
+                </p>
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept={ALLOWED_FILE_EXTENSIONS.join(',')}
+                onChange={handleUploadForPartner}
+                className="hidden"
+              />
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploadingForPartner}
+                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isUploadingForPartner ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <Upload className="h-4 w-4" />
+                )}
+                {isUploadingForPartner ? 'Загрузка…' : 'Загрузить для партнёра'}
+              </button>
+            </div>
             {isFilesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
@@ -636,12 +730,13 @@ export default function AdminDebtorDetails() {
                       </a>
                       <a
                         href={file.url}
-                        download
+                        download={file.filename}
                         className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Скачать"
                       >
                         <Download className="w-4 h-4" />
                       </a>
+                      <DocumentDeleteButton file={file} />
                     </div>
                   );
                 })}

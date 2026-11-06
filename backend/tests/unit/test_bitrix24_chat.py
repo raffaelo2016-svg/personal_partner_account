@@ -8,15 +8,20 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.integrations.bitrix24.chat import (
     BOT_FILE_METHOD,
     BOT_MESSAGE_METHOD,
     CHAT_FILE_METHOD,
     CHAT_MESSAGE_ENTITY_TYPE,
+    _active_support_user_ids,
     _reconcile_chat_file_history,
+    ensure_partner_chats,
     execute_chat_message,
     import_message_event,
     normalize_dialog_id,
+    partner_chat_description,
+    partner_chat_title,
     record_message_change_event,
 )
 from app.models.bitrix_installation import BitrixInstallation
@@ -155,6 +160,132 @@ async def _partner_room(db_session: AsyncSession) -> ChatRoom:
     return room
 
 
+async def _unlinked_partner(db_session: AsyncSession, name: str) -> Partner:
+    user = User(email=f"partner-{uuid4()}@example.test", hashed_password="hash", role="partner")
+    db_session.add(user)
+    await db_session.flush()
+    partner = Partner(
+        user_id=user.id,
+        company_name=name,
+        director_name=name,
+        inn=str(uuid4().int)[:12],
+        phone="+70000000000",
+        status="active",
+    )
+    db_session.add(partner)
+    await db_session.flush()
+    return partner
+
+
+@pytest.mark.asyncio
+async def test_partner_chat_provisioning_creates_only_for_eligible_partners(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    eligible = await _unlinked_partner(db_session, "Иванов Иван Иванович")
+    excluded = await _unlinked_partner(db_session, "Косточкина Мария Васильевна")
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "55,57,999")
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_NAMES", "[]")
+    monkeypatch.setattr(
+        settings,
+        "BITRIX_CHAT_EXCLUDED_PARTNER_TERMS",
+        '["агейчик","протацкая","ифнс","федеральная налоговая служба","косточкина"]',
+    )
+    remote = AsyncMock()
+    remote.list_all.return_value = [{"ID": "55"}, {"ID": "57"}]
+
+    async def call(method: str, payload: dict):
+        if method == "im.search.chat.list":
+            return []
+        if method == "im.chat.add":
+            assert payload["USERS"] == [55, 57]
+            assert payload["TITLE"] == partner_chat_title(eligible)
+            assert str(eligible.id) in payload["DESCRIPTION"]
+            return 40674
+        raise AssertionError(method)
+
+    remote.call.side_effect = call
+    result = await ensure_partner_chats(db_session, remote)
+
+    await db_session.refresh(eligible)
+    await db_session.refresh(excluded)
+    assert result == {"created": 1, "recovered": 0, "excluded": 1, "failed": 0}
+    assert eligible.bitrix_chat_id == "chat40674"
+    assert eligible.bitrix_collab_status == "binding_required"
+    assert excluded.bitrix_chat_id is None
+
+
+@pytest.mark.asyncio
+async def test_partner_chat_provisioning_recovers_chat_after_uncertain_response(
+    db_session: AsyncSession,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    partner = await _unlinked_partner(db_session, "Иванов Иван Иванович")
+    await db_session.commit()
+
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "[55]")
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_NAMES", "[]")
+    remote = AsyncMock()
+    remote.list_all.return_value = [{"ID": "55"}]
+    remote.call.return_value = [
+        {
+            "id": 40675,
+            "type": "chat",
+            "name": partner_chat_title(partner),
+            "description": partner_chat_description(partner),
+        }
+    ]
+
+    result = await ensure_partner_chats(db_session, remote)
+
+    await db_session.refresh(partner)
+    assert result == {"created": 0, "recovered": 1, "excluded": 0, "failed": 0}
+    assert partner.bitrix_chat_id == "chat40675"
+    remote.call.assert_awaited_once_with(
+        "im.search.chat.list",
+        {"FIND": partner_chat_title(partner), "OFFSET": 0, "LIMIT": 50},
+    )
+
+
+@pytest.mark.asyncio
+async def test_support_users_are_resolved_by_required_employee_names(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "")
+    monkeypatch.setattr(
+        settings,
+        "BITRIX_CHAT_SUPPORT_USER_NAMES",
+        '["Протацкая Тамара","Швецова Тамара","Агейчик Нина","Самсонюк Евгений"]',
+    )
+    remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара", "SECOND_NAME": "Игоревна"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара", "SECOND_NAME": "Петровна"},
+        {"ID": "103", "LAST_NAME": "Агейчик", "NAME": "Нина", "SECOND_NAME": "Александровна"},
+        {"ID": "104", "LAST_NAME": "Самсонюк", "NAME": "Евгений", "SECOND_NAME": "Вячеславович"},
+    ]
+
+    assert await _active_support_user_ids(remote) == [101, 102, 103, 104]
+
+
+@pytest.mark.asyncio
+async def test_missing_required_employee_prevents_incomplete_chat(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(settings, "BITRIX_CHAT_SUPPORT_USER_IDS", "")
+    monkeypatch.setattr(
+        settings,
+        "BITRIX_CHAT_SUPPORT_USER_NAMES",
+        '["Протацкая Тамара","Швецова Тамара","Агейчик Нина","Самсонюк Евгений"]',
+    )
+    remote = AsyncMock()
+    remote.list_all.return_value = [
+        {"ID": "101", "LAST_NAME": "Протацкая", "NAME": "Тамара"},
+        {"ID": "102", "LAST_NAME": "Швецова", "NAME": "Тамара"},
+        {"ID": "103", "LAST_NAME": "Агейчик", "NAME": "Нина"},
+    ]
+
+    assert await _active_support_user_ids(remote) == []
+
+
 def _message_event(remote_id: int = 5012) -> dict:
     return {
         "eventId": 2001,
@@ -187,10 +318,12 @@ def _file_event(remote_id: int = 5014) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_incoming_message_is_imported_once_and_escaped(db_session: AsyncSession):
+async def test_incoming_message_is_imported_once_as_plain_text(db_session: AsyncSession):
     room = await _partner_room(db_session)
 
-    first = await import_message_event(db_session, _message_event())
+    event = _message_event()
+    event["data"]["message"]["text"] = 'Ответ <сотрудника> "Льготный период"'
+    first = await import_message_event(db_session, event)
     await db_session.commit()
     second = await import_message_event(db_session, _message_event())
 
@@ -200,7 +333,7 @@ async def test_incoming_message_is_imported_once_and_escaped(db_session: AsyncSe
     assert first.sender_type == "admin"
     assert first.origin == "bitrix"
     assert first.bitrix_message_id == "5012"
-    assert first.text == "Ответ &lt;сотрудника&gt;"
+    assert first.text == 'Ответ <сотрудника> "Льготный период"'
     assert second is None
     assert count == 1
 
@@ -439,4 +572,4 @@ async def test_message_update_is_journaled_once_without_changing_local_text(db_s
     assert first is True
     assert second is False
     assert journal_count == 1
-    assert original.text == "Ответ &lt;сотрудника&gt;"
+    assert original.text == "Ответ <сотрудника>"

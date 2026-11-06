@@ -4,10 +4,13 @@ from typing import Self
 from pydantic import BaseModel, EmailStr, Field, field_validator, model_validator
 
 from app.models.enums import UserRole
+from app.validation.passwords import validate_password_bytes
+from app.validation.regions import normalize_region
 from app.validation.ru_requisites import normalize_and_validate_partner_inn_kpp
 
 
 def _validate_password_strength(value: str) -> str:
+    validate_password_bytes(value)
     if len(value) < 8:
         raise ValueError("Пароль должен быть минимум 8 символов")
     if not re.search(r"[A-Za-zА-Яа-я]", value):
@@ -81,9 +84,15 @@ class RegisterRequest(BaseModel):
     legal_address: str | None = None
     postal_address: str | None = None
     kpp: str | None = None
+    region: str = Field(min_length=1, max_length=100)
 
     # Yandex SmartCaptcha. None для dev-окружения без ключа.
     captcha_token: str | None = None
+
+    @field_validator("region")
+    @classmethod
+    def _validate_region(cls, value: str) -> str:
+        return normalize_region(value) or value
 
     @model_validator(mode="after")
     def _normalize_inn_kpp(self) -> Self:

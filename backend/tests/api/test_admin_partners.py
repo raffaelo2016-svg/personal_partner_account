@@ -117,6 +117,78 @@ class TestCreatePartner:
         resp = await client.post("/api/v1/admin/partners", json=payload, headers=auth_headers(admin_token))
         assert resp.status_code == 409
 
+    async def test_create_partner_with_one_calendar_month_promotion(self, client: AsyncClient, admin_token: str):
+        resp = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "promo-partner@test.com",
+                "password": "securepass123",
+                "company_name": "Promo Company",
+                "director_name": "Promo Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-44",
+                "court_fee_per_client": 1_700_000,
+                "free_client_limit": 10,
+                "promotion_start_date": "2026-09-07",
+            },
+            headers=auth_headers(admin_token),
+        )
+
+        assert resp.status_code == 201
+        data = resp.json()
+        assert data["court_fee_per_client"] == 1_700_000
+        assert data["free_client_limit"] == 10
+        assert data["promotion_start_date"] == "2026-09-07"
+        assert data["promotion_end_date"] == "2026-10-07"
+
+    async def test_create_partner_survives_chat_room_failure(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        async def _boom(*_args, **_kwargs):
+            raise RuntimeError("chat layer is down")
+
+        monkeypatch.setattr("app.services.chat_service.ensure_rooms_for_partner", _boom)
+
+        resp = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "no-chat@test.com",
+                "password": "securepass123",
+                "company_name": "No Chat Company",
+                "director_name": "No Chat Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-55",
+            },
+            headers=auth_headers(admin_token),
+        )
+
+        assert resp.status_code == 201
+        assert resp.json()["email"] == "no-chat@test.com"
+
+    async def test_create_partner_rejects_password_longer_than_bcrypt_limit(
+        self,
+        client: AsyncClient,
+        admin_token: str,
+    ):
+        resp = await client.post(
+            "/api/v1/admin/partners",
+            json={
+                "email": "long-pass@test.com",
+                "password": "x" * 80,
+                "company_name": "Long Password Company",
+                "director_name": "Long Password Director",
+                "inn": "7701234567",
+                "phone": "+7 (495) 111-22-66",
+            },
+            headers=auth_headers(admin_token),
+        )
+
+        assert resp.status_code == 422
+        assert resp.json()["code"] == "VALIDATION_ERROR"
+
 
 class TestGetPartner:
     async def test_get_partner_not_found(self, client: AsyncClient, admin_token: str):

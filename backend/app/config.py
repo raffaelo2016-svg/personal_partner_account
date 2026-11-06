@@ -58,6 +58,13 @@ class Settings(BaseSettings):
     SMTP_USE_STARTTLS: bool = False
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
+    # Telegram bot for opt-in delivery of cabinet news and notifications.
+    # Keep the token and webhook secret server-side only.
+    TELEGRAM_BOT_TOKEN: str = ""
+    TELEGRAM_BOT_USERNAME: str = ""
+    TELEGRAM_WEBHOOK_SECRET: str = ""
+    TELEGRAM_CONNECT_EXPIRE_MINUTES: int = 15
+
     # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
     # the local application's credentials stay only in the server environment.
     BITRIX_CLIENT_ENDPOINT: str = ""
@@ -65,7 +72,13 @@ class Settings(BaseSettings):
     BITRIX_CLIENT_ID: str = ""
     BITRIX_CLIENT_SECRET: str = ""
     BITRIX_SMART_PROCESS_ENTITY_TYPE_ID: int = 1070
+    # Clients already in court go to the Arbitration deal pipeline.
     BITRIX_DEAL_CATEGORY_ID: int = 3
+    # Clients transferred before filing go to the Support department pipeline,
+    # straight into its first stage «Партнеры» (verified through the portal API),
+    # not into the «Новый клиент» stage.
+    BITRIX_SUPPORT_DEAL_CATEGORY_ID: int = 7
+    BITRIX_SUPPORT_DEAL_STAGE_ID: str = "C7:UC_X16U4C"
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"
     BITRIX_TOKEN_ENCRYPTION_KEY: str = ""
     BITRIX_OUTBOX_BATCH_SIZE: int = 25
@@ -74,6 +87,18 @@ class Settings(BaseSettings):
     BITRIX_RETRY_MAX_SECONDS: int = 3600
     BITRIX_PROCESSING_STALE_MINUTES: int = 15
     BITRIX_RECONCILE_AFTER_HOURS: int = 24
+    # Employees added to the internal Bitrix chat created for each partner.
+    # Accepts either a JSON array ("[55,57]") or a comma/space separated list.
+    BITRIX_CHAT_SUPPORT_USER_IDS: str = ""
+    # Required chat participants. They are resolved to active Bitrix24 users at runtime,
+    # so the setting does not depend on environment-specific Bitrix user IDs.
+    BITRIX_CHAT_SUPPORT_USER_NAMES: str = (
+        '["Протацкая Тамара","Швецова Тамара","Агейчик Нина","Самсонюк Евгений"]'
+    )
+    BITRIX_CHAT_PROVISION_BATCH_SIZE: int = 25
+    BITRIX_CHAT_EXCLUDED_PARTNER_TERMS: str = (
+        '["агейчик","протацкая","ифнс","федеральная налоговая служба","косточкина"]'
+    )
 
     ENVIRONMENT: str = "development"
 
@@ -100,6 +125,47 @@ class Settings(BaseSettings):
         if self.ENVIRONMENT in ("production", "staging") and "*" in value:
             raise RuntimeError("ALLOWED_HOSTS wildcard '*' is not allowed in production/staging")
         return value
+
+    @property
+    def bitrix_chat_support_user_ids(self) -> list[int]:
+        raw = self.BITRIX_CHAT_SUPPORT_USER_IDS.strip()
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            parsed = raw.replace(",", " ").split()
+        if not isinstance(parsed, list):
+            raise RuntimeError("BITRIX_CHAT_SUPPORT_USER_IDS must be a JSON list or a comma-separated list")
+        result: list[int] = []
+        for item in parsed:
+            text = str(item).strip()
+            if not text.isdigit() or int(text) <= 0:
+                raise RuntimeError("BITRIX_CHAT_SUPPORT_USER_IDS contains an invalid user ID")
+            value = int(text)
+            if value not in result:
+                result.append(value)
+        return result
+
+    @property
+    def bitrix_chat_support_user_names(self) -> tuple[str, ...]:
+        try:
+            parsed = json.loads(self.BITRIX_CHAT_SUPPORT_USER_NAMES)
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"BITRIX_CHAT_SUPPORT_USER_NAMES is not valid JSON: {err}") from err
+        if not isinstance(parsed, list) or not all(isinstance(item, str) and item.strip() for item in parsed):
+            raise RuntimeError("BITRIX_CHAT_SUPPORT_USER_NAMES must be a JSON list of non-empty strings")
+        return tuple(item.strip() for item in parsed)
+
+    @property
+    def bitrix_chat_excluded_partner_terms(self) -> tuple[str, ...]:
+        try:
+            parsed = json.loads(self.BITRIX_CHAT_EXCLUDED_PARTNER_TERMS)
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"BITRIX_CHAT_EXCLUDED_PARTNER_TERMS is not valid JSON: {err}") from err
+        if not isinstance(parsed, list) or not all(isinstance(item, str) and item.strip() for item in parsed):
+            raise RuntimeError("BITRIX_CHAT_EXCLUDED_PARTNER_TERMS must be a JSON list of non-empty strings")
+        return tuple(item.strip().casefold() for item in parsed)
 
     @property
     def sync_database_url(self) -> str:

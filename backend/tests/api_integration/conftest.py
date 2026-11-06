@@ -133,6 +133,7 @@ async def create_task(
             "client_id": client_id,
             "title": title,
             "priority": priority,
+            "assigned_to": "uritech",
             "due_date": str(date.today() + timedelta(days=7)),
         },
         headers=auth(token),

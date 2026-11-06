@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
-import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard, Inbox, Newspaper } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-white.svg';
 import NotificationBell from '../components/NotificationBell';
 import { useAuthStore } from '../store/authStore';
 import { fetchAdminUnreadCount } from '../api/chat';
 import { fetchBitrixAttention } from '../api/bitrixAttention';
+import { fetchChatDocumentInboxCount } from '../api/chatDocuments';
 
 export default function AdminLayout() {
   const navigate = useNavigate();
@@ -26,6 +27,12 @@ export default function AdminLayout() {
     refetchInterval: 30_000,
   });
 
+  const { data: chatDocumentsCount } = useQuery({
+    queryKey: ['chatDocumentInboxCount'],
+    queryFn: fetchChatDocumentInboxCount,
+    refetchInterval: 30_000,
+  });
+
   const handleLogout = () => {
     logout();
     navigate('/login');
@@ -39,6 +46,8 @@ export default function AdminLayout() {
     { icon: AlertTriangle, label: 'Требует внимания', path: '/admin/bitrix-attention', badge: attentionData?.total ?? 0 },
     { icon: CreditCard, label: 'Транзакции', path: '/admin/transactions' },
     { icon: MessageSquare, label: 'Чат', path: '/admin/chat', badge: unreadCount },
+    { icon: Inbox, label: 'Документы из чата', path: '/admin/documents-inbox', badge: chatDocumentsCount?.unassigned ?? 0 },
+    { icon: Newspaper, label: 'Новости', path: '/admin/news' },
     { icon: Settings, label: 'Настройки', path: '/admin/settings' },
   ];
 

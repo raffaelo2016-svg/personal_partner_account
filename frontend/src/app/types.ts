@@ -28,8 +28,13 @@ export interface Partner {
   legal_address?: string | null;
   postal_address?: string | null;
   kpp?: string | null;
+  region?: string | null;
+  timezone?: string | null;
   court_fee_per_client: number;
   payment_term_days: number;
+  free_client_limit: number;
+  promotion_start_date?: string | null;
+  promotion_end_date?: string | null;
   status: PartnerStatus;
   created_at: string;
   updated_at: string;
@@ -72,8 +77,11 @@ export interface PartnerCreate {
   legal_address?: string;
   postal_address?: string;
   kpp?: string;
+  region?: string;
   court_fee_per_client?: number;
   payment_term_days?: number;
+  free_client_limit?: number;
+  promotion_start_date?: string | null;
 }
 
 export interface PartnerUpdate {
@@ -87,8 +95,11 @@ export interface PartnerUpdate {
   legal_address?: string | null;
   postal_address?: string | null;
   kpp?: string | null;
+  region?: string | null;
   court_fee_per_client?: number;
   payment_term_days?: number;
+  free_client_limit?: number;
+  promotion_start_date?: string | null;
   status?: PartnerStatus;
 }
 

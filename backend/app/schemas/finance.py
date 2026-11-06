@@ -7,6 +7,8 @@ class CourtFeeRead(BaseModel):
     id: str
     client_id: str
     partner_id: str
+    base_amount: int
+    discount_amount: int
     amount: int
     status: str
     due_date: date
@@ -30,6 +32,14 @@ class CourtFeeSummary(BaseModel):
     overdue_count: int
     total_clients: int
     payment_term_days: int
+    free_client_limit: int
+    free_clients_used: int
+    free_clients_remaining: int
+    promotion_start_date: date | None = None
+    promotion_end_date: date | None = None
+    promotion_active: bool
+    promotion_days_remaining: int
+    promotion_savings: int
 
 
 class DebtBanner(BaseModel):

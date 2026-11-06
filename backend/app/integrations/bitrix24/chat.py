@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import base64
-import html
 import mimetypes
+import re
 import uuid
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
@@ -27,6 +27,7 @@ from app.models.bitrix_sync import BitrixOutboxOperation
 from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
 from app.models.partner import Partner
 from app.services.s3_service import download_file_async, upload_file_async
+from app.validation.files import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES, has_valid_signature, normalize_mime_type
 
 logger = structlog.get_logger()
 
@@ -37,8 +38,10 @@ BOT_MESSAGE_METHOD = "imbot.v2.Chat.Message.send"
 BOT_FILE_METHOD = "imbot.v2.File.upload"
 BOT_CODE = "uritech_partner_cabinet"
 CHAT_EVENT_SUBSCRIPTION_MAX_AGE = timedelta(hours=24)
-CHAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024
-CHAT_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+CHAT_IMPORT_MAX_BYTES = MAX_FILE_SIZE_BYTES
+CHAT_FILE_EXTENSIONS = ALLOWED_EXTENSIONS - {".zip"}
+PARTNER_CHAT_TITLE_PREFIX = "ЮРИТЕХ — "
+PARTNER_CHAT_DESCRIPTION_PREFIX = "Личный кабинет партнёра ЮРИТЕХ"
 
 
 def normalize_dialog_id(value: str) -> str:
@@ -58,6 +61,204 @@ def _dialog_variants(value: str) -> set[str]:
     elif normalized:
         variants.add(f"chat{normalized}")
     return variants
+
+
+def _normalized_partner_text(value: str | None) -> str:
+    return " ".join((value or "").casefold().split())
+
+
+def _normalized_person_name(value: str | None) -> str:
+    return " ".join(re.findall(r"[\w-]+", (value or "").casefold().replace("ё", "е")))
+
+
+def _bitrix_user_name(user: dict[str, Any]) -> str:
+    return _normalized_person_name(
+        " ".join(
+            str(user.get(key) or "")
+            for key in (
+                "FULL_NAME",
+                "fullName",
+                "LAST_NAME",
+                "lastName",
+                "NAME",
+                "name",
+                "SECOND_NAME",
+                "secondName",
+            )
+        )
+    )
+
+
+def partner_chat_is_excluded(partner: Partner) -> bool:
+    searchable = " ".join(
+        _normalized_partner_text(value)
+        for value in (
+            partner.company_name,
+            partner.director_name,
+            partner.short_name,
+            partner.full_legal_name,
+        )
+        if value
+    )
+    return any(term in searchable for term in settings.bitrix_chat_excluded_partner_terms)
+
+
+def partner_chat_title(partner: Partner) -> str:
+    display_name = partner.company_name.strip() or partner.director_name.strip()
+    return f"{PARTNER_CHAT_TITLE_PREFIX}{display_name}"[:255]
+
+
+def partner_chat_description(partner: Partner) -> str:
+    return f"{PARTNER_CHAT_DESCRIPTION_PREFIX} · partner_cabinet:{partner.id}"
+
+
+def _chat_id_from_result(result: Any) -> int | None:
+    candidate = result
+    if isinstance(result, dict):
+        chat = result.get("chat")
+        if isinstance(chat, dict):
+            candidate = chat.get("id") or chat.get("ID")
+        else:
+            candidate = result.get("id") or result.get("ID")
+    if isinstance(candidate, bool):
+        return None
+    if isinstance(candidate, int) and candidate > 0:
+        return candidate
+    if isinstance(candidate, str) and candidate.isdigit() and int(candidate) > 0:
+        return int(candidate)
+    return None
+
+
+async def _active_support_user_ids(client: Bitrix24Client) -> list[int]:
+    configured_ids = settings.bitrix_chat_support_user_ids
+    configured_names = settings.bitrix_chat_support_user_names
+    if not configured_ids and not configured_names:
+        return []
+    users = await client.list_all("user.get", {"FILTER": {"ACTIVE": True}})
+    active_users = {
+        int(value): user
+        for user in users
+        if isinstance(user, dict)
+        and (value := str(user.get("ID") or user.get("id") or "")).isdigit()
+        and int(value) > 0
+    }
+    result = [user_id for user_id in configured_ids if user_id in active_users]
+    unresolved_names: list[str] = []
+    for configured_name in configured_names:
+        required_tokens = set(_normalized_person_name(configured_name).split())
+        matches = [
+            user_id
+            for user_id, user in active_users.items()
+            if required_tokens and required_tokens.issubset(set(_bitrix_user_name(user).split()))
+        ]
+        if len(matches) != 1:
+            unresolved_names.append(configured_name)
+            continue
+        if matches[0] not in result:
+            result.append(matches[0])
+    if unresolved_names:
+        logger.error(
+            "bitrix_partner_chat_required_users_unresolved",
+            names=unresolved_names,
+        )
+        return []
+    return result
+
+
+async def _find_partner_chat(client: Bitrix24Client, partner: Partner) -> int | None:
+    title = partner_chat_title(partner)
+    marker = f"partner_cabinet:{partner.id}"
+    result = await client.call(
+        "im.search.chat.list",
+        {"FIND": title, "OFFSET": 0, "LIMIT": 50},
+    )
+    if not isinstance(result, list):
+        return None
+    for item in result:
+        if not isinstance(item, dict) or str(item.get("type") or "").lower() != "chat":
+            continue
+        if str(item.get("name") or "").strip() != title:
+            continue
+        if marker not in str(item.get("description") or ""):
+            continue
+        chat_id = _chat_id_from_result(item)
+        if chat_id is not None:
+            return chat_id
+    return None
+
+
+async def ensure_partner_chats(
+    db: AsyncSession,
+    client: Bitrix24Client,
+    *,
+    limit: int | None = None,
+) -> dict[str, int]:
+    """Create and bind one internal Bitrix chat for every eligible active partner."""
+    support_user_ids = await _active_support_user_ids(client)
+    if not support_user_ids:
+        logger.warning("bitrix_partner_chat_support_users_missing")
+        return {"created": 0, "recovered": 0, "excluded": 0, "failed": 0}
+
+    partners = list(
+        (
+            await db.scalars(
+                select(Partner)
+                .where(
+                    Partner.status == "active",
+                    Partner.deleted_at.is_(None),
+                    Partner.bitrix_chat_id.is_(None),
+                )
+                .order_by(Partner.created_at, Partner.id)
+            )
+        ).all()
+    )
+    batch_size = limit or settings.BITRIX_CHAT_PROVISION_BATCH_SIZE
+    created = 0
+    recovered = 0
+    excluded = 0
+    failed = 0
+    processed = 0
+    for partner in partners:
+        if partner_chat_is_excluded(partner):
+            excluded += 1
+            continue
+        if processed >= batch_size:
+            break
+        processed += 1
+        try:
+            chat_id = await _find_partner_chat(client, partner)
+            if chat_id is None:
+                result = await client.call(
+                    "im.chat.add",
+                    {
+                        "USERS": support_user_ids,
+                        "TYPE": "CHAT",
+                        "TITLE": partner_chat_title(partner),
+                        "DESCRIPTION": partner_chat_description(partner),
+                        "COLOR": "AZURE",
+                    },
+                )
+                chat_id = _chat_id_from_result(result)
+                if chat_id is None:
+                    raise Bitrix24Error("INVALID_RESPONSE", "Chat creation returned no chat ID")
+                created += 1
+            else:
+                recovered += 1
+        except Bitrix24Error as exc:
+            failed += 1
+            logger.warning(
+                "bitrix_partner_chat_provision_failed",
+                partner_id=str(partner.id),
+                error_code=exc.code,
+            )
+            continue
+
+        partner.bitrix_chat_id = f"chat{chat_id}"
+        partner.bitrix_chat_bot_joined_at = None
+        if partner.bitrix_collab_status == "not_linked":
+            partner.bitrix_collab_status = "binding_required"
+    await db.flush()
+    return {"created": created, "recovered": recovered, "excluded": excluded, "failed": failed}
 
 
 async def schedule_chat_message(
@@ -440,6 +641,11 @@ async def _import_attachment(
     if len(content) > CHAT_IMPORT_MAX_BYTES:
         return None
     mime_type = str(file_data.get("mimeType") or mimetypes.guess_type(name)[0] or "application/octet-stream")
+    if extension == ".mp3":
+        normalized_mime_type = normalize_mime_type(name, mime_type)
+        if normalized_mime_type is None or not has_valid_signature(content, extension):
+            return None
+        mime_type = normalized_mime_type
     s3_key = await upload_file_async(content, name, mime_type)
     return s3_key, name, len(content), mime_type
 
@@ -476,7 +682,7 @@ async def import_message_event(
         db.add(room)
         await db.flush()
 
-    text = html.escape(str(message_data.get("text") or "").strip(), quote=True)
+    text = str(message_data.get("text") or "").strip()
     attachment = None
     file_data = _event_file(data)
     dialog_id = str(chat_data.get("dialogId") or message_data.get("chatId"))
@@ -651,9 +857,19 @@ async def ensure_service_bot(db: AsyncSession, client: Bitrix24Client, installat
 async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, int]:
     installation = await active_installation(db)
     if installation is None:
-        return {"received": 0, "imported": 0, "journaled": 0}
+        return {
+            "received": 0,
+            "imported": 0,
+            "journaled": 0,
+            "joined": 0,
+            "created": 0,
+            "recovered": 0,
+            "excluded": 0,
+            "failed": 0,
+        }
     token = await _installation_token(db, installation)
     async with Bitrix24Client(installation.client_endpoint, token) as client:
+        provisioning = await ensure_partner_chats(db, client)
         joined = await ensure_service_bot(db, client, installation)
 
         params: dict[str, Any] = {"botId": installation.im_bot_id, "limit": limit}
@@ -677,4 +893,10 @@ async def poll_chat_events(db: AsyncSession, *, limit: int = 100) -> dict[str, i
     if isinstance(next_offset, int) and not isinstance(next_offset, bool):
         installation.im_bot_event_offset = next_offset
     await db.commit()
-    return {"received": len(events), "imported": imported, "journaled": journaled, "joined": joined}
+    return {
+        "received": len(events),
+        "imported": imported,
+        "journaled": journaled,
+        "joined": joined,
+        **provisioning,
+    }

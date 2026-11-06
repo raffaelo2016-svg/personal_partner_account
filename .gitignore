@@ -97,3 +97,20 @@ storage/
 
 # Локальные результаты обследования Битрикс24 могут содержать внутреннюю структуру портала
 docs/bitrix24/survey-result*.json
+
+# ---------- Внутренние документы и персональные данные (не публикуем) ----------
+/*.xlsx
+/*.docx
+bitrix24-survey-result.json
+
+# ---------- Рабочие каталоги, артефакты и черновики ----------
+/output/
+/outputs/
+/reports/
+/work/
+/mockups/
+/downloads/
+/Концепт/
+/yandex-video-upload/
+/tmp-*/
+/.playwright-cli/

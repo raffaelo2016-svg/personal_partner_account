@@ -10,6 +10,7 @@ import {
   ArrowUpRight,
   BarChart3,
   Calendar,
+  ChevronRight,
   CircleDollarSign,
   Clock3,
   FileWarning,
@@ -193,15 +194,17 @@ function RiskItem({
   description,
   value,
   critical = false,
+  to,
 }: {
   icon: LucideIcon;
   label: string;
   description: string;
   value: number;
   critical?: boolean;
+  to?: string;
 }) {
-  return (
-    <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">
+  const content = (
+    <>
       <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg ${critical ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
         <Icon className="h-4 w-4" aria-hidden="true" />
       </span>
@@ -210,8 +213,22 @@ function RiskItem({
         <p className="text-xs text-gray-500">{description}</p>
       </div>
       <span className={`text-xl font-semibold ${critical ? 'text-red-700' : 'text-amber-700'}`}>{value}</span>
-    </div>
+      {to && <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />}
+    </>
   );
+
+  if (to) {
+    return (
+      <Link
+        to={to}
+        className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 transition-colors hover:border-blue-300 hover:bg-blue-50/40 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      >
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-3">{content}</div>;
 }
 
 export default function AdminDashboard() {
@@ -473,7 +490,13 @@ export default function AdminDashboard() {
         action={<Link to="/admin/bitrix-attention" className="inline-flex items-center gap-1 text-sm font-medium text-red-700 hover:underline">Требует внимания <ArrowRight className="h-4 w-4" /></Link>}
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <RiskItem icon={Clock3} label="Нет первого клиента" description="Активны более 14 дней" value={d.risk_stats.partners_without_first_client} />
+          <RiskItem
+            icon={Clock3}
+            label="Нет первого клиента"
+            description="Активны более 14 дней"
+            value={d.risk_stats.partners_without_first_client}
+            to="/admin/partners/without-clients?mode=no_clients"
+          />
           <RiskItem icon={TrendingDown} label="Снижение потока" description="Более чем на 50% к прошлому периоду" value={d.risk_stats.declining_partners} critical />
           <RiskItem icon={FileWarning} label="Клиенты без движения" description="Нет обновлений более 14 дней" value={d.risk_stats.clients_without_movement} critical />
           <RiskItem icon={CircleDollarSign} label="Партнёры с просрочкой" description="Есть неоплаченный просроченный счёт" value={d.risk_stats.partners_with_overdue} critical />

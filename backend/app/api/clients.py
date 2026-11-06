@@ -1,7 +1,13 @@
+from io import BytesIO
+from typing import Literal
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, Query
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user
+from app.core.exceptions import BadRequest
 from app.database import get_db
 from app.models.user import User
 from app.schemas.client import ClientCreate, ClientRead, ClientStats, ClientUpdate
@@ -16,6 +22,7 @@ from app.services.client_service import (
     list_clients,
     update_client,
 )
+from app.services.document_generation_service import DOCUMENT_FILENAMES, DOCX_MIME_TYPE, generate_document
 from app.services.progress_service import get_progress
 from app.services.status_machine import change_status, get_status_history
 
@@ -72,6 +79,26 @@ async def get_client_endpoint(
     return await get_client(db, client_id, partner_id=partner_id)
 
 
+@router.get("/{client_id}/documents/{document_kind}")
+async def generate_client_document(
+    client_id: str,
+    document_kind: Literal["application", "creditors", "inventory"],
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _get_partner_id_for_user(db, str(current_user.id))
+    client = await get_client(db, client_id, partner_id=partner_id)
+    if client.type != "before_court" or client.document_preparation_mode != "partner":
+        raise BadRequest("Самостоятельная генерация не выбрана для этого клиента")
+    content = generate_document(document_kind, client, client.document_generation_data)
+    filename = DOCUMENT_FILENAMES[document_kind]
+    return StreamingResponse(
+        BytesIO(content),
+        media_type=DOCX_MIME_TYPE,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}"},
+    )
+
+
 @router.post("", response_model=ClientRead, status_code=201)
 async def create_client_endpoint(
     body: ClientCreate,
@@ -81,6 +108,11 @@ async def create_client_endpoint(
     partner_id = await _get_partner_id_for_user(db, str(current_user.id))
     result = await create_client(db, partner_id, body)
     await db.commit()
+    from app.api.chat import _message_payload
+    from app.api.ws_chat import broadcast_new_message
+
+    for message in db.info.pop("new_client_chat_messages", []):
+        await broadcast_new_message(_message_payload(message), room_id=message.room_id)
     return result
 
 

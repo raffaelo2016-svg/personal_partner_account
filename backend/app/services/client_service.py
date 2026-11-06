@@ -4,7 +4,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import NotFound
 from app.models.client import Client
+from app.models.notification import Notification
 from app.models.partner import Partner
+from app.models.user import User
 from app.schemas.client import ClientCreate, ClientRead, ClientStats, ClientUpdate
 from app.services.audit import audit_log
 
@@ -22,6 +24,8 @@ def _client_to_read(
         partner_id=str(c.partner_id),
         partner_name=partner_name,
         type=c.type,
+        document_preparation_mode=c.document_preparation_mode,
+        document_generation_data=c.document_generation_data or {},
         status=c.status,
         full_name=c.full_name,
         date_of_birth=c.date_of_birth,
@@ -136,6 +140,8 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     client = Client(
         partner_id=partner_id,
         type=data.type.value,
+        document_preparation_mode=data.document_preparation_mode.value,
+        document_generation_data=data.document_generation_data,
         status="documents_collection",
         full_name=data.full_name,
         date_of_birth=data.date_of_birth,
@@ -169,6 +175,41 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     # it explicitly inside the async session so response serialisation does
     # not attempt implicit IO and raise MissingGreenlet.
     await session.refresh(client, ["updated_at"])
+
+    from app.integrations.bitrix24.chat import schedule_chat_message
+    from app.models.chat import ChatMessage
+    from app.services.chat_service import _msg_to_read, ensure_rooms_for_partner
+
+    rooms = await ensure_rooms_for_partner(session, partner_id)
+    room = next(room for room in rooms if room.type == "admin")
+    name = partner.director_name.strip() if partner and partner.director_name else ""
+    greeting = f"{name}, вы" if name else "Вы"
+    message = ChatMessage(
+        room_id=room.id,
+        sender_id=None,
+        sender_type="admin",
+        text=(
+            f"{greeting} добавили нового клиента — {client.full_name}. Спасибо за доверие!\n\n"
+            "Мы оперативно возьмём его в работу и сообщим вам о результатах в этом чате."
+        ),
+    )
+    session.add(message)
+    await session.flush()
+    await schedule_chat_message(session, message, room=room)
+    await session.refresh(message)
+    session.info.setdefault("new_client_chat_messages", []).append(_msg_to_read(message))
+
+    admin_ids = (await session.scalars(select(User.id).where(User.role == "admin", User.is_active.is_(True)))).all()
+    session.add_all(
+        Notification(
+            user_id=admin_id,
+            type="new_client",
+            title="Новый клиент от партнёра",
+            message=f"Партнёр «{partner.company_name}» передал клиента «{client.full_name}».",
+            link=f"/admin/clients/{client.id}",
+        )
+        for admin_id in admin_ids
+    )
 
     audit_log(action="create_client", target_id=str(client.id), target_type="client")
     logger.info("client_created", client_id=str(client.id), partner_id=partner_id)
@@ -205,6 +246,10 @@ async def update_client(
         raise NotFound("Client not found")
 
     update_data = data.model_dump(exclude_unset=True)
+    if preparation_mode := update_data.get("document_preparation_mode"):
+        update_data["document_preparation_mode"] = preparation_mode.value
+    if client_type := update_data.get("type"):
+        update_data["type"] = client_type.value
     court_date_changed = "court_procedure_date" in update_data
     for key, value in update_data.items():
         if hasattr(client, key):
@@ -281,3 +326,4 @@ async def get_client_stats(session: AsyncSession, partner_id: str) -> ClientStat
         completed=completed,
         new_this_week=new_this_week,
     )
+

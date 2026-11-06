@@ -51,6 +51,40 @@ test.describe('Registration — happy path', () => {
     await page.getByRole('button', { name: /^Зарегистрироваться$/ }).click();
     await expect(page.getByText('Заявка отправлена!')).toBeVisible({ timeout: 5000 });
   });
+
+  test('регистрация юрлица передаёт КПП на сервер', async ({ page }) => {
+    const p = uniquePartnerPayload();
+
+    await page.route('**/api/v1/auth/register', async (route: Route) => {
+      const payload = route.request().postDataJSON();
+      expect(payload).toHaveProperty('partner_type', 'legal');
+      expect(payload).toHaveProperty('kpp', '770401001');
+      await route.fulfill({
+        status: 201,
+        contentType: 'application/json',
+        body: JSON.stringify({ id: 'fake-id', email: p.email, status: 'pending' }),
+      });
+    });
+
+    await page.goto('/register');
+    await page.locator('input[name="companyName"]').fill('ООО Тест');
+    await page.locator('input[name="inn"]').fill('7701234567');
+    await page.locator('input[name="kpp"]').fill('770401001');
+    await page.locator('input[name="ogrn"]').fill('1234567890123');
+    await page.locator('textarea[name="legalAddress"]').fill('г. Москва');
+    await page.getByRole('button', { name: 'Продолжить' }).click();
+
+    await page.locator('input[name="contactName"]').fill('Иванов Иван Иванович');
+    await page.locator('input#register-phone').fill(p.phone);
+    await page.locator('input[name="contactEmail"]').fill(p.email);
+    await page.locator('input[name="password"]').fill(p.password);
+    await page.locator('input[name="confirmPassword"]').fill(p.password);
+    await page.locator('input[name="agreeTerms"]').check();
+    await page.locator('input[name="agreePersonalData"]').check();
+    await page.getByRole('button', { name: /^Зарегистрироваться$/ }).click();
+
+    await expect(page.getByText('Заявка отправлена!')).toBeVisible({ timeout: 5000 });
+  });
 });
 
 test.describe('Registration — переключение типа партнёра', () => {

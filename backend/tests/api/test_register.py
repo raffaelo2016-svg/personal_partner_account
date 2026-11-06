@@ -8,6 +8,7 @@ REGISTER_DATA = {
     "director_name": "Иванов Иван",
     "inn": "7701234567",
     "phone": "+79991234567",
+    "region": "Белгородская область",
 }
 
 
@@ -43,6 +44,39 @@ class TestRegister:
             partner = row.scalar_one()
             assert partner.court_fee_per_client == 1_500_000
             assert partner.payment_term_days == 10
+
+    async def test_register_sets_region_and_timezone(self, client: AsyncClient, setup_db):
+        from app.models.partner import Partner
+        from app.models.user import User
+        from tests.conftest import async_session_test
+
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={**REGISTER_DATA, "email": "region@test.com", "region": "Свердловская область"},
+        )
+        assert resp.status_code == 201
+        async with async_session_test() as session:
+            partner = (
+                await session.execute(
+                    select(Partner).join(User, Partner.user_id == User.id).where(User.email == "region@test.com")
+                )
+            ).scalar_one()
+            assert partner.region == "Свердловская область"
+            assert partner.timezone == "Asia/Yekaterinburg"
+
+    async def test_register_requires_region(self, client: AsyncClient, setup_db):
+        payload = dict(REGISTER_DATA)
+        payload.pop("region")
+        payload["email"] = "no-region@test.com"
+        resp = await client.post("/api/v1/auth/register", json=payload)
+        assert resp.status_code == 422
+
+    async def test_register_rejects_unknown_region(self, client: AsyncClient, setup_db):
+        resp = await client.post(
+            "/api/v1/auth/register",
+            json={**REGISTER_DATA, "email": "bad-region@test.com", "region": "Неизвестный регион"},
+        )
+        assert resp.status_code == 422
 
     async def test_register_duplicate_email(self, client: AsyncClient, setup_db):
         await client.post("/api/v1/auth/register", json=REGISTER_DATA)

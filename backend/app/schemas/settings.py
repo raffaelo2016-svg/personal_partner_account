@@ -21,6 +21,7 @@ class NotificationPreferenceRead(BaseModel):
     email_notifications: bool
     new_partner_notifications: bool
     critical_events: bool
+    telegram_notifications: bool
 
     model_config = {"from_attributes": True}
 
@@ -29,6 +30,19 @@ class NotificationPreferenceUpdate(BaseModel):
     email_notifications: bool | None = None
     new_partner_notifications: bool | None = None
     critical_events: bool | None = None
+    telegram_notifications: bool | None = None
+
+
+class TelegramConnectionRead(BaseModel):
+    available: bool
+    connected: bool
+    username: str | None = None
+    notifications_enabled: bool
+
+
+class TelegramConnectRead(BaseModel):
+    url: str
+    expires_at: datetime
 
 
 class ChangePasswordRequest(BaseModel):
