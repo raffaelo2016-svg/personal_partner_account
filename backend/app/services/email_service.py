@@ -7,6 +7,11 @@ from email.message import EmailMessage
 import httpx
 import structlog
 
+try:
+    import certifi
+except ImportError:  # pragma: no cover - certifi приходит с httpx
+    certifi = None
+
 from app.config import settings
 
 logger = structlog.get_logger()
@@ -42,9 +47,22 @@ async def _send_via_resend(recipient: str, reset_url: str) -> None:
         response.raise_for_status()
 
 
+def _make_ssl_context() -> ssl.SSLContext:
+    """Контекст с проверкой сертификата.
+
+    Системное хранилище macOS не всегда принимает цепочку почтового сервера
+    (например, REG.RU), поэтому по умолчанию используем бандл certifi.
+    """
+    if settings.SMTP_CA_BUNDLE:
+        return ssl.create_default_context(cafile=settings.SMTP_CA_BUNDLE)
+    if certifi is not None:
+        return ssl.create_default_context(cafile=certifi.where())
+    return ssl.create_default_context()
+
+
 def _send_message(message: EmailMessage) -> None:
     if settings.SMTP_USE_SSL:
-        context = ssl.create_default_context()
+        context = _make_ssl_context()
         with smtplib.SMTP_SSL(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15, context=context) as smtp:
             if settings.SMTP_USERNAME:
                 smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
@@ -53,7 +71,7 @@ def _send_message(message: EmailMessage) -> None:
 
     with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=15) as smtp:
         if settings.SMTP_USE_STARTTLS:
-            smtp.starttls(context=ssl.create_default_context())
+            smtp.starttls(context=_make_ssl_context())
         if settings.SMTP_USERNAME:
             smtp.login(settings.SMTP_USERNAME, settings.SMTP_PASSWORD)
         smtp.send_message(message)
