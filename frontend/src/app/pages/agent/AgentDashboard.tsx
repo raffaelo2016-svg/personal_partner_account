@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { Check, Copy, Loader2, Users, Wallet, TrendingUp, UserCheck } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
-import { getAgentAccruals, getAgentMe } from '@/app/api/agent';
+import { getAgentAccruals, getAgentMe, getAgentPartners } from '@/app/api/agent';
 import { formatMoney } from '@/app/utils/money';
 
 const STATUS_LABELS: Record<string, string> = {
@@ -12,11 +12,21 @@ const STATUS_LABELS: Record<string, string> = {
   review: 'На проверке',
 };
 
+const PARTNER_STATUSES: { key: string; label: string; className: string }[] = [
+  { key: 'active', label: 'Активные', className: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  { key: 'pending', label: 'На проверке', className: 'bg-amber-50 text-amber-700 border-amber-200' },
+  { key: 'blocked', label: 'Заблокированы', className: 'bg-red-50 text-red-700 border-red-200' },
+];
+
 export default function AgentDashboard() {
   const { data: me, isLoading } = useQuery({ queryKey: ['agent', 'me'], queryFn: getAgentMe });
   const { data: accruals = [] } = useQuery({
     queryKey: ['agent', 'accruals'],
     queryFn: getAgentAccruals,
+  });
+  const { data: partners = [] } = useQuery({
+    queryKey: ['agent', 'partners'],
+    queryFn: getAgentPartners,
   });
   const [copied, setCopied] = useState(false);
 
@@ -98,6 +108,61 @@ export default function AgentDashboard() {
         <p className="mt-3 text-xs text-gray-400">
           Код агента: <span className="font-mono">{me.profile.code}</span>
         </p>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div className="bg-white border border-gray-200 rounded-xl p-5">
+          <h2 className="text-base font-semibold text-gray-900">Партнёры по статусам</h2>
+          <div className="mt-3 space-y-2">
+            {PARTNER_STATUSES.map((status) => {
+              const count = partners.filter((partner) => partner.status === status.key).length;
+              return (
+                <div key={status.key} className="flex items-center justify-between gap-2">
+                  <span className={`inline-flex px-2 py-0.5 rounded-full border text-xs ${status.className}`}>
+                    {status.label}
+                  </span>
+                  <span className="text-sm font-medium text-gray-900">{count}</span>
+                </div>
+              );
+            })}
+          </div>
+          <Link to="/agent/partners" className="mt-4 inline-block text-sm text-emerald-700 hover:underline">
+            Все партнёры
+          </Link>
+        </div>
+
+        <div className="bg-white border border-gray-200 rounded-xl overflow-hidden lg:col-span-2">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+            <h2 className="text-base font-semibold text-gray-900">Последние партнёры</h2>
+            <Link to="/agent/partners" className="text-sm text-emerald-700 hover:underline">
+              Смотреть всех
+            </Link>
+          </div>
+          {partners.length === 0 ? (
+            <div className="px-5 py-10 text-center text-sm text-gray-500">
+              Пока никто не зарегистрировался по вашей ссылке.
+            </div>
+          ) : (
+            <div className="divide-y divide-gray-100">
+              {partners.slice(0, 5).map((partner) => (
+                <div key={partner.id} className="flex items-center justify-between px-5 py-3">
+                  <div className="min-w-0">
+                    <div className="truncate text-sm text-gray-900">{partner.name}</div>
+                    <div className="text-xs text-gray-500">
+                      {partner.linked_at
+                        ? `Закреплён ${new Date(partner.linked_at).toLocaleDateString('ru-RU')}`
+                        : 'Дата закрепления неизвестна'}
+                    </div>
+                  </div>
+                  <div className="text-right text-xs text-gray-500">
+                    <div>{partner.clients} кл.</div>
+                    <div>{formatMoney(partner.accrued)}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">

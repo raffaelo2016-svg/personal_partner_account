@@ -51,6 +51,7 @@ const PAYOUT_ACTIONS: { status: string; label: string }[] = [
 export default function AdminAgents() {
   const queryClient = useQueryClient();
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'blocked'>('all');
   const [selected, setSelected] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -59,6 +60,34 @@ export default function AdminAgents() {
     queryKey: ['admin', 'agents', search],
     queryFn: () => listAgents(search.trim() || undefined),
   });
+
+  const visibleAgents = agents.filter((agent) =>
+    statusFilter === 'all' ? true : agent.status === statusFilter,
+  );
+
+  const exportCsv = () => {
+    const header = ['Имя', 'Почта', 'Код', 'Статус', 'Партнёров', 'Клиентов', 'Начислено, ₽', 'Доступно, ₽'];
+    const rows = visibleAgents.map((agent) => [
+      agent.full_name,
+      agent.email,
+      agent.code,
+      agent.status === 'active' ? 'Активен' : 'Заблокирован',
+      String(agent.stats.partners),
+      String(agent.stats.clients),
+      String(agent.stats.accrued / 100),
+      String(agent.stats.available / 100),
+    ]);
+    const csv = [header, ...rows]
+      .map((row) => row.map((value) => `"${value.replace(/"/g, '""')}"`).join(';'))
+      .join('\n');
+    const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'agents.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   const { data: detail } = useQuery({
     queryKey: ['admin', 'agent', selected],
@@ -125,12 +154,37 @@ export default function AdminAgents() {
             Кто приводит партнёров, сколько начислено и какие заявки ждут выплаты.
           </p>
         </div>
-        <input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Имя, код или компания"
-          className="w-full sm:w-64 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+            {([
+              ['all', 'Все'],
+              ['active', 'Активные'],
+              ['blocked', 'Заблокированные'],
+            ] as ['all' | 'active' | 'blocked', string][]).map(([value, label]) => (
+              <button
+                key={value}
+                onClick={() => setStatusFilter(value)}
+                className={`px-3 py-2 text-sm ${
+                  statusFilter === value ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Имя, код или компания"
+            className="w-full sm:w-60 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          />
+          <button
+            onClick={exportCsv}
+            className="px-3 py-2 rounded-lg border border-gray-200 text-sm text-gray-700 hover:border-blue-300 hover:text-blue-700"
+          >
+            Экспорт CSV
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -161,7 +215,7 @@ export default function AdminAgents() {
               </tr>
             </thead>
             <tbody>
-              {agents.map((agent) => (
+              {visibleAgents.map((agent) => (
                 <tr
                   key={agent.id}
                   onClick={() => setSelected(agent.id)}
@@ -189,7 +243,7 @@ export default function AdminAgents() {
                   </td>
                 </tr>
               ))}
-              {agents.length === 0 && (
+              {visibleAgents.length === 0 && (
                 <tr>
                   <td colSpan={7} className="px-4 py-12 text-center text-gray-500">
                     Агентов пока нет.
