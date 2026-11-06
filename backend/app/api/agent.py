@@ -118,6 +118,7 @@ async def agent_accruals(
             rate=a.rate,
             status=a.status,
             reason=a.reason,
+            comment=a.comment,
         )
         for a in accruals
     ]

@@ -44,6 +44,7 @@ export interface AgentAccrual {
   rate: number;
   status: string;
   reason: string;
+  comment?: string | null;
 }
 
 export interface AgentPayout {
@@ -156,6 +157,14 @@ export async function reviewAgentRequisites(
   comment?: string,
 ): Promise<AdminAgent> {
   const { data } = await apiClient.patch(`/admin/agents/${id}/requisites`, { status, comment });
+  return data;
+}
+
+export async function correctAccrual(
+  id: string,
+  payload: { status: 'accrued' | 'review' | 'cancelled'; amount?: number; reason: string },
+): Promise<AgentAccrual> {
+  const { data } = await apiClient.patch(`/admin/accruals/${id}`, payload);
   return data;
 }
 

@@ -47,6 +47,7 @@ class AgentAccrualRead(BaseModel):
     rate: int
     status: str
     reason: str
+    comment: str | None = None
 
 
 class PayoutRead(BaseModel):
@@ -105,6 +106,12 @@ class PartnerBindRequest(BaseModel):
     agent_id: str | None = None
     reason: str = Field(min_length=3, max_length=500)
     force: bool = False
+
+
+class AdminAccrualUpdate(BaseModel):
+    status: str = Field(pattern=r"^(accrued|review|cancelled)$")
+    amount: int | None = Field(default=None, ge=0, le=10_000_000)
+    reason: str = Field(min_length=3, max_length=500)
 
 
 class PayoutStatusRequest(BaseModel):

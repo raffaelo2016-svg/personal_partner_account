@@ -283,11 +283,44 @@ async def revoke_invite(
 # ---------------------------------------------------------------- журнал
 
 
+ACCESS_ACTIONS = (
+    "bootstrap_completed",
+    "invite_created",
+    "invite_resent",
+    "invite_revoked",
+    "invite_accepted",
+    "login_success",
+    "login_failed",
+    "logout",
+    "token_refresh",
+    "user_blocked",
+    "user_unblocked",
+    "user_role_changed",
+    "shared_account_disabled",
+    "password_reset_requested",
+    "password_reset_completed",
+)
+
+AGENT_ACTIONS = (
+    "agent_created",
+    "agent_accrued",
+    "agent_accrual_corrected",
+    "agent_payout_requested",
+    "agent_payout_status_changed",
+    "agent_requisites_updated",
+    "agent_requisites_reviewed",
+    "agent_status_changed",
+    "partner_linked_to_agent",
+    "partner_agent_reassigned",
+)
+
+
 @router.get("/admin/audit", response_model=AuditPage)
 async def audit_page(
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     action: str | None = None,
+    scope: str | None = Query(default=None, pattern="^(access|agent)$"),
     search: str | None = Query(default=None, max_length=120),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
@@ -301,6 +334,10 @@ async def audit_page(
         filters.append(AuditLog.created_at <= date_to)
     if action:
         filters.append(AuditLog.action == action)
+    elif scope == "access":
+        filters.append(AuditLog.action.in_(ACCESS_ACTIONS))
+    elif scope == "agent":
+        filters.append(AuditLog.action.in_(AGENT_ACTIONS))
     if search:
         needle = f"%{search.strip().lower()}%"
         filters.append(

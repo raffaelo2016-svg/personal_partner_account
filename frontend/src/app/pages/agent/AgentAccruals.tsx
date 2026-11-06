@@ -11,6 +11,13 @@ const STATUS_LABELS: Record<string, string> = {
   review: 'На проверке',
 };
 
+const STATUS_STYLES: Record<string, string> = {
+  accrued: 'text-emerald-700',
+  paid: 'text-emerald-700',
+  cancelled: 'text-red-600',
+  review: 'text-amber-600',
+};
+
 export default function AgentAccruals() {
   const [status, setStatus] = useState('');
   const { data: accruals = [], isLoading } = useQuery({
@@ -45,6 +52,7 @@ export default function AgentAccruals() {
           <option value="">Все статусы</option>
           <option value="accrued">Начислено</option>
           <option value="paid">Выплачено</option>
+          <option value="review">На проверке</option>
           <option value="cancelled">Отменено</option>
         </select>
       </div>
@@ -66,9 +74,16 @@ export default function AgentAccruals() {
                 <td className="px-4 py-3 text-gray-600 whitespace-nowrap">
                   {new Date(item.created_at).toLocaleDateString('ru-RU')}
                 </td>
-                <td className="px-4 py-3 text-gray-900">{item.partner_name}</td>
+                <td className="px-4 py-3 text-gray-900">
+                  {item.partner_name}
+                  {item.comment && (
+                    <span className="block text-xs text-gray-400">Причина: {item.comment}</span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-600">№{item.client_ref}</td>
-                <td className="px-4 py-3 text-gray-600">{STATUS_LABELS[item.status] ?? item.status}</td>
+                <td className={`px-4 py-3 ${STATUS_STYLES[item.status] ?? 'text-gray-600'}`}>
+                  {STATUS_LABELS[item.status] ?? item.status}
+                </td>
                 <td className="px-4 py-3 text-right font-medium text-gray-900">
                   {formatMoney(item.amount)}
                 </td>

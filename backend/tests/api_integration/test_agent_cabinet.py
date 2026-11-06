@@ -370,3 +370,59 @@ async def test_agent_receives_notifications(client, db_session):
     unread = await client.get("/api/v1/notifications/unread-count", headers=agent_headers)
     assert unread.status_code == 200
     assert unread.json()["count"] >= 3
+
+
+@pytest.mark.asyncio
+async def test_admin_corrects_accrual_with_reason(client, db_session):
+    reg = await _register_agent(client, email="correct@test.ru", name="Агент Корректировок")
+    agent = (await db_session.execute(select(Agent))).scalar_one()
+    await _make_admin(db_session)
+    partner = await _make_partner(db_session, email="cp@test.ru", agent_code=agent.code)
+
+    client_row = Client(
+        partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing"
+    )
+    db_session.add(client_row)
+    await db_session.commit()
+    accrual = await agent_service.accrue_for_client(db_session, client_row)
+    await db_session.commit()
+
+    admin_headers = await _login(client, "root")
+    agent_headers = {"Authorization": f"Bearer {reg['access_token']}"}
+
+    cancelled = await client.patch(
+        f"/api/v1/admin/accruals/{accrual.id}",
+        headers=admin_headers,
+        json={"status": "cancelled", "reason": "Дубль дела"},
+    )
+    assert cancelled.status_code == 200, cancelled.text
+    assert cancelled.json()["status"] == "cancelled"
+    assert cancelled.json()["comment"] == "Дубль дела"
+
+    stats = (await client.get("/api/v1/agent/me", headers=agent_headers)).json()["stats"]
+    assert stats["accrued"] == 0
+    assert stats["available"] == 0
+
+    restored = await client.patch(
+        f"/api/v1/admin/accruals/{accrual.id}",
+        headers=admin_headers,
+        json={"status": "accrued", "reason": "Проверили, дело в работе"},
+    )
+    assert restored.status_code == 200
+    stats = (await client.get("/api/v1/agent/me", headers=agent_headers)).json()["stats"]
+    assert stats["available"] == 100000
+
+    failed = await client.patch(
+        f"/api/v1/admin/accruals/{accrual.id}",
+        headers=admin_headers,
+        json={"status": "cancelled", "reason": "ok"},
+    )
+    assert failed.status_code == 422
+
+    audit = await client.get(
+        "/api/v1/admin/audit",
+        headers=admin_headers,
+        params={"action": "agent_accrual_corrected"},
+    )
+    assert audit.status_code == 200
+    assert audit.json()["total"] >= 2

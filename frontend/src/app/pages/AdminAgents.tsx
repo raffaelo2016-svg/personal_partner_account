@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { CheckCircle2, Loader2, ShieldOff, ShieldCheck } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
+  correctAccrual,
   getAgentDetail,
   listAgents,
   reviewAgentRequisites,
@@ -22,6 +23,13 @@ const REQ_LABELS: Record<string, string> = {
   sent: 'На проверке',
   accepted: 'Подтверждены',
   needs_fix: 'Нужны правки',
+};
+
+const ACCRUAL_LABELS: Record<string, string> = {
+  accrued: 'Начислено',
+  review: 'На проверке',
+  cancelled: 'Отменено',
+  paid: 'Выплачено',
 };
 
 const PAYOUT_LABELS: Record<string, string> = {
@@ -78,6 +86,25 @@ export default function AdminAgents() {
     },
     onError: (err) => setError(getApiErrorMessage(err)),
   });
+
+  const accrualMutation = useMutation({
+    mutationFn: ({ id, status, reason }: { id: string; status: 'accrued' | 'cancelled'; reason: string }) =>
+      correctAccrual(id, { status, reason }),
+    onSuccess: async () => {
+      setNotice('Начисление скорректировано');
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'agent', selected] });
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'agents'] });
+    },
+    onError: (err) => setError(getApiErrorMessage(err)),
+  });
+
+  const handleAccrualCorrection = (accrualId: string, status: 'accrued' | 'cancelled') => {
+    const reason = window.prompt(
+      status === 'cancelled' ? 'Причина отмены начисления' : 'Причина восстановления начисления',
+    );
+    if (!reason || reason.trim().length < 3) return;
+    accrualMutation.mutate({ id: accrualId, status, reason: reason.trim() });
+  };
 
   const payoutMutation = useMutation({
     mutationFn: ({ payout, status }: { payout: AgentPayout; status: string }) =>
@@ -269,9 +296,31 @@ export default function AdminAgents() {
                       <td className="px-4 py-2.5 text-gray-600">
                         {new Date(accrual.created_at).toLocaleDateString('ru-RU')}
                         <span className="block text-xs text-gray-400">№{accrual.client_ref}</span>
+                        {accrual.comment && (
+                          <span className="block text-xs text-gray-400">Причина: {accrual.comment}</span>
+                        )}
                       </td>
                       <td className="px-4 py-2.5 text-right text-gray-900">{formatMoney(accrual.amount)}</td>
-                      <td className="px-4 py-2.5 text-right text-xs text-gray-500">{accrual.status}</td>
+                      <td className="px-4 py-2.5 text-right text-xs text-gray-500">
+                        {ACCRUAL_LABELS[accrual.status] ?? accrual.status}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {accrual.status === 'cancelled' ? (
+                          <button
+                            onClick={() => handleAccrualCorrection(accrual.id, 'accrued')}
+                            className="rounded border border-emerald-200 px-2 py-1 text-xs text-emerald-700 hover:bg-emerald-50"
+                          >
+                            Вернуть
+                          </button>
+                        ) : (
+                          <button
+                            onClick={() => handleAccrualCorrection(accrual.id, 'cancelled')}
+                            className="rounded border border-red-200 px-2 py-1 text-xs text-red-700 hover:bg-red-50"
+                          >
+                            Отменить
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                   {detail.accruals.length === 0 && (

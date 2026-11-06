@@ -56,6 +56,7 @@ const ACTION_LABELS: Record<string, string> = {
   login_failed: 'Неудачный вход',
   agent_created: 'Создан агент',
   agent_accrued: 'Начисление агенту',
+  agent_accrual_corrected: 'Корректировка начисления',
   agent_payout_requested: 'Заявка на выплату',
   agent_payout_status_changed: 'Статус выплаты',
   agent_requisites_updated: 'Реквизиты агента',
@@ -70,6 +71,37 @@ const ACTION_LABELS: Record<string, string> = {
   user_role_changed: 'Смена роли',
   partner_registered: 'Регистрация партнёра',
 };
+
+const ACCESS_ACTIONS = new Set([
+  'bootstrap_completed',
+  'invite_created',
+  'invite_resent',
+  'invite_revoked',
+  'invite_accepted',
+  'login_success',
+  'login_failed',
+  'logout',
+  'token_refresh',
+  'user_blocked',
+  'user_unblocked',
+  'user_role_changed',
+  'shared_account_disabled',
+  'password_reset_requested',
+  'password_reset_completed',
+]);
+
+const AGENT_ACTIONS = new Set([
+  'agent_created',
+  'agent_accrued',
+  'agent_accrual_corrected',
+  'agent_payout_requested',
+  'agent_payout_status_changed',
+  'agent_requisites_updated',
+  'agent_requisites_reviewed',
+  'agent_status_changed',
+  'partner_linked_to_agent',
+  'partner_agent_reassigned',
+]);
 
 function formatDateTime(value: string | null) {
   if (!value) return '—';
@@ -93,6 +125,7 @@ export default function AdminAdmins() {
   const [auditPage, setAuditPage] = useState(1);
   const [auditAction, setAuditAction] = useState('');
   const [auditPeriod, setAuditPeriod] = useState<'30' | 'all'>('30');
+  const [auditScope, setAuditScope] = useState<'all' | 'access' | 'agent'>('all');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -121,6 +154,7 @@ export default function AdminAdmins() {
         page,
         page_size: 25,
         action: auditAction || undefined,
+        scope: auditScope === 'all' ? undefined : auditScope,
         search: search.trim() || undefined,
         date_from:
           auditPeriod === '30'
@@ -131,7 +165,7 @@ export default function AdminAdmins() {
       setAuditTotal(data.total);
       setAuditPage(page);
     },
-    [auditAction, search, auditPeriod],
+    [auditAction, search, auditPeriod, auditScope],
   );
 
   const reload = useCallback(async () => {
@@ -157,6 +191,12 @@ export default function AdminAdmins() {
     const timer = setTimeout(() => setNotice(null), 4000);
     return () => clearTimeout(timer);
   }, [notice]);
+
+  const visibleAudit = useMemo(() => {
+    if (auditScope === 'access') return audit.filter((entry) => ACCESS_ACTIONS.has(entry.action));
+    if (auditScope === 'agent') return audit.filter((entry) => AGENT_ACTIONS.has(entry.action));
+    return audit;
+  }, [audit, auditScope]);
 
   const stats = useMemo(() => {
     const active = admins.filter((a) => a.is_active).length;
@@ -506,6 +546,26 @@ export default function AdminAdmins() {
       ) : (
         <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
           <div className="flex flex-wrap items-center gap-2 px-4 py-3 border-b border-gray-100">
+            <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+              {([
+                ['all', 'Все'],
+                ['access', 'Доступы'],
+                ['agent', 'Агенты и деньги'],
+              ] as ['all' | 'access' | 'agent', string][]).map(([value, label]) => (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setAuditScope(value);
+                    setAuditAction('');
+                  }}
+                  className={`px-3 py-1.5 text-sm ${
+                    auditScope === value ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
             <select
               value={auditPeriod}
               onChange={(e) => setAuditPeriod(e.target.value as '30' | 'all')}
@@ -520,9 +580,15 @@ export default function AdminAdmins() {
               className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white"
             >
               <option value="">Все действия</option>
-              {Object.entries(ACTION_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>{label}</option>
-              ))}
+              {Object.entries(ACTION_LABELS)
+                .filter(([value]) => {
+                  if (auditScope === 'access') return ACCESS_ACTIONS.has(value);
+                  if (auditScope === 'agent') return AGENT_ACTIONS.has(value);
+                  return true;
+                })
+                .map(([value, label]) => (
+                  <option key={value} value={value}>{label}</option>
+                ))}
             </select>
             <button
               onClick={() => void loadAudit(1, false)}
@@ -542,7 +608,7 @@ export default function AdminAdmins() {
               </tr>
             </thead>
             <tbody>
-              {audit.map((entry) => (
+              {visibleAudit.map((entry) => (
                 <tr key={entry.id} className="border-t border-gray-100">
                   <td className="px-4 py-3 text-gray-600 whitespace-nowrap">{formatDateTime(entry.created_at)}</td>
                   <td className="px-4 py-3 text-gray-900">{entry.actor_label ?? 'система'}</td>
@@ -551,7 +617,7 @@ export default function AdminAdmins() {
                   <td className="px-4 py-3 font-mono text-xs text-gray-400">{entry.ip_address ?? '—'}</td>
                 </tr>
               ))}
-              {audit.length === 0 && (
+              {visibleAudit.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-10 text-center text-gray-500">
                     Записей пока нет
@@ -561,7 +627,10 @@ export default function AdminAdmins() {
             </tbody>
           </table>
           <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100 text-xs text-gray-500">
-            <span>Показано {audit.length} из {auditTotal}</span>
+            <span>
+              Показано {visibleAudit.length}
+              {auditScope === 'all' ? ` из ${auditTotal}` : ' по фильтру'}
+            </span>
             {audit.length < auditTotal && (
               <button
                 onClick={() => void loadAudit(auditPage + 1, true)}

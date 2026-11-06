@@ -12,6 +12,7 @@ from app.models.client import Client
 from app.models.partner import Partner
 from app.models.user import User
 from app.schemas.agent import (
+    AdminAccrualUpdate,
     AdminAgentDetail,
     AdminAgentRead,
     AgentAccrualRead,
@@ -94,6 +95,7 @@ def _accruals_read(accruals: list[AgentAccrual]) -> list[AgentAccrualRead]:
             rate=a.rate,
             status=a.status,
             reason=a.reason,
+            comment=a.comment,
         )
         for a in accruals
     ]
@@ -214,6 +216,81 @@ async def bind_partner(
     if agent is None:
         return None
     return await _agent_read(db, agent)
+
+
+@router.get("/accruals", response_model=list[AgentAccrualRead])
+async def list_all_accruals(
+    agent_id: str | None = Query(default=None),
+    accrual_status: str | None = Query(default=None, alias="status"),
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    _: User = Depends(require_role("admin")),  # noqa: B008
+):
+    query = (
+        select(AgentAccrual)
+        .order_by(AgentAccrual.created_at.desc())
+        .limit(200)
+    )
+    if agent_id:
+        import uuid as _uuid
+
+        try:
+            query = query.where(AgentAccrual.agent_id == _uuid.UUID(agent_id))
+        except ValueError as exc:
+            raise _not_found("AGENT_NOT_FOUND", "Агент не найден") from exc
+    if accrual_status:
+        query = query.where(AgentAccrual.status == accrual_status)
+
+    rows = await db.execute(query)
+    return _accruals_read(list(rows.scalars().all()))
+
+
+@router.patch("/accruals/{accrual_id}", response_model=AgentAccrualRead)
+async def correct_accrual(
+    accrual_id: str,
+    body: AdminAccrualUpdate,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    actor: User = Depends(require_role("admin")),  # noqa: B008
+):
+    import uuid as _uuid
+
+    from app.services.audit import audit_log
+
+    try:
+        parsed = _uuid.UUID(accrual_id)
+    except ValueError as exc:
+        raise _not_found("ACCRUAL_NOT_FOUND", "Начисление не найдено") from exc
+
+    accrual = await db.get(AgentAccrual, parsed)
+    if accrual is None:
+        raise _not_found("ACCRUAL_NOT_FOUND", "Начисление не найдено")
+
+    old_status = accrual.status
+    old_amount = accrual.amount
+    if body.amount is not None:
+        accrual.amount = body.amount
+        accrual.rate = body.amount
+    accrual.status = body.status
+    accrual.comment = body.reason
+    await db.flush()
+
+    audit_log(
+        action="agent_accrual_corrected",
+        user_id=str(actor.id),
+        actor_label=actor.email,
+        target_id=str(accrual.id),
+        target_type="agent_accrual",
+        target_label=str(accrual.agent_id),
+        details={
+            "from": {"status": old_status, "amount": old_amount},
+            "to": {"status": body.status, "amount": accrual.amount},
+            "reason": body.reason,
+        },
+    )
+    await db.commit()
+
+    # Перечитываем, чтобы в ответе были связи клиента и партнёра.
+    refreshed = await db.get(AgentAccrual, parsed)
+    return _accruals_read([refreshed])[0]
 
 
 @router.get("/payouts", response_model=list[PayoutRead])

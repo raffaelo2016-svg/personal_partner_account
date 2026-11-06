@@ -126,6 +126,7 @@ export async function getAudit(params: {
   page?: number;
   page_size?: number;
   action?: string;
+  scope?: 'access' | 'agent';
   search?: string;
   date_from?: string;
   date_to?: string;
