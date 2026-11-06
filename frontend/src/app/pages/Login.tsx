@@ -2,15 +2,20 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router';
 import {
   ArrowRight,
+  Check,
   Clock,
   Eye,
   EyeOff,
+  FileText,
   Handshake,
+  HelpCircle,
   Lock,
   Mail,
   ShieldAlert,
   ShieldCheck,
+  UserCheck,
   Users,
+  Wallet,
 } from 'lucide-react';
 import logo from '@/assets/logo-color.svg';
 import { useLogin } from '@/app/hooks/useAuth';
@@ -19,59 +24,132 @@ import SmartCaptcha, { CAPTCHA_ENABLED } from '@/app/components/SmartCaptcha';
 
 type Role = 'agent' | 'partner' | 'admin';
 
-const ROLE_OPTIONS: { id: Role; label: string; icon: typeof Handshake }[] = [
-  { id: 'agent', label: 'Агент', icon: Handshake },
-  { id: 'partner', label: 'Партнёр', icon: Users },
-  { id: 'admin', label: 'Администратор', icon: ShieldCheck },
+const ROLES: { id: Role; label: string; hint: string; icon: typeof Handshake }[] = [
+  { id: 'partner', label: 'Партнёр', hint: 'Клиенты и работа', icon: Users },
+  { id: 'agent', label: 'Агент', hint: 'Партнёры и выплаты', icon: Handshake },
+  { id: 'admin', label: 'Администратор', hint: 'Управление кабинетом', icon: ShieldCheck },
 ];
 
-const ROLE_TEXT: Record<Role, { heading: string; subtitle: string }> = {
-  agent: {
-    heading: 'Вход в кабинет агента',
-    subtitle: 'Партнёры, начисления и выплаты в одном месте',
-  },
-  partner: {
-    heading: 'Вход в партнёрский кабинет',
-    subtitle: 'Управляйте клиентами и документами',
-  },
-  admin: {
-    heading: 'Вход для администратора',
-    subtitle: 'Доступ выдаёт супер-администратор по приглашению',
-  },
-};
+interface RoleCopy {
+  headline: string;
+  subheadline: string;
+  cardTitle: string;
+  cardSubtitle: string;
+  rightTitle: string;
+  rightSubtitle: string;
+  bullets: string[];
+  cta?: { label: string; to: string };
+  steps: { title: string; text: string; icon: typeof Handshake }[];
+  faq: { q: string; a: string }[];
+}
 
-const ROLE_RIGHT: Record<
-  Role,
-  { title: string; subtitle: string; bullets: string[]; cta?: { label: string; to: string } }
-> = {
+const COPY: Record<Role, RoleCopy> = {
   agent: {
-    title: 'Агентская программа URITECH',
-    subtitle: 'Приводите юристов и юридические компании — получайте вознаграждение за их клиентов.',
+    headline: 'Приводите партнёров. Получайте «вечные» выплаты.',
+    subheadline:
+      'Агент — юрист или компания, которая приводит партнёров. Партнёр передаёт клиентов, вы получаете вознаграждение за каждого, кто дошёл до процедуры.',
+    cardTitle: 'Кабинет агента',
+    cardSubtitle: 'Доступ только для агентов.',
+    rightTitle: 'Вы развиваете партнёрскую сеть',
+    rightSubtitle: 'Ваша ссылка — ваш инструмент. Партнёр закрепляется за вами один раз и навсегда.',
     bullets: [
-      '1 000 ₽ за клиента, дошедшего до процедуры',
-      'Личная ссылка для привлечения партнёров',
-      'Заявка на выплату и статусы в кабинете',
+      '1 000 ₽ за нового клиента — без ограничения срока программы',
+      'Понятные выплаты: статусы и история в кабинете',
+      'Поддержка: поможем с приглашением и начислениями',
     ],
     cta: { label: 'Стать агентом', to: '/become-agent' },
+    steps: [
+      { title: 'Вы — Агент', text: 'Приглашаете юристов и компании по своей ссылке.', icon: Handshake },
+      { title: 'Партнёр', text: 'Регистрируется по ссылке и закрепляется за вами.', icon: Users },
+      { title: 'Клиенты', text: 'Партнёр передаёт клиентов в ЮРИТЕХ.', icon: UserCheck },
+      {
+        title: 'Выплаты',
+        text: '1 000 ₽ за каждого клиента, дошедшего до процедуры.',
+        icon: Wallet,
+      },
+    ],
+    faq: [
+      {
+        q: 'Что важно знать?',
+        a: 'Вознаграждение начисляется один раз за клиента, дошедшего до введения в процедуру. Повторные события и переходы дальше по делу вторую выплату не дают.',
+      },
+      {
+        q: 'Когда начисляются вознаграждения?',
+        a: 'В момент, когда клиент партнёра переходит в статус «введение в процедуру». Начисление сразу видно в кабинете агента.',
+      },
+      {
+        q: 'Как получить выплату?',
+        a: 'Заполните реквизиты, дождитесь проверки и отправьте заявку. Заявка до 14-го числа попадает в выплату 15-го, позже — в следующий цикл.',
+      },
+    ],
   },
   partner: {
-    title: 'Станьте партнером URITECH',
-    subtitle: 'Присоединяйтесь к платформе для управления клиентами в процедуре банкротства',
+    headline: 'Ваши клиенты. Единое пространство для работы.',
+    subheadline:
+      'Клиенты, документы, задачи и финансы — в одном кабинете. Передавайте клиентов и следите за прогрессом дел в ЮРИТЕХ.',
+    cardTitle: 'Кабинет партнёра',
+    cardSubtitle: 'Доступ для партнёров и их сотрудников.',
+    rightTitle: 'Вы передаёте клиентов',
+    rightSubtitle: 'Партнёр работает с клиентами и передаёт их в ЮРИТЕХ на сопровождение.',
     bullets: [
-      'Удобное управление клиентами',
-      'Автоматизация документооборота',
-      'Аналитика и отчетность',
-      'Поддержка 24/7',
+      'Клиенты и документы в одном месте',
+      'Задачи и статусы по каждому делу',
+      'Финансы и закрывающие документы',
     ],
-    cta: { label: 'Зарегистрироваться как партнёр', to: '/register' },
+    cta: { label: 'Стать партнёром', to: '/register' },
+    steps: [
+      { title: 'Вы — Партнёр', text: 'Регистрируетесь и получаете доступ в кабинет.', icon: Users },
+      { title: 'Клиент', text: 'Добавляете клиента и его документы.', icon: UserCheck },
+      { title: 'ЮРИТЕХ', text: 'Берём дело на сопровождение и ведём процедуру.', icon: FileText },
+      { title: 'Результат', text: 'Следите за статусом и финансами в кабинете.', icon: Wallet },
+    ],
+    faq: [
+      {
+        q: 'Что важно знать?',
+        a: 'Клиенты остаются в существующей системе. Кабинет партнёра не меняет правила работы, только делает их удобнее.',
+      },
+      {
+        q: 'Как пользоваться кабинетом?',
+        a: 'Войдите по почте или логину, которые указали при регистрации. Если пароль забыт — восстановите его по ссылке на этой странице.',
+      },
+      {
+        q: 'Я сотрудник партнёра',
+        a: 'Попросите руководителя добавить вас в кабинет. Вход — по личной почте и паролю, общие логины больше не используются.',
+      },
+    ],
   },
   admin: {
-    title: 'Администрирование',
-    subtitle: 'Рабочее место сотрудника: партнёры, клиенты, агенты и деньги.',
+    headline: 'Рабочее место сотрудника.',
+    subheadline:
+      'Партнёры, клиенты, агенты, деньги и журнал действий. Каждый сотрудник входит под своим логином, все действия остаются в истории.',
+    cardTitle: 'Кабинет администратора',
+    cardSubtitle: 'Доступ выдаёт супер-администратор по приглашению.',
+    rightTitle: 'Вы управляете кабинетом',
+    rightSubtitle: 'Рабочие разделы и полный журнал: кто, что и когда сделал.',
     bullets: [
-      'Все партнёры, клиенты и агенты',
+      'Партнёры, клиенты и агенты',
+      'Начисления, заявки и выплаты',
       'Журнал действий сотрудников',
-      'Управление доступами и приглашениями',
+    ],
+    steps: [
+      { title: 'Приглашение', text: 'Супер-администратор присылает ссылку.', icon: Mail },
+      { title: 'Вход', text: 'Создаёте личный пароль и входите.', icon: Lock },
+      { title: 'Работа', text: 'Ведёте партнёров, клиентов и агентов.', icon: FileText },
+      { title: 'Журнал', text: 'Каждое действие фиксируется с автором.', icon: ShieldCheck },
+    ],
+    faq: [
+      {
+        q: 'Как получить доступ?',
+        a: 'Обратитесь к супер-администратору: он выпустит приглашение на вашу почту. Публичной регистрации для администраторов нет.',
+      },
+      {
+        q: 'Что видно в журнале?',
+        a: 'Входы, приглашения, смену ролей и блокировки, привязки партнёров к агентам, начисления и выплаты — с автором и временем.',
+      },
+      {
+        q: 'Пароль можно восстановить?',
+        a: 'Да, по ссылке «Забыли пароль?». Сброс завершает все активные сессии на других устройствах.',
+      },
     ],
   },
 };
@@ -91,7 +169,7 @@ function LoginError({ error }: { error: Error | null }) {
         icon: <Clock className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />,
         bg: 'bg-yellow-50 border-yellow-200',
         text: 'text-yellow-800',
-        message: 'Ваш аккаунт находится на проверке. Пожалуйста, дождитесь подтверждения администратором.',
+        message: 'Ваш аккаунт находится на проверке. Дождитесь подтверждения администратором.',
       };
     }
     if (code === 'CAPTCHA_REQUIRED') {
@@ -123,7 +201,7 @@ function LoginError({ error }: { error: Error | null }) {
         icon: <ShieldAlert className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />,
         bg: 'bg-red-50 border-red-200',
         text: 'text-red-800',
-        message: 'Ваш аккаунт заблокирован. Обратитесь к администратору для получения информации.',
+        message: 'Ваш аккаунт заблокирован. Обратитесь к администратору.',
       };
     }
     return {
@@ -144,10 +222,13 @@ function LoginError({ error }: { error: Error | null }) {
 
 export default function Login() {
   const loginMutation = useLogin();
+  const [role, setRole] = useState<Role>('partner');
   const [showPassword, setShowPassword] = useState(false);
   const [captchaToken, setCaptchaToken] = useState('');
   const [captchaKey, setCaptchaKey] = useState(0);
-  const [role, setRole] = useState<Role>('partner');
+  const [formData, setFormData] = useState({ identifier: '', password: '' });
+
+  const copy = COPY[role];
 
   const errorCode = useMemo(() => {
     const axiosErr = loginMutation.error as AxiosError<{ detail?: { code?: string } }> | null;
@@ -164,14 +245,9 @@ export default function Login() {
     }
   }, [errorCode]);
 
-  const [formData, setFormData] = useState({
-    identifier: '',
-    password: '',
-  });
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setFormData({ ...formData, [name]: value });
+    setFormData((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -183,173 +259,240 @@ export default function Login() {
     });
   };
 
-  const text = ROLE_TEXT[role];
-  const right = ROLE_RIGHT[role];
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 flex items-center justify-center p-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Вход */}
-        <div className="bg-white rounded-2xl shadow-xl px-8 lg:px-10 pb-8 lg:pb-10 pt-6">
-          <div className="flex justify-center mb-6 px-4">
-            <img src={logo} alt="ЮРИТЕХ" className="w-full max-w-sm h-auto" />
-          </div>
+    <div className="min-h-screen bg-gray-50">
+      <div className="mx-auto max-w-6xl px-4 sm:px-6 py-5">
+        <header className="flex items-center justify-between border-b border-gray-200 pb-4">
+          <img src={logo} alt="ЮРИТЕХ" className="h-9 sm:h-10" />
+          <a href="mailto:support@uritech.ru" className="text-sm text-gray-500 hover:text-gray-800">
+            Помощь по сотрудничеству
+          </a>
+        </header>
 
-          <div className="grid grid-cols-3 gap-2 mb-7">
-            {ROLE_OPTIONS.map((option) => {
-              const active = role === option.id;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  onClick={() => setRole(option.id)}
-                  aria-pressed={active}
-                  className={`flex flex-col items-center gap-1.5 rounded-xl border px-2 py-3 text-xs transition-colors ${
-                    active
-                      ? 'border-blue-500 bg-blue-50 text-blue-700'
-                      : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                  }`}
-                >
-                  <option.icon className="w-5 h-5" />
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
-
-          <div className="mb-6">
-            <h2 className="text-2xl font-semibold text-gray-900 mb-2">{text.heading}</h2>
-            <p className="text-gray-600">{text.subtitle}</p>
-          </div>
-
-          {loginMutation.isError && <LoginError error={loginMutation.error} />}
-
-          {captchaRequired && (
-            <div className="mb-4">
-              <p className="text-sm text-gray-600 mb-2">Подтвердите, что вы не робот</p>
-              <SmartCaptcha key={captchaKey} onToken={setCaptchaToken} />
+        <div className="mt-6 grid grid-cols-1 gap-6 lg:grid-cols-[210px_minmax(0,1fr)_330px] lg:gap-8">
+          {/* Слева: выбор кабинета */}
+          <div>
+            <div className="text-[11px] uppercase tracking-wider text-gray-400 mb-3">
+              Выберите кабинет
             </div>
-          )}
+            <div className="grid grid-cols-3 gap-2 lg:grid-cols-1 lg:gap-2">
+              {ROLES.map((option) => {
+                const active = role === option.id;
+                return (
+                  <button
+                    key={option.id}
+                    type="button"
+                    onClick={() => setRole(option.id)}
+                    aria-pressed={active}
+                    className={`flex items-center gap-3 rounded-xl border px-3 py-3 text-left transition-colors ${
+                      active
+                        ? 'border-blue-500 bg-blue-50'
+                        : 'border-gray-200 bg-white hover:border-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${
+                        active ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-500'
+                      }`}
+                    >
+                      <option.icon className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span
+                        className={`block text-sm font-medium ${
+                          active ? 'text-blue-700' : 'text-gray-900'
+                        }`}
+                      >
+                        {option.label}
+                      </span>
+                      <span className="hidden lg:block text-xs text-gray-500">{option.hint}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email или логин</label>
-              <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type="text"
-                  name="identifier"
-                  value={formData.identifier}
-                  onChange={handleChange}
-                  required
-                  autoComplete="username"
-                  placeholder="ivanov@uritech.ru или i.ivanov"
-                  className="w-full pl-10 pr-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+          {/* Центр: форма */}
+          <div className="min-w-0">
+            <div className="text-[11px] uppercase tracking-wider text-blue-600 mb-2">
+              {role === 'agent' ? 'Агентский кабинет' : role === 'partner' ? 'Кабинет партнёра' : 'Кабинет администратора'}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-semibold text-gray-900 leading-tight">
+              {copy.headline}
+            </h1>
+            <p className="mt-3 text-sm sm:text-base text-gray-600 max-w-xl">{copy.subheadline}</p>
+
+            <div className="mt-6 rounded-2xl border border-gray-200 bg-white p-5 sm:p-6 shadow-sm max-w-xl">
+              <h2 className="text-lg font-semibold text-gray-900">{copy.cardTitle}</h2>
+              <p className="text-sm text-gray-500 mt-1">{copy.cardSubtitle}</p>
+
+              <div className="mt-5">
+                {loginMutation.isError && <LoginError error={loginMutation.error} />}
+
+                {captchaRequired && (
+                  <div className="mb-4">
+                    <p className="text-sm text-gray-600 mb-2">Подтвердите, что вы не робот</p>
+                    <SmartCaptcha key={captchaKey} onToken={setCaptchaToken} />
+                  </div>
+                )}
+
+                <form onSubmit={handleSubmit} className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        type="text"
+                        name="identifier"
+                        value={formData.identifier}
+                        onChange={handleChange}
+                        required
+                        autoComplete="username"
+                        placeholder="Email или логин"
+                        className="w-full pl-10 pr-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
+                    <div className="relative">
+                      <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                      <input
+                        type={showPassword ? 'text' : 'password'}
+                        name="password"
+                        value={formData.password}
+                        onChange={handleChange}
+                        required
+                        autoComplete="current-password"
+                        placeholder="Введите пароль"
+                        className="w-full pl-10 pr-11 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword((value) => !value)}
+                        aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                      >
+                        {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Link
+                      to="/forgot-password"
+                      state={{ email: formData.identifier }}
+                      className="text-sm text-gray-500 hover:text-blue-600 hover:underline"
+                    >
+                      Забыли пароль?
+                    </Link>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loginMutation.isPending || (captchaRequired && !captchaToken)}
+                    className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-2.5 rounded-lg hover:bg-blue-700 font-medium disabled:opacity-50"
+                  >
+                    {loginMutation.isPending ? 'Вход…' : 'Войти в кабинет'}
+                    {!loginMutation.isPending && <ArrowRight className="h-4 w-4" />}
+                  </button>
+                </form>
+
+                {copy.cta && (
+                  <p className="mt-4 text-sm text-center text-gray-600">
+                    Ещё нет кабинета?{' '}
+                    <Link to={copy.cta.to} className="text-blue-600 hover:underline font-medium">
+                      {copy.cta.label}
+                    </Link>
+                  </p>
+                )}
+                {role === 'admin' && (
+                  <p className="mt-4 text-sm text-center text-gray-500">
+                    Нет доступа? Обратитесь к супер-администратору.
+                  </p>
+                )}
               </div>
             </div>
+          </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Пароль</label>
-              <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
-                <input
-                  type={showPassword ? 'text' : 'password'}
-                  name="password"
-                  value={formData.password}
-                  onChange={handleChange}
-                  required
-                  autoComplete="current-password"
-                  placeholder="Введите пароль"
-                  className="w-full pl-10 pr-12 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword((value) => !value)}
-                  aria-label={showPassword ? 'Скрыть пароль' : 'Показать пароль'}
-                  aria-pressed={showPassword}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 rounded"
-                >
-                  {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
-                </button>
-              </div>
-            </div>
+          {/* Справа: пояснение */}
+          <aside className="rounded-2xl bg-blue-50/70 border border-blue-100 p-5 sm:p-6">
+            <h3 className="text-base font-semibold text-gray-900">{copy.rightTitle}</h3>
+            <p className="mt-2 text-sm text-gray-600">{copy.rightSubtitle}</p>
 
-            <div className="flex items-center justify-end">
+            <ul className="mt-4 space-y-3">
+              {copy.bullets.map((bullet) => (
+                <li key={bullet} className="flex gap-2.5 text-sm text-gray-700">
+                  <Check className="mt-0.5 h-4 w-4 shrink-0 text-blue-600" />
+                  <span>{bullet}</span>
+                </li>
+              ))}
+            </ul>
+
+            {copy.cta && (
               <Link
-                to="/forgot-password"
-                state={{ email: formData.identifier }}
-                className="text-sm text-blue-600 hover:underline"
+                to={copy.cta.to}
+                className="mt-5 inline-flex items-center gap-1.5 text-sm font-medium text-blue-700 hover:underline"
               >
-                Забыли пароль?
+                {copy.cta.label}
+                <ArrowRight className="h-4 w-4" />
               </Link>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loginMutation.isPending || (captchaRequired && !captchaToken)}
-              className="w-full flex items-center justify-center gap-2 bg-blue-600 text-white py-3 rounded-lg hover:bg-blue-700 transition-colors font-medium disabled:opacity-50"
-            >
-              {loginMutation.isPending ? 'Вход…' : 'Войти'}
-              {!loginMutation.isPending && <ArrowRight className="w-4 h-4" />}
-            </button>
-          </form>
-
-          <div className="mt-6 text-sm text-center">
-            {role === 'agent' && (
-              <p className="text-gray-600">
-                Ещё нет кабинета?{' '}
-                <Link to="/become-agent" className="text-emerald-700 hover:underline font-medium">
-                  Стать агентом
-                </Link>
-              </p>
             )}
-            {role === 'partner' && (
-              <p className="text-gray-600">
-                Ещё нет кабинета?{' '}
-                <Link to="/register" className="text-blue-600 hover:underline font-medium">
-                  Зарегистрироваться как партнёр
-                </Link>
-              </p>
-            )}
-            {role === 'admin' && (
-              <p className="text-gray-500">Нет доступа? Обратитесь к супер-администратору.</p>
-            )}
-          </div>
-
-          <div className="mt-4 text-sm text-gray-500 text-center">
-            Нужна помощь?{' '}
-            <a href="mailto:support@uritech.ru" className="text-blue-600 hover:underline">
-              Свяжитесь с нами
-            </a>
-          </div>
+          </aside>
         </div>
 
-        {/* Правая панель */}
-        <div className="hidden lg:flex bg-gradient-to-br from-blue-600 to-indigo-700 rounded-2xl shadow-xl p-10 flex-col justify-center text-white">
-          <h2 className="text-3xl font-bold mb-4">{right.title}</h2>
-          <p className="text-blue-100 mb-8">{right.subtitle}</p>
-
-          <div className="space-y-5 mb-8">
-            {right.bullets.map((bullet) => (
-              <div key={bullet} className="flex items-start gap-3">
-                <div className="w-6 h-6 bg-white/20 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                  <div className="w-2 h-2 bg-white rounded-full" />
+        {/* Как это работает */}
+        <section className="mt-10 border-t border-gray-200 pt-8">
+          <h2 className="text-lg font-semibold text-gray-900">Как это работает</h2>
+          <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {copy.steps.map((step) => (
+              <div key={step.title} className="rounded-xl border border-gray-200 bg-white p-4">
+                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gray-100 text-gray-600">
+                  <step.icon className="h-4 w-4" />
                 </div>
-                <p className="text-blue-50">{bullet}</p>
+                <div className="mt-3 text-sm font-medium text-gray-900">{step.title}</div>
+                <p className="mt-1 text-xs text-gray-500 leading-relaxed">{step.text}</p>
               </div>
             ))}
           </div>
 
-          {right.cta && (
-            <Link
-              to={right.cta.to}
-              className="bg-white text-blue-600 px-6 py-3 rounded-lg font-semibold hover:bg-blue-50 transition-colors text-center"
-            >
-              {right.cta.label}
-            </Link>
-          )}
-        </div>
+          <div className="mt-5 flex items-start gap-2 text-xs text-gray-500">
+            <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+            <p>
+              Все входы и действия сотрудников фиксируются в журнале. Пароли хранятся в защищённом
+              виде и не видны никому, включая администраторов.
+            </p>
+          </div>
+        </section>
+
+        {/* Частые вопросы */}
+        <section className="mt-6 mb-8">
+          <h2 className="text-base font-semibold text-gray-900 mb-3">Частые вопросы</h2>
+          <div className="divide-y divide-gray-200 rounded-xl border border-gray-200 bg-white">
+            {copy.faq.map((item) => (
+              <details key={item.q} className="group p-4">
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-medium text-gray-900">
+                  <span className="flex items-center gap-2">
+                    <HelpCircle className="h-4 w-4 text-gray-400" />
+                    {item.q}
+                  </span>
+                  <span className="text-gray-400 transition-transform group-open:rotate-45">+</span>
+                </summary>
+                <p className="mt-2 pl-6 text-sm text-gray-600 leading-relaxed">{item.a}</p>
+              </details>
+            ))}
+          </div>
+        </section>
+
+        <footer className="flex items-center justify-between border-t border-gray-200 py-4 text-xs text-gray-400">
+          <img src={logo} alt="ЮРИТЕХ" className="h-6 opacity-70" />
+          <span>© ЮРИТЕХ, юридическая онлайн-платформа</span>
+          <a href="#top" className="hover:text-gray-600">
+            Наверх
+          </a>
+        </footer>
       </div>
     </div>
   );
