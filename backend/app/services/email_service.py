@@ -87,6 +87,51 @@ async def send_password_reset_email(recipient: str, reset_url: str) -> bool:
     return True
 
 
+async def send_test_email(recipient: str) -> tuple[bool, str]:
+    """Отправляет тестовое письмо тем же транспортом, что и приглашения."""
+    subject = "Проверка почты — ЮРИТЕХ"
+    text = (
+        "Это тестовое письмо из кабинета ЮРИТЕХ.\n\n"
+        "Если вы его получили, почта настроена и приглашения будут доходить."
+    )
+
+    if settings.RESEND_API_KEY and settings.RESEND_FROM_EMAIL:
+        try:
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                response = await client.post(
+                    RESEND_EMAILS_URL,
+                    headers={"Authorization": f"Bearer {settings.RESEND_API_KEY}"},
+                    json={
+                        "from": settings.RESEND_FROM_EMAIL,
+                        "to": [recipient],
+                        "subject": subject,
+                        "text": text,
+                    },
+                )
+                response.raise_for_status()
+        except Exception as exc:  # noqa: BLE001
+            logger.error("test_email_failed", provider="resend", error_type=type(exc).__name__)
+            return False, f"resend: {type(exc).__name__}"
+        return True, "resend"
+
+    sender = settings.SMTP_FROM_EMAIL or settings.SMTP_USERNAME
+    if not settings.SMTP_HOST or not sender:
+        return False, "not_configured"
+
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = sender
+    message["To"] = recipient
+    message.set_content(text)
+
+    try:
+        await asyncio.to_thread(_send_message, message)
+    except Exception as exc:  # noqa: BLE001
+        logger.error("test_email_failed", provider="smtp", error_type=type(exc).__name__)
+        return False, f"smtp: {type(exc).__name__}"
+    return True, "smtp"
+
+
 def _invite_text(invite_url: str, role_label: str, inviter_label: str, expires_at: str) -> str:
     return (
         f"{inviter_label} пригласил(а) вас в кабинет ЮРИТЕХ с ролью «{role_label}».\n\n"
