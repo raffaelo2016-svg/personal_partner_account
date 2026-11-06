@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
 import Login from './pages/Login';
 import AdminLayout from './pages/AdminLayout';
+import AgentLayout from './pages/agent/AgentLayout';
 import RouteErrorPage from './pages/RouteErrorPage';
 
 const lazyPage = (loader: () => Promise<{ default: React.ComponentType }>) => async () => ({
@@ -26,6 +27,10 @@ export const router = createBrowserRouter([
     lazy: lazyPage(() => import('./pages/Registration')),
   },
   {
+    path: '/become-agent',
+    lazy: lazyPage(() => import('./pages/BecomeAgent')),
+  },
+  {
     path: '/setup',
     lazy: lazyPage(() => import('./pages/Setup')),
   },
@@ -40,6 +45,27 @@ export const router = createBrowserRouter([
   {
     path: '/reset-password',
     lazy: lazyPage(() => import('./pages/ResetPassword')),
+  },
+  {
+    path: '/agent',
+    Component: AuthGuard,
+    ErrorBoundary: RouteErrorPage,
+    children: [
+      {
+        element: (
+          <RoleGuard allowedRoles={['agent']}>
+            <AgentLayout />
+          </RoleGuard>
+        ),
+        children: [
+          { index: true, lazy: lazyPage(() => import('./pages/agent/AgentDashboard')) },
+          { path: 'partners', lazy: lazyPage(() => import('./pages/agent/AgentPartners')) },
+          { path: 'accruals', lazy: lazyPage(() => import('./pages/agent/AgentAccruals')) },
+          { path: 'payouts', lazy: lazyPage(() => import('./pages/agent/AgentPayouts')) },
+          { path: 'requisites', lazy: lazyPage(() => import('./pages/agent/AgentRequisites')) },
+        ],
+      },
+    ],
   },
   {
     path: '/dashboard',
@@ -90,6 +116,7 @@ export const router = createBrowserRouter([
           { path: 'chat', lazy: lazyPage(() => import('./pages/AdminChat')) },
           { path: 'news', lazy: lazyPage(() => import('./pages/AdminNews')) },
           { path: 'settings', lazy: lazyPage(() => import('./pages/AdminSettings')) },
+          { path: 'agents', lazy: lazyPage(() => import('./pages/AdminAgents')) },
           { path: 'admins', lazy: lazyPage(() => import('./pages/AdminAdmins')) },
         ],
       },

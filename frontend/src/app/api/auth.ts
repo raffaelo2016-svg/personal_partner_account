@@ -10,7 +10,7 @@ export interface LoginPayload {
 export interface AuthUserResponse {
   id: string;
   email: string;
-  role: 'partner' | 'admin' | 'super_admin';
+  role: 'partner' | 'admin' | 'super_admin' | 'agent';
   login?: string | null;
   company_name?: string | null;
 }
@@ -66,6 +66,7 @@ export interface RegisterPayload {
   legal_address?: string;
   postal_address?: string;
   kpp?: string;
+  agent_code?: string;
   captcha_token?: string;
 }
 

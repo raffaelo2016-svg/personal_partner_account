@@ -87,6 +87,8 @@ class RegisterRequest(BaseModel):
     def _check_password(cls, v: str) -> str:
         return _validate_password_strength(v)
 
+    agent_code: str | None = Field(default=None, max_length=16)
+
     partner_type: str = Field(default="individual", pattern=r"^(individual|legal|entrepreneur)$")
     company_name: str = Field(min_length=1, max_length=255)
     director_name: str = Field(min_length=1, max_length=255)

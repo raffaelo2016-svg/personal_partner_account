@@ -14,6 +14,7 @@ from app.models.partner import Partner
 from app.models.settings import NotificationPreference
 from app.models.user import User
 from app.schemas.admin_access import InviteInfo, RegisterByInviteRequest
+from app.schemas.agent import AgentRegisterRequest
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -26,7 +27,7 @@ from app.schemas.auth import (
     UserRead,
 )
 from app.services import admin_access_service as access
-from app.services import login_guard
+from app.services import agent_service, login_guard
 from app.services.audit import audit_log
 from app.services.auth_service import (
     authenticate_user,
@@ -253,6 +254,64 @@ async def register_by_invite(
     )
 
 
+@router.post("/register-agent", response_model=TokenResponse, status_code=201)
+@limiter.limit("3/minute")
+async def register_agent(
+    request: Request,
+    response: Response,
+    body: AgentRegisterRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    import re
+
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    email = body.email.strip().lower()
+
+    has_letter = bool(re.search(r"[A-Za-zА-Яа-я]", body.password))
+    has_digit = bool(re.search(r"\d", body.password))
+    if len(body.password) < 10 or not has_letter or not has_digit:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "WEAK_PASSWORD", "message": "Пароль: не менее 10 символов, буквы и цифры"},
+            headers={"code": "WEAK_PASSWORD"},
+        )
+
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "EMAIL_TAKEN", "message": "Эта почта уже используется"},
+            headers={"code": "EMAIL_TAKEN"},
+        )
+
+    user = await register_user(db, email, body.password, role="agent")
+    agent = await agent_service.create_agent_profile(
+        db,
+        user,
+        full_name=body.full_name,
+        phone=body.phone,
+        company_name=body.company_name,
+    )
+    await db.commit()
+
+    access_token, refresh_token = await create_tokens(user)
+    _set_refresh_cookie(response, refresh_token)
+    audit_log(
+        action="login_success",
+        user_id=str(user.id),
+        actor_label=user.email,
+        ip_address=ip,
+        user_agent=ua[:512] if ua else None,
+        details={"source": "agent_registration"},
+    )
+    logger.info("agent_registered", agent_id=str(agent.id), user_id=str(user.id))
+    return TokenResponse(
+        access_token=access_token,
+        user=UserRead(id=str(user.id), email=user.email, login=user.login, role=user.role),
+    )
+
+
 @router.post("/register", response_model=RegisterResponse, status_code=201)
 @limiter.limit("3/minute")
 async def register(
@@ -310,6 +369,11 @@ async def register(
     )
     db.add(partner)
     await db.flush()
+
+    if body.agent_code:
+        from app.services.agent_service import link_partner_by_code
+
+        await link_partner_by_code(db, partner, body.agent_code)
 
     from app.services.chat_service import ensure_rooms_for_partner
 

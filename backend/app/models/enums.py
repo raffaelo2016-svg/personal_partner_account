@@ -5,6 +5,7 @@ class UserRole(StrEnum):
     PARTNER = "partner"
     ADMIN = "admin"
     SUPER_ADMIN = "super_admin"
+    AGENT = "agent"
 
 
 class ClientType(StrEnum):

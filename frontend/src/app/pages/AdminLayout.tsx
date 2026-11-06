@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
-import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, ShieldCheck, Menu, X, CheckSquare, MessageSquare, CreditCard, Newspaper } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, ShieldCheck, Menu, X, CheckSquare, MessageSquare, CreditCard, Newspaper, Handshake } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-white.svg';
 import NotificationBell from '../components/NotificationBell';

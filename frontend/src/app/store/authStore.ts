@@ -5,7 +5,7 @@ import { persist } from 'zustand/middleware';
 export interface AuthUser {
   id: string;
   email: string;
-  role: 'partner' | 'admin' | 'super_admin';
+  role: 'partner' | 'admin' | 'super_admin' | 'agent';
 }
 
 interface AuthState {

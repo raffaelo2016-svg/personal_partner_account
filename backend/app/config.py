@@ -60,6 +60,10 @@ class Settings(BaseSettings):
     SMTP_USE_STARTTLS: bool = False
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
 
+    # Агентская программа: ставка за клиента, дошедшего до процедуры (в копейках).
+    AGENT_ACCRUAL_RATE: int = 100_000
+    AGENT_ACCRUAL_STATUS: str = "restructuring"
+
     # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
     # the local application's credentials stay only in the server environment.
     BITRIX_CLIENT_ENDPOINT: str = ""

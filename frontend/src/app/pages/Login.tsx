@@ -189,7 +189,10 @@ export default function Login() {
               </div>
             </div>
             
-            <div className="flex items-center justify-end">
+            <div className="flex items-center justify-between">
+              <Link to="/become-agent" className="text-sm text-emerald-700 hover:underline">
+                Стать агентом
+              </Link>
               <Link
                 to="/forgot-password"
                 state={{ email: formData.identifier }}

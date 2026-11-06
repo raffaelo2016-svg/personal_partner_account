@@ -1,3 +1,4 @@
+from app.models.agent import Agent, AgentAccrual, AgentPayoutRequest
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bitrix_installation import BitrixInstallation
@@ -18,6 +19,9 @@ from app.models.transaction import Transaction
 from app.models.user import User
 
 __all__ = [
+    "Agent",
+    "AgentAccrual",
+    "AgentPayoutRequest",
     "AuditLog",
     "Base",
     "BitrixInstallation",

@@ -22,7 +22,9 @@ export function useLogin() {
         data.access_token,
       );
       const isAdmin = data.user.role === 'admin' || data.user.role === 'super_admin';
-      navigate(isAdmin ? '/admin' : '/dashboard');
+      const target =
+        data.user.role === 'agent' ? '/agent' : isAdmin ? '/admin' : '/dashboard';
+      navigate(target);
     },
   });
 }
