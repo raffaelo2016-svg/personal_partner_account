@@ -71,6 +71,8 @@ class PartnerRead(BaseModel):
     promotion_start_date: date | None = None
     promotion_end_date: date | None = None
     status: str
+    agent_id: str | None = None
+    agent_name: str | None = None
     created_at: datetime
     updated_at: datetime
     bitrix_sync_status: str = "not_scheduled"

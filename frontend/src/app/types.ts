@@ -34,6 +34,8 @@ export interface Partner {
   promotion_start_date?: string | null;
   promotion_end_date?: string | null;
   status: PartnerStatus;
+  agent_id?: string | null;
+  agent_name?: string | null;
   created_at: string;
   updated_at: string;
   bitrix_sync_status: 'not_scheduled' | 'pending' | 'processing' | 'synced' | 'failed' | 'conflict';

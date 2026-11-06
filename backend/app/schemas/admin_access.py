@@ -16,7 +16,7 @@ class BootstrapRequest(BaseModel):
 
 class InviteCreate(BaseModel):
     email: EmailStr
-    role: str = Field(default="admin", pattern=r"^(admin|super_admin)$")
+    role: str = Field(default="admin", pattern=r"^(admin|super_admin|agent)$")
     ttl_hours: int = Field(default=72)
 
 
@@ -43,6 +43,8 @@ class RegisterByInviteRequest(BaseModel):
     token: str = Field(min_length=16, max_length=256)
     login: str = Field(min_length=3, max_length=32)
     password: str = Field(min_length=1, max_length=128)
+    full_name: str | None = Field(default=None, min_length=2, max_length=255)
+    phone: str | None = Field(default=None, max_length=30)
 
 
 class AdminRead(BaseModel):

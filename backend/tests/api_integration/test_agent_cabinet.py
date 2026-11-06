@@ -275,3 +275,43 @@ async def test_partner_registration_api_passes_agent_code(client, db_session):
     ).scalar_one()
     assert partner.agent_id == agent.id
     assert partner.agent_linked_at is not None
+
+
+@pytest.mark.asyncio
+async def test_agent_invite_creates_agent_profile(client, db_session):
+    await _make_admin(db_session)
+    admin_headers = await _login(client, "root")
+
+    invite = await client.post(
+        "/api/v1/admin/invites",
+        headers=admin_headers,
+        json={"email": "invited.agent@test.ru", "role": "agent", "ttl_hours": 72},
+    )
+    assert invite.status_code == 201, invite.text
+    assert invite.json()["role"] == "agent"
+
+    token = invite.json()["invite_url"].rsplit("/", 1)[-1]
+    registered = await client.post(
+        "/api/v1/auth/invite/register",
+        json={
+            "token": token,
+            "login": "invagent",
+            "password": PASSWORD,
+            "full_name": "Приглашённый Агент",
+            "phone": "+79001234567",
+        },
+    )
+    assert registered.status_code == 201, registered.text
+    assert registered.json()["user"]["role"] == "agent"
+
+    agent = (
+        await db_session.execute(select(Agent).where(Agent.full_name == "Приглашённый Агент"))
+    ).scalar_one()
+    assert agent.phone == "+79001234567"
+
+    me = await client.get(
+        "/api/v1/agent/me",
+        headers={"Authorization": f"Bearer {registered.json()['access_token']}"},
+    )
+    assert me.status_code == 200
+    assert me.json()["profile"]["code"] == agent.code

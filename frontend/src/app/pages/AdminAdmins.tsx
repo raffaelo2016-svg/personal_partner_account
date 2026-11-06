@@ -35,6 +35,7 @@ type Tab = 'users' | 'invites' | 'audit';
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   super_admin: 'Супер-админ',
+  agent: 'Агент',
 };
 
 const INVITE_STATUS: Record<string, { label: string; className: string }> = {
@@ -53,6 +54,15 @@ const ACTION_LABELS: Record<string, string> = {
   login_success: 'Вход',
   login: 'Вход',
   login_failed: 'Неудачный вход',
+  agent_created: 'Создан агент',
+  agent_accrued: 'Начисление агенту',
+  agent_payout_requested: 'Заявка на выплату',
+  agent_payout_status_changed: 'Статус выплаты',
+  agent_requisites_updated: 'Реквизиты агента',
+  agent_requisites_reviewed: 'Проверка реквизитов',
+  agent_status_changed: 'Статус агента',
+  partner_linked_to_agent: 'Закрепление за агентом',
+  partner_agent_reassigned: 'Смена агента у партнёра',
   token_refresh: 'Обновление сессии',
   logout: 'Выход',
   user_blocked: 'Блокировка',
@@ -165,7 +175,7 @@ export default function AdminAdmins() {
     }
   };
 
-  const handleRoleChange = async (admin: AdminUser, role: AdminRole) => {
+  const handleRoleChange = async (admin: AdminUser, role: 'admin' | 'super_admin') => {
     try {
       await updateAdmin(admin.id, { role });
       setNotice('Роль обновлена');
@@ -363,7 +373,7 @@ export default function AdminAdmins() {
                   <td className="px-4 py-3">
                     <select
                       value={admin.role}
-                      onChange={(e) => handleRoleChange(admin, e.target.value as AdminRole)}
+                      onChange={(e) => handleRoleChange(admin, e.target.value as 'admin' | 'super_admin')}
                       className="border border-gray-200 rounded-md px-2 py-1 text-xs bg-white"
                     >
                       <option value="admin">Администратор</option>
@@ -587,7 +597,7 @@ export default function AdminAdmins() {
 
             <label className="block text-sm font-medium text-gray-700 mb-2">Роль</label>
             <div className="space-y-2 mb-4">
-              {(['admin', 'super_admin'] as AdminRole[]).map((role) => (
+              {(['admin', 'super_admin', 'agent'] as AdminRole[]).map((role) => (
                 <label
                   key={role}
                   className={`flex gap-2 items-start border rounded-lg p-3 cursor-pointer ${
@@ -603,12 +613,14 @@ export default function AdminAdmins() {
                   />
                   <span>
                     <span className="block text-sm font-medium text-gray-900">
-                      {role === 'admin' ? 'Администратор' : 'Супер-админ'}
+                      {role === 'admin' ? 'Администратор' : role === 'agent' ? 'Агент' : 'Супер-админ'}
                     </span>
                     <span className="block text-xs text-gray-500">
                       {role === 'admin'
                         ? 'Работает в кабинете, но не управляет доступами других.'
-                        : 'Управляет админами и приглашениями. Нужно минимум два.'}
+                        : role === 'agent'
+                          ? 'Приводит партнёров и получает вознаграждение. Свой кабинет агента.'
+                          : 'Управляет админами и приглашениями. Нужно минимум два.'}
                     </span>
                   </span>
                 </label>

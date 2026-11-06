@@ -94,7 +94,16 @@ async def get_partner(session: AsyncSession, partner_id: str) -> PartnerRead:
     user = await session.get(User, partner.user_id)
     email = user.email if user else None
 
-    return _partner_to_read(partner, email=email, **counts, **finance)
+    agent_name = None
+    if partner.agent_id is not None:
+        from app.models.agent import Agent
+
+        agent = await session.get(Agent, partner.agent_id)
+        agent_name = agent.full_name if agent else None
+
+    return _partner_to_read(
+        partner, email=email, agent_name=agent_name, **counts, **finance
+    )
 
 
 async def _get_client_status_counts(session: AsyncSession, partner_id) -> dict:
@@ -241,6 +250,7 @@ def _partner_to_read(
     finance_current_debt: int = 0,
     finance_overdue_debt: int = 0,
     finance_paid: int = 0,
+    agent_name: str | None = None,
 ) -> PartnerRead:
     return PartnerRead(
         id=str(partner.id),
@@ -262,6 +272,8 @@ def _partner_to_read(
         promotion_start_date=partner.promotion_start_date,
         promotion_end_date=partner.promotion_end_date,
         status=partner.status,
+        agent_id=str(partner.agent_id) if partner.agent_id else None,
+        agent_name=agent_name,
         created_at=partner.created_at,
         updated_at=partner.updated_at,
         bitrix_sync_status=partner.bitrix_sync_status,

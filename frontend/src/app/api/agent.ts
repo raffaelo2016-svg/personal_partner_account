@@ -121,6 +121,20 @@ export interface AdminAgentDetail {
   payouts: AgentPayout[];
 }
 
+export async function bindPartnerToAgent(
+  partnerId: string,
+  agentId: string | null,
+  reason: string,
+  force = false,
+): Promise<unknown> {
+  const { data } = await apiClient.post(`/admin/partners/${partnerId}/agent`, {
+    agent_id: agentId,
+    reason,
+    force,
+  });
+  return data;
+}
+
 export async function listAgents(search?: string): Promise<AdminAgent[]> {
   const { data } = await apiClient.get('/admin/agents', { params: search ? { search } : {} });
   return data;

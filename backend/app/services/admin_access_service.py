@@ -21,8 +21,8 @@ from app.services.audit import audit_log
 
 logger = structlog.get_logger()
 
-INVITE_ROLES = {"admin", "super_admin"}
-ROLE_LABELS = {"admin": "Администратор", "super_admin": "Супер-администратор"}
+INVITE_ROLES = {"admin", "super_admin", "agent"}
+ROLE_LABELS = {"admin": "Администратор", "super_admin": "Супер-администратор", "agent": "Агент"}
 DEFAULT_INVITE_TTL_HOURS = 72
 ALLOWED_INVITE_TTL_HOURS = {24, 72, 168}
 
@@ -317,6 +317,8 @@ async def accept_invite(
     token: str,
     login: str,
     password: str,
+    full_name: str | None = None,
+    phone: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
 ) -> User:
@@ -352,6 +354,16 @@ async def accept_invite(
     invite.used_at = datetime.now(UTC)
     await drop_invite_token(invite.id)
     await session.flush()
+
+    if user.role == "agent":
+        from app.services.agent_service import create_agent_profile
+
+        await create_agent_profile(
+            session,
+            user,
+            full_name=(full_name or invite.email.split("@")[0]).strip(),
+            phone=(phone or "").strip(),
+        )
 
     audit_log(
         action="invite_accepted",

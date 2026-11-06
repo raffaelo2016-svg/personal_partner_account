@@ -9,6 +9,7 @@ import { getApiErrorMessage } from '@/app/utils/apiError';
 const ROLE_LABELS: Record<string, string> = {
   admin: 'Администратор',
   super_admin: 'Супер-администратор',
+  agent: 'Агент',
 };
 
 const STATUS_TEXT: Record<string, string> = {
@@ -30,7 +31,7 @@ export default function InviteAccept() {
   const [loading, setLoading] = useState(true);
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
-  const [form, setForm] = useState({ login: '', password: '', repeat: '' });
+  const [form, setForm] = useState({ login: '', password: '', repeat: '', full_name: '', phone: '' });
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -74,9 +75,11 @@ export default function InviteAccept() {
         token,
         login: form.login.trim(),
         password: form.password,
+        full_name: form.full_name.trim() || undefined,
+        phone: form.phone.trim() || undefined,
       });
       login({ id: data.user.id, email: data.user.email, role: data.user.role }, data.access_token);
-      navigate('/admin', { replace: true });
+      navigate(data.user.role === 'agent' ? '/agent' : '/admin', { replace: true });
     } catch (err) {
       setError(getApiErrorMessage(err));
     } finally {
@@ -143,6 +146,30 @@ export default function InviteAccept() {
                 </div>
                 <p className="mt-1 text-xs text-gray-500">Почта закреплена за приглашением.</p>
               </div>
+
+              {invite.role === 'agent' && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Ваше имя</label>
+                    <input
+                      value={form.full_name}
+                      onChange={update('full_name')}
+                      required
+                      placeholder="Иванов Иван Иванович"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Телефон</label>
+                    <input
+                      value={form.phone}
+                      onChange={update('phone')}
+                      placeholder="+7 900 000-00-00"
+                      className="w-full px-3 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </>
+              )}
 
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Логин</label>

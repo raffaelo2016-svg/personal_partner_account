@@ -232,6 +232,8 @@ async def register_by_invite(
         token=body.token,
         login=body.login,
         password=body.password,
+        full_name=body.full_name,
+        phone=body.phone,
         ip=ip,
         user_agent=ua[:512] if ua else None,
     )

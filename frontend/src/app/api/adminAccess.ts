@@ -1,6 +1,6 @@
 import apiClient from './client';
 
-export type AdminRole = 'admin' | 'super_admin';
+export type AdminRole = 'admin' | 'super_admin' | 'agent';
 export type InviteStatus = 'active' | 'used' | 'expired' | 'revoked';
 
 export interface AdminUser {
@@ -73,6 +73,8 @@ export async function registerByInvite(payload: {
   token: string;
   login: string;
   password: string;
+  full_name?: string;
+  phone?: string;
 }): Promise<{ access_token: string; user: { id: string; email: string; login?: string | null; role: AdminRole } }> {
   const { data } = await apiClient.post('/auth/invite/register', payload);
   return data;
@@ -85,7 +87,7 @@ export async function listAdmins(search?: string): Promise<AdminUser[]> {
 
 export async function updateAdmin(
   id: string,
-  payload: { role?: AdminRole; is_active?: boolean },
+  payload: { role?: 'admin' | 'super_admin'; is_active?: boolean },
 ): Promise<AdminUser> {
   const { data } = await apiClient.patch(`/admin/users/${id}`, payload);
   return data;

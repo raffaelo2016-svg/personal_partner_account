@@ -47,6 +47,7 @@ export default function AdminLayout() {
       path: '/admin/partners',
       badge: partnerStats?.pending_partners ?? 0,
     },
+    { icon: Handshake, label: 'Агенты', path: '/admin/agents' },
     { icon: Users, label: 'Все клиенты', path: '/admin/clients' },
     { icon: CheckSquare, label: 'Задачи', path: '/admin/tasks' },
     { icon: AlertTriangle, label: 'Требует внимания', path: '/admin/bitrix-attention', badge: attentionData?.total ?? 0 },
