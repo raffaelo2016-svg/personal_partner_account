@@ -240,9 +240,7 @@ async def resend_invite(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Not found") from exc
 
     ip, ua = _meta(request)
-    invite, token = await access.resend_invite(
-        db, target_id, actor, ip=ip, user_agent=ua
-    )
+    invite, token = await access.resend_invite(db, target_id, actor, ip=ip, user_agent=ua)
     await db.commit()
 
     url = access.invite_url(token)
@@ -349,15 +347,9 @@ async def audit_page(
     if filters:
         base = base.where(*filters)
 
-    total = (
-        await db.execute(select(func.count()).select_from(base.subquery()))
-    ).scalar_one()
+    total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
 
-    rows = await db.execute(
-        base.order_by(AuditLog.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-    )
+    rows = await db.execute(base.order_by(AuditLog.created_at.desc()).offset((page - 1) * page_size).limit(page_size))
     items = [
         AuditEntry(
             id=str(row.id),

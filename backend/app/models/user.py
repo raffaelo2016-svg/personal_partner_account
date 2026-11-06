@@ -24,9 +24,7 @@ class User(Base, TimestampMixin):
     role: Mapped[str] = mapped_column(String(20))
     is_active: Mapped[bool] = mapped_column(default=True)
     is_legacy_shared: Mapped[bool] = mapped_column(default=False)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
     last_login_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     password_changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 

@@ -161,9 +161,7 @@ async def login(
     logger.info("login_success", user_id=str(user.id), role=user.role, ip=ip)
     return TokenResponse(
         access_token=access_token,
-        user=UserRead(
-            id=str(user.id), email=user.email, login=user.login, role=user.role
-        ),
+        user=UserRead(id=str(user.id), email=user.email, login=user.login, role=user.role),
     )
 
 

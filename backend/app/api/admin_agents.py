@@ -59,9 +59,7 @@ async def _partners_read(db: AsyncSession, agent_id) -> list[AgentPartner]:
     for partner in partners:
         clients = (
             await db.execute(
-                select(func.count(Client.id)).where(
-                    Client.partner_id == partner.id, Client.deleted_at.is_(None)
-                )
+                select(func.count(Client.id)).where(Client.partner_id == partner.id, Client.deleted_at.is_(None))
             )
         ).scalar_one()
         accrued = (
@@ -164,9 +162,7 @@ async def change_agent_status(
     actor: User = Depends(require_role("admin")),  # noqa: B008
 ):
     agent = await _get_agent(db, agent_id)
-    await agent_service.set_agent_status(
-        db, agent, active=body.is_active, actor=actor, reason=body.reason
-    )
+    await agent_service.set_agent_status(db, agent, active=body.is_active, actor=actor, reason=body.reason)
     await db.commit()
     return await _agent_read(db, agent)
 
@@ -179,9 +175,7 @@ async def review_agent_requisites(
     actor: User = Depends(require_role("admin")),  # noqa: B008
 ):
     agent = await _get_agent(db, agent_id)
-    await agent_service.review_requisites(
-        db, agent, new_status=body.status, actor=actor, comment=body.comment
-    )
+    await agent_service.review_requisites(db, agent, new_status=body.status, actor=actor, comment=body.comment)
     await db.commit()
     return await _agent_read(db, agent)
 
@@ -208,9 +202,7 @@ async def bind_partner(
     if body.agent_id:
         agent = await _get_agent(db, body.agent_id)
 
-    await agent_service.bind_partner_admin(
-        db, partner, agent=agent, actor=actor, reason=body.reason, force=body.force
-    )
+    await agent_service.bind_partner_admin(db, partner, agent=agent, actor=actor, reason=body.reason, force=body.force)
     await db.commit()
 
     if agent is None:
@@ -225,11 +217,7 @@ async def list_all_accruals(
     db: AsyncSession = Depends(get_db),  # noqa: B008
     _: User = Depends(require_role("admin")),  # noqa: B008
 ):
-    query = (
-        select(AgentAccrual)
-        .order_by(AgentAccrual.created_at.desc())
-        .limit(200)
-    )
+    query = select(AgentAccrual).order_by(AgentAccrual.created_at.desc()).limit(200)
     if agent_id:
         import uuid as _uuid
 
@@ -324,8 +312,6 @@ async def change_payout_status(
     if request is None:
         raise _not_found("PAYOUT_NOT_FOUND", "Заявка не найдена")
 
-    await agent_service.update_payout_status(
-        db, request, new_status=body.status, actor=actor, comment=body.comment
-    )
+    await agent_service.update_payout_status(db, request, new_status=body.status, actor=actor, comment=body.comment)
     await db.commit()
     return _payouts_read([request])[0]

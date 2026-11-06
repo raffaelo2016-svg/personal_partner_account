@@ -161,9 +161,7 @@ async def accrue_for_client(session: AsyncSession, client: Client) -> AgentAccru
     if partner is None or partner.agent_id is None:
         return None
 
-    existing = await session.execute(
-        select(AgentAccrual.id).where(AgentAccrual.client_id == client.id)
-    )
+    existing = await session.execute(select(AgentAccrual.id).where(AgentAccrual.client_id == client.id))
     if existing.first() is not None:
         return None
 
@@ -212,9 +210,7 @@ async def accrue_for_client(session: AsyncSession, client: Client) -> AgentAccru
 async def agent_stats(session: AsyncSession, agent_id) -> dict[str, int]:
     partners = (
         await session.execute(
-            select(func.count(Partner.id)).where(
-                Partner.agent_id == agent_id, Partner.deleted_at.is_(None)
-            )
+            select(func.count(Partner.id)).where(Partner.agent_id == agent_id, Partner.deleted_at.is_(None))
         )
     ).scalar_one()
 
@@ -375,10 +371,7 @@ async def update_payout_status(
                 user_id=str(agent.user_id),
                 notif_type="agent_payout",
                 title="Статус выплаты изменился",
-                message=(
-                    f"Заявка на {request.amount // 100} ₽: "
-                    f"{PAYOUT_STATUS_LABELS.get(new_status, new_status)}."
-                ),
+                message=(f"Заявка на {request.amount // 100} ₽: {PAYOUT_STATUS_LABELS.get(new_status, new_status)}."),
                 link="/agent/payouts",
             )
 

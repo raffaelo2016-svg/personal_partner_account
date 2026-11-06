@@ -59,9 +59,7 @@ class AgentAccrual(Base, TimestampMixin):
     status: Mapped[str] = mapped_column(String(20), default="accrued", index=True)
     reason: Mapped[str] = mapped_column(String(100), default="procedure_started")
     comment: Mapped[str | None] = mapped_column(String(500), default=None)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
 
     client: Mapped[Client] = relationship("Client", lazy="joined")
     partner: Mapped[Partner] = relationship("Partner", lazy="joined")
@@ -82,9 +80,7 @@ class AgentPayoutRequest(Base, TimestampMixin):
     period: Mapped[str] = mapped_column(String(7), default="")
     comment: Mapped[str | None] = mapped_column(String(500), default=None)
 
-    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
+    reviewed_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
     reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     paid_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 

@@ -22,9 +22,7 @@ class Invite(Base, TimestampMixin):
     expires_at: Mapped[datetime] = mapped_column(UTCDateTime)
     used_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     revoked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
-    created_by: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("users.id", ondelete="SET NULL"), default=None
-    )
+    created_by: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
 
     @property
     def status(self) -> str:

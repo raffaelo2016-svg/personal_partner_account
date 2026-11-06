@@ -77,9 +77,7 @@ async def agent_partners(
     for partner in partners:
         clients = (
             await db.execute(
-                select(func.count(Client.id)).where(
-                    Client.partner_id == partner.id, Client.deleted_at.is_(None)
-                )
+                select(func.count(Client.id)).where(Client.partner_id == partner.id, Client.deleted_at.is_(None))
             )
         ).scalar_one()
         accrued = (
@@ -168,8 +166,6 @@ async def update_requisites(
     agent: Agent = Depends(get_current_agent),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
-    updated = await agent_service.save_requisites(
-        db, agent, recipient_type=body.recipient_type, data=body.data
-    )
+    updated = await agent_service.save_requisites(db, agent, recipient_type=body.recipient_type, data=body.data)
     await db.commit()
     return _profile(updated)

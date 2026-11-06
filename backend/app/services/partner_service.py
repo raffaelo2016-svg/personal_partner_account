@@ -36,8 +36,10 @@ async def list_partners(
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[PartnerRead], int]:
-    base_q = select(Partner).join(User, Partner.user_id == User.id).where(
-        Partner.deleted_at.is_(None), User.role == "partner"
+    base_q = (
+        select(Partner)
+        .join(User, Partner.user_id == User.id)
+        .where(Partner.deleted_at.is_(None), User.role == "partner")
     )
 
     if search:
@@ -101,9 +103,7 @@ async def get_partner(session: AsyncSession, partner_id: str) -> PartnerRead:
         agent = await session.get(Agent, partner.agent_id)
         agent_name = agent.full_name if agent else None
 
-    return _partner_to_read(
-        partner, email=email, agent_name=agent_name, **counts, **finance
-    )
+    return _partner_to_read(partner, email=email, agent_name=agent_name, **counts, **finance)
 
 
 async def _get_client_status_counts(session: AsyncSession, partner_id) -> dict:

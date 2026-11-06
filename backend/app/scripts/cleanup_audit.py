@@ -20,9 +20,7 @@ async def _run(days: int, dry_run: bool) -> int:
     threshold = datetime.now(UTC) - timedelta(days=days)
     async with async_session() as session:
         count = (
-            await session.execute(
-                select(func.count(AuditLog.id)).where(AuditLog.created_at < threshold)
-            )
+            await session.execute(select(func.count(AuditLog.id)).where(AuditLog.created_at < threshold))
         ).scalar_one()
 
         print(f"Записей старше {days} дней ({threshold:%d.%m.%Y}): {count}")

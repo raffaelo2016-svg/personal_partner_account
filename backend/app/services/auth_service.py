@@ -66,9 +66,7 @@ async def revoke_access_token(token: str) -> None:
 async def authenticate_user(session: AsyncSession, identifier: str, password: str) -> User:
     needle = (identifier or "").strip().lower()
     result = await session.execute(
-        select(User).where(
-            or_(func.lower(User.email) == needle, func.lower(User.login) == needle)
-        )
+        select(User).where(or_(func.lower(User.email) == needle, func.lower(User.login) == needle))
     )
     user = result.scalar_one_or_none()
     if not user:

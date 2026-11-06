@@ -58,10 +58,7 @@ async def _run(args: argparse.Namespace) -> int:
             return 1
 
         actor_row = await session.execute(
-            select(User)
-            .where(User.role == "super_admin", User.is_active.is_(True))
-            .order_by(User.created_at)
-            .limit(1)
+            select(User).where(User.role == "super_admin", User.is_active.is_(True)).order_by(User.created_at).limit(1)
         )
         actor = actor_row.scalar_one_or_none()
 

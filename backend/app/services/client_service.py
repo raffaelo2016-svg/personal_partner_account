@@ -177,11 +177,7 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     await session.refresh(client, ["updated_at"])
 
     admin_ids = (
-        await session.scalars(
-            select(User.id).where(
-                User.role.in_(["admin", "super_admin"]), User.is_active.is_(True)
-            )
-        )
+        await session.scalars(select(User.id).where(User.role.in_(["admin", "super_admin"]), User.is_active.is_(True)))
     ).all()
     session.add_all(
         Notification(

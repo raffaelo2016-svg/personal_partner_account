@@ -16,9 +16,7 @@ PASSWORD = "Password1234"
 
 
 async def _login(client, identifier: str, password: str = PASSWORD) -> dict:
-    resp = await client.post(
-        "/api/v1/auth/login", json={"identifier": identifier, "password": password}
-    )
+    resp = await client.post("/api/v1/auth/login", json={"identifier": identifier, "password": password})
     assert resp.status_code == 200, resp.text
     return {"Authorization": f"Bearer {resp.json()['access_token']}"}
 
@@ -96,7 +94,7 @@ async def test_agent_registration_creates_profile(client, db_session):
 
 @pytest.mark.asyncio
 async def test_partner_registration_by_referral_code_links_agent(client, db_session):
-    data = await _register_agent(client)
+    await _register_agent(client)
     agent = (await db_session.execute(select(Agent))).scalar_one()
 
     linked = await _make_partner(db_session, email="p1@test.ru", company="ООО Один", agent_code=agent.code)
@@ -126,9 +124,7 @@ async def test_accrual_on_procedure_started_once(client, db_session):
     db_session.add(client_row)
     await db_session.commit()
 
-    await change_status(
-        db_session, str(client_row.id), "restructuring", user_id=str(admin.id)
-    )
+    await change_status(db_session, str(client_row.id), "restructuring", user_id=str(admin.id))
     await db_session.commit()
 
     accruals = (await db_session.execute(select(AgentAccrual))).scalars().all()
@@ -157,9 +153,7 @@ async def test_payout_requires_requisites_and_blocks_double_request(client, db_s
     await _make_admin(db_session)
     partner = await _make_partner(db_session, agent_code=agent.code)
 
-    client_row = Client(
-        partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing"
-    )
+    client_row = Client(partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing")
     db_session.add(client_row)
     await db_session.commit()
     await agent_service.accrue_for_client(db_session, client_row)
@@ -269,11 +263,7 @@ async def test_partner_registration_api_passes_agent_code(client, db_session):
     )
     assert resp.status_code == 201, resp.text
 
-    partner = (
-        await db_session.execute(
-            select(Partner).where(Partner.company_name == "ИП Новый Партнёр")
-        )
-    ).scalar_one()
+    partner = (await db_session.execute(select(Partner).where(Partner.company_name == "ИП Новый Партнёр"))).scalar_one()
     assert partner.agent_id == agent.id
     assert partner.agent_linked_at is not None
 
@@ -305,9 +295,7 @@ async def test_agent_invite_creates_agent_profile(client, db_session):
     assert registered.status_code == 201, registered.text
     assert registered.json()["user"]["role"] == "agent"
 
-    agent = (
-        await db_session.execute(select(Agent).where(Agent.full_name == "Приглашённый Агент"))
-    ).scalar_one()
+    agent = (await db_session.execute(select(Agent).where(Agent.full_name == "Приглашённый Агент"))).scalar_one()
     assert agent.phone == "+79001234567"
 
     me = await client.get(
@@ -325,9 +313,7 @@ async def test_agent_receives_notifications(client, db_session):
     await _make_admin(db_session)
     partner = await _make_partner(db_session, email="np@test.ru", agent_code=agent.code)
 
-    client_row = Client(
-        partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing"
-    )
+    client_row = Client(partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing")
     db_session.add(client_row)
     await db_session.commit()
     await agent_service.accrue_for_client(db_session, client_row)
@@ -338,10 +324,10 @@ async def test_agent_receives_notifications(client, db_session):
 
     async def note_types() -> list[str]:
         rows = (
-            await db_session.execute(
-                select(Notification).where(Notification.user_id == agent.user_id)
-            )
-        ).scalars().all()
+            (await db_session.execute(select(Notification).where(Notification.user_id == agent.user_id)))
+            .scalars()
+            .all()
+        )
         return [n.type for n in rows]
 
     assert "agent_accrual" in await note_types()
@@ -379,9 +365,7 @@ async def test_admin_corrects_accrual_with_reason(client, db_session):
     await _make_admin(db_session)
     partner = await _make_partner(db_session, email="cp@test.ru", agent_code=agent.code)
 
-    client_row = Client(
-        partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing"
-    )
+    client_row = Client(partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing")
     db_session.add(client_row)
     await db_session.commit()
     accrual = await agent_service.accrue_for_client(db_session, client_row)

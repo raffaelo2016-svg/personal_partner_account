@@ -79,9 +79,7 @@ def upgrade() -> None:
     op.add_column("partners", sa.Column("agent_id", sa.Uuid(), nullable=True))
     op.add_column("partners", sa.Column("agent_linked_at", sa.DateTime(timezone=True), nullable=True))
     op.create_index("ix_partners_agent_id", "partners", ["agent_id"])
-    op.create_foreign_key(
-        "fk_partners_agent_id", "partners", "agents", ["agent_id"], ["id"], ondelete="SET NULL"
-    )
+    op.create_foreign_key("fk_partners_agent_id", "partners", "agents", ["agent_id"], ["id"], ondelete="SET NULL")
 
 
 def downgrade() -> None:

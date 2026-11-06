@@ -103,9 +103,7 @@ def invite_url(token: str) -> str:
 
 
 async def count_active_super_admins(session: AsyncSession) -> int:
-    row = await session.execute(
-        select(func.count(User.id)).where(User.role == "super_admin", User.is_active.is_(True))
-    )
+    row = await session.execute(select(func.count(User.id)).where(User.role == "super_admin", User.is_active.is_(True)))
     return int(row.scalar_one())
 
 
@@ -137,9 +135,7 @@ async def consume_bootstrap_key(
     if not await needs_setup(session):
         _fail("SETUP_ALREADY_DONE", "Первый супер-администратор уже создан", status.HTTP_409_CONFLICT)
 
-    row = await session.execute(
-        select(BootstrapToken).where(BootstrapToken.token_hash == _token_hash(key))
-    )
+    row = await session.execute(select(BootstrapToken).where(BootstrapToken.token_hash == _token_hash(key)))
     token = row.scalar_one_or_none()
     now = datetime.now(UTC)
     if token is None or token.used_at is not None or token.expires_at < now:
@@ -273,8 +269,13 @@ async def revoke_invite(session: AsyncSession, invite_id, actor: User, *, ip=Non
 
 
 async def resend_invite(
-    session: AsyncSession, invite_id, actor: User, *, ttl_hours: int = DEFAULT_INVITE_TTL_HOURS,
-    ip=None, user_agent=None,
+    session: AsyncSession,
+    invite_id,
+    actor: User,
+    *,
+    ttl_hours: int = DEFAULT_INVITE_TTL_HOURS,
+    ip=None,
+    user_agent=None,
 ) -> tuple[Invite, str]:
     old = await session.get(Invite, invite_id)
     if old is None:
@@ -425,9 +426,7 @@ async def update_admin(
         if role is not None and role != target.role:
             _fail("SELF_ACTION_FORBIDDEN", "Нельзя изменить свою роль")
 
-    losing_super = target.role == "super_admin" and (
-        new_role != "super_admin" or new_active is False
-    )
+    losing_super = target.role == "super_admin" and (new_role != "super_admin" or new_active is False)
     if losing_super and await count_active_super_admins(session) <= 1:
         _fail(
             "LAST_SUPER_ADMIN",
@@ -446,8 +445,8 @@ async def update_admin(
     await session.flush()
 
     if changed:
-        action = "user_blocked" if is_active is False else (
-            "user_unblocked" if is_active is True else "user_role_changed"
+        action = (
+            "user_blocked" if is_active is False else ("user_unblocked" if is_active is True else "user_role_changed")
         )
         audit_log(
             action=action,
@@ -470,9 +469,7 @@ async def update_admin(
 async def find_shared_admin(session: AsyncSession, email: str | None = None) -> User | None:
     """Находит общую (устаревшую) учётную запись администратора."""
     if email:
-        row = await session.execute(
-            select(User).where(func.lower(User.email) == normalize_email(email))
-        )
+        row = await session.execute(select(User).where(func.lower(User.email) == normalize_email(email)))
         user = row.scalar_one_or_none()
         if user is None or user.role not in ("admin", "super_admin"):
             return None
@@ -490,14 +487,18 @@ async def find_shared_admin(session: AsyncSession, email: str | None = None) -> 
 
     # Резервный вариант: единственный администратор без личного логина.
     candidates = (
-        await session.execute(
-            select(User).where(
-                User.role == "admin",
-                User.login.is_(None),
-                User.is_active.is_(True),
+        (
+            await session.execute(
+                select(User).where(
+                    User.role == "admin",
+                    User.login.is_(None),
+                    User.is_active.is_(True),
+                )
             )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     return candidates[0] if len(candidates) == 1 else None
 
 
