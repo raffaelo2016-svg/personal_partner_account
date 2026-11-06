@@ -63,6 +63,8 @@ export const router = createBrowserRouter([
           { path: 'accruals', lazy: lazyPage(() => import('./pages/agent/AgentAccruals')) },
           { path: 'payouts', lazy: lazyPage(() => import('./pages/agent/AgentPayouts')) },
           { path: 'requisites', lazy: lazyPage(() => import('./pages/agent/AgentRequisites')) },
+          { path: 'materials', lazy: lazyPage(() => import('./pages/agent/AgentMaterials')) },
+          { path: 'support', lazy: lazyPage(() => import('./pages/agent/AgentSupport')) },
         ],
       },
     ],

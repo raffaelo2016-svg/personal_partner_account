@@ -4,7 +4,9 @@ import {
   Banknote,
   Building2,
   ClipboardList,
+  FolderOpen,
   LayoutDashboard,
+  LifeBuoy,
   LogOut,
   Menu,
   Users,
@@ -23,6 +25,8 @@ const NAV = [
   { to: '/agent/accruals', label: 'Начисления', icon: ClipboardList, end: false },
   { to: '/agent/payouts', label: 'Выплаты', icon: Wallet, end: false },
   { to: '/agent/requisites', label: 'Реквизиты', icon: Banknote, end: false },
+  { to: '/agent/materials', label: 'Материалы', icon: FolderOpen, end: false },
+  { to: '/agent/support', label: 'Поддержка', icon: LifeBuoy, end: false },
 ];
 
 export default function AgentLayout() {
