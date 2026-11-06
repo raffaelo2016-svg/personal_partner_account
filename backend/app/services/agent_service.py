@@ -17,12 +17,21 @@ from app.models.client import Client
 from app.models.partner import Partner
 from app.models.user import User
 from app.services.audit import audit_log
+from app.services.notification_service import create_notification
 
 logger = structlog.get_logger()
 
 CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 ACTIVE_PAYOUT_STATUSES = ("submitted", "checking", "scheduled", "needs_fix")
 PAYOUT_STATUSES = ("submitted", "checking", "scheduled", "paid", "needs_fix", "cancelled")
+PAYOUT_STATUS_LABELS = {
+    "submitted": "отправлена",
+    "checking": "на проверке",
+    "scheduled": "поставлена в выплату",
+    "paid": "выплачена",
+    "needs_fix": "нужны правки",
+    "cancelled": "отменена",
+}
 
 
 def _fail(code: str, message: str, http_status: int = status.HTTP_400_BAD_REQUEST) -> None:
@@ -173,6 +182,17 @@ async def accrue_for_client(session: AsyncSession, client: Client) -> AgentAccru
     )
     session.add(accrual)
     await session.flush()
+
+    agent = await session.get(Agent, partner.agent_id)
+    if agent is not None:
+        await create_notification(
+            session,
+            user_id=str(agent.user_id),
+            notif_type="agent_accrual",
+            title="Начисление 1 000 ₽",
+            message=f"Клиент партнёра «{partner.company_name}» дошёл до процедуры.",
+            link="/agent/accruals",
+        )
 
     audit_log(
         action="agent_accrued",
@@ -337,6 +357,7 @@ async def update_payout_status(
     if request.status == "paid" and new_status != "paid":
         _fail("PAYOUT_IMMUTABLE", "Выплаченную заявку нельзя изменить", status.HTTP_409_CONFLICT)
 
+    previous_status = request.status
     request.status = new_status
     request.reviewed_by = actor.id
     request.reviewed_at = datetime.now(UTC)
@@ -345,6 +366,21 @@ async def update_payout_status(
     if new_status == "paid":
         request.paid_at = datetime.now(UTC)
     await session.flush()
+
+    if previous_status != new_status:
+        agent = await session.get(Agent, request.agent_id)
+        if agent is not None:
+            await create_notification(
+                session,
+                user_id=str(agent.user_id),
+                notif_type="agent_payout",
+                title="Статус выплаты изменился",
+                message=(
+                    f"Заявка на {request.amount // 100} ₽: "
+                    f"{PAYOUT_STATUS_LABELS.get(new_status, new_status)}."
+                ),
+                link="/agent/payouts",
+            )
 
     audit_log(
         action="agent_payout_status_changed",
@@ -400,6 +436,21 @@ async def review_requisites(
         _fail("INVALID_STATUS", "Недопустимый статус реквизитов")
     agent.requisites_status = new_status
     await session.flush()
+
+    if new_status in ("needs_fix", "accepted"):
+        await create_notification(
+            session,
+            user_id=str(agent.user_id),
+            notif_type="agent_requisites",
+            title="Реквизиты проверены" if new_status == "accepted" else "Реквизиты нужно поправить",
+            message=(
+                "Реквизиты подтверждены, можно запрашивать выплату."
+                if new_status == "accepted"
+                else "Администратор просит проверить реквизиты и отправить заново."
+            ),
+            link="/agent/requisites",
+        )
+
     audit_log(
         action="agent_requisites_reviewed",
         user_id=str(actor.id),

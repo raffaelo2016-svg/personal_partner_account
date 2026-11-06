@@ -6,6 +6,7 @@ from sqlalchemy import select
 from app.core.security import hash_password
 from app.models.agent import Agent, AgentAccrual, AgentPayoutRequest
 from app.models.client import Client
+from app.models.notification import Notification
 from app.models.partner import Partner
 from app.models.user import User
 from app.services import agent_service
@@ -315,3 +316,57 @@ async def test_agent_invite_creates_agent_profile(client, db_session):
     )
     assert me.status_code == 200
     assert me.json()["profile"]["code"] == agent.code
+
+
+@pytest.mark.asyncio
+async def test_agent_receives_notifications(client, db_session):
+    reg = await _register_agent(client, email="notify@test.ru", name="Агент Уведомлений")
+    agent = (await db_session.execute(select(Agent))).scalar_one()
+    await _make_admin(db_session)
+    partner = await _make_partner(db_session, email="np@test.ru", agent_code=agent.code)
+
+    client_row = Client(
+        partner_id=partner.id, type="in_court", full_name="Клиент", status="waiting_hearing"
+    )
+    db_session.add(client_row)
+    await db_session.commit()
+    await agent_service.accrue_for_client(db_session, client_row)
+    await db_session.commit()
+
+    agent_headers = {"Authorization": f"Bearer {reg['access_token']}"}
+    admin_headers = await _login(client, "root")
+
+    async def note_types() -> list[str]:
+        rows = (
+            await db_session.execute(
+                select(Notification).where(Notification.user_id == agent.user_id)
+            )
+        ).scalars().all()
+        return [n.type for n in rows]
+
+    assert "agent_accrual" in await note_types()
+
+    await client.put(
+        "/api/v1/agent/requisites",
+        headers=agent_headers,
+        json={"recipient_type": "individual", "data": {"fio": "Агент", "account": "40817"}},
+    )
+    await client.patch(
+        f"/api/v1/admin/agents/{agent.id}/requisites",
+        headers=admin_headers,
+        json={"status": "accepted"},
+    )
+    assert "agent_requisites" in await note_types()
+
+    payout = await client.post("/api/v1/agent/payouts", headers=agent_headers)
+    assert payout.status_code == 201
+    await client.patch(
+        f"/api/v1/admin/payouts/{payout.json()['id']}",
+        headers=admin_headers,
+        json={"status": "paid"},
+    )
+    assert "agent_payout" in await note_types()
+
+    unread = await client.get("/api/v1/notifications/unread-count", headers=agent_headers)
+    assert unread.status_code == 200
+    assert unread.json()["count"] >= 3

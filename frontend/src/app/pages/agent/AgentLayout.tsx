@@ -15,6 +15,7 @@ import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-color.svg';
 import { useAuthStore } from '@/app/store/authStore';
 import { getAgentMe } from '@/app/api/agent';
+import NotificationBell from '@/app/components/NotificationBell';
 
 const NAV = [
   { to: '/agent', label: 'Главная', icon: LayoutDashboard, end: true },
@@ -104,11 +105,14 @@ export default function AgentLayout() {
       </aside>
 
       <div className="flex-1 min-w-0 flex flex-col">
-        <header className="lg:hidden h-14 bg-white border-b border-gray-200 flex items-center px-4 gap-3">
-          <button onClick={() => setOpen(true)} aria-label="Меню">
+        <header className="h-14 bg-white border-b border-gray-200 flex items-center px-4 lg:px-8 gap-3">
+          <button onClick={() => setOpen(true)} aria-label="Меню" className="lg:hidden">
             <Menu className="w-5 h-5 text-gray-600" />
           </button>
-          <img src={logo} alt="ЮРИТЕХ" className="h-8" />
+          <img src={logo} alt="ЮРИТЕХ" className="h-8 lg:hidden" />
+          <div className="ml-auto">
+            <NotificationBell />
+          </div>
         </header>
         <main className="flex-1 p-4 sm:p-6 lg:p-8">
           <Outlet />
