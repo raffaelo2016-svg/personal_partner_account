@@ -21,7 +21,8 @@ export function useLogin() {
         { id: data.user.id, email: data.user.email, role: data.user.role },
         data.access_token,
       );
-      navigate(data.user.role === 'admin' ? '/admin' : '/dashboard');
+      const isAdmin = data.user.role === 'admin' || data.user.role === 'super_admin';
+      navigate(isAdmin ? '/admin' : '/dashboard');
     },
   });
 }

@@ -35,7 +35,7 @@ logger = structlog.get_logger()
 
 async def _check_client_access(db: AsyncSession, client_id: str, user: User) -> None:
     """Verify that the current user has access to the given client."""
-    if user.role == "admin":
+    if user.role in ("admin", "super_admin"):
         return
     partner_row = await db.execute(select(Partner).where(Partner.user_id == user.id, Partner.deleted_at.is_(None)))
     partner = partner_row.scalar_one_or_none()

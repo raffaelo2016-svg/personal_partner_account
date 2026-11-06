@@ -7,6 +7,7 @@ from app.models.client import Client
 from app.models.client_status_log import ClientStatusLog
 from app.models.court_fee import CourtFee
 from app.models.file_upload import FileUpload
+from app.models.invite import BootstrapToken, Invite
 from app.models.news import NewsPost, NewsReceipt
 from app.models.notification import Notification
 from app.models.partner import Partner
@@ -23,6 +24,7 @@ __all__ = [
     "BitrixEntityMap",
     "BitrixInboundEvent",
     "BitrixOutboxOperation",
+    "BootstrapToken",
     "ChatMessage",
     "ChatMessageEvent",
     "ChatRoom",
@@ -32,6 +34,7 @@ __all__ = [
     "FAQ",
     "FileUpload",
     "ImportantNote",
+    "Invite",
     "Instruction",
     "LoginHistory",
     "Notification",

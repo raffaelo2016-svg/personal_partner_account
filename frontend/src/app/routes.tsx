@@ -26,6 +26,14 @@ export const router = createBrowserRouter([
     lazy: lazyPage(() => import('./pages/Registration')),
   },
   {
+    path: '/setup',
+    lazy: lazyPage(() => import('./pages/Setup')),
+  },
+  {
+    path: '/invite/:token',
+    lazy: lazyPage(() => import('./pages/InviteAccept')),
+  },
+  {
     path: '/forgot-password',
     lazy: lazyPage(() => import('./pages/ForgotPassword')),
   },
@@ -66,7 +74,7 @@ export const router = createBrowserRouter([
     ErrorBoundary: RouteErrorPage,
     children: [
       {
-        element: <RoleGuard allowedRoles={['admin']}><AdminLayout /></RoleGuard>,
+        element: <RoleGuard allowedRoles={['admin', 'super_admin']}><AdminLayout /></RoleGuard>,
         children: [
           { index: true, lazy: lazyPage(() => import('./pages/AdminDashboard')) },
           { path: 'partners', lazy: lazyPage(() => import('./pages/AdminPartners')) },
@@ -82,6 +90,7 @@ export const router = createBrowserRouter([
           { path: 'chat', lazy: lazyPage(() => import('./pages/AdminChat')) },
           { path: 'news', lazy: lazyPage(() => import('./pages/AdminNews')) },
           { path: 'settings', lazy: lazyPage(() => import('./pages/AdminSettings')) },
+          { path: 'admins', lazy: lazyPage(() => import('./pages/AdminAdmins')) },
         ],
       },
     ],

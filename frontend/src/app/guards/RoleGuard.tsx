@@ -2,8 +2,10 @@ import type { ReactNode } from 'react';
 import { Navigate, Outlet } from 'react-router';
 import { useAuthStore, useHasHydrated } from '@/app/store/authStore';
 
+type AppRole = 'partner' | 'admin' | 'super_admin';
+
 interface RoleGuardProps {
-  allowedRoles: ('partner' | 'admin')[];
+  allowedRoles: AppRole[];
   children?: ReactNode;
 }
 
@@ -24,7 +26,8 @@ export default function RoleGuard({ allowedRoles, children }: RoleGuardProps) {
   }
 
   if (!allowedRoles.includes(user.role)) {
-    const redirect = user.role === 'admin' ? '/admin' : '/dashboard';
+    const isAdmin = user.role === 'admin' || user.role === 'super_admin';
+    const redirect = isAdmin ? '/admin' : '/dashboard';
     return <Navigate to={redirect} replace />;
   }
 

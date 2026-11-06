@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router';
-import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, Menu, X, CheckSquare, MessageSquare, CreditCard, Newspaper } from 'lucide-react';
+import { AlertTriangle, LayoutDashboard, Users, Settings, LogOut, Shield, ShieldCheck, Menu, X, CheckSquare, MessageSquare, CreditCard, Newspaper } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import logo from '@/assets/logo-white.svg';
 import NotificationBell from '../components/NotificationBell';
@@ -13,6 +13,7 @@ export default function AdminLayout() {
   const navigate = useNavigate();
   const location = useLocation();
   const logout = useAuthStore((s) => s.logout);
+  const currentUser = useAuthStore((s) => s.user);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const { data: unreadCount = 0 } = useQuery({
@@ -52,6 +53,9 @@ export default function AdminLayout() {
     { icon: CreditCard, label: 'Транзакции', path: '/admin/transactions' },
     { icon: MessageSquare, label: 'Чат', path: '/admin/chat', badge: unreadCount },
     { icon: Newspaper, label: 'Новости', path: '/admin/news' },
+    ...(currentUser?.role === 'super_admin'
+      ? [{ icon: ShieldCheck, label: 'Админы', path: '/admin/admins' }]
+      : []),
     { icon: Settings, label: 'Настройки', path: '/admin/settings' },
   ];
 

@@ -17,6 +17,10 @@ async def _persist(
     target_type: str | None,
     details: dict | None,
     ip_address: str | None,
+    actor_label: str | None = None,
+    target_label: str | None = None,
+    result: str = "success",
+    user_agent: str | None = None,
 ) -> None:
     from app.database import async_session
     from app.models.audit_log import AuditLog
@@ -28,6 +32,10 @@ async def _persist(
                 user_id=user_id,
                 target_id=target_id,
                 target_type=target_type,
+                target_label=target_label,
+                actor_label=actor_label,
+                result=result,
+                user_agent=user_agent,
                 ip_address=ip_address,
                 details=details,
             )
@@ -41,10 +49,14 @@ def audit_log(
     action: str,
     *,
     user_id: str | None = None,
+    actor_label: str | None = None,
     target_id: str | None = None,
     target_type: str | None = None,
+    target_label: str | None = None,
+    result: str = "success",
     details: dict | None = None,
     ip_address: str | None = None,
+    user_agent: str | None = None,
 ) -> None:
     """Log an auditable action to stdout AND DB (fire-and-forget)."""
     logger.info(
@@ -53,12 +65,29 @@ def audit_log(
         user_id=user_id,
         target_id=target_id,
         target_type=target_type,
+        actor_label=actor_label,
+        target_label=target_label,
+        result=result,
         details=details or {},
         ip_address=ip_address,
+        user_agent=user_agent,
     )
     try:
         loop = asyncio.get_running_loop()
-        loop.create_task(_persist(action, user_id, target_id, target_type, details, ip_address))
+        loop.create_task(
+            _persist(
+                action,
+                user_id,
+                target_id,
+                target_type,
+                details,
+                ip_address,
+                actor_label,
+                target_label,
+                result,
+                user_agent,
+            )
+        )
     except RuntimeError:
         # No running loop (e.g. Celery sync task) — skip DB persistence.
         pass

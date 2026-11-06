@@ -1,14 +1,17 @@
 import apiClient from './client';
 
 export interface LoginPayload {
-  email: string;
+  /** Почта или логин — бэкенд принимает оба варианта. */
+  identifier: string;
   password: string;
+  captcha_token?: string;
 }
 
 export interface AuthUserResponse {
   id: string;
   email: string;
-  role: 'partner' | 'admin';
+  role: 'partner' | 'admin' | 'super_admin';
+  login?: string | null;
   company_name?: string | null;
 }
 

@@ -36,8 +36,8 @@ async def list_partners(
     offset: int = 0,
     limit: int = 20,
 ) -> tuple[list[PartnerRead], int]:
-    base_q = (
-        select(Partner).join(User, Partner.user_id == User.id).where(Partner.deleted_at.is_(None), User.role != "admin")
+    base_q = select(Partner).join(User, Partner.user_id == User.id).where(
+        Partner.deleted_at.is_(None), User.role == "partner"
     )
 
     if search:
@@ -499,7 +499,7 @@ async def get_partners_stats(session: AsyncSession) -> PartnerStats:
         select(func.count())
         .select_from(Partner)
         .join(User, Partner.user_id == User.id)
-        .where(Partner.deleted_at.is_(None), User.role != "admin")
+        .where(Partner.deleted_at.is_(None), User.role == "partner")
     )
 
     total = (await session.execute(base)).scalar() or 0

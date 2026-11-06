@@ -4,6 +4,7 @@ from enum import StrEnum
 class UserRole(StrEnum):
     PARTNER = "partner"
     ADMIN = "admin"
+    SUPER_ADMIN = "super_admin"
 
 
 class ClientType(StrEnum):
