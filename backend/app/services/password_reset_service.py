@@ -1,6 +1,7 @@
 import hashlib
 import secrets
 from dataclasses import dataclass
+from datetime import UTC, datetime
 
 import structlog
 from sqlalchemy import select
@@ -91,6 +92,7 @@ async def reset_password(session: AsyncSession, token: str, new_password: str) -
         return False
 
     user.hashed_password = hash_password(new_password)
+    user.password_changed_at = datetime.now(UTC)
     await session.commit()
     await redis_client.delete(token_key, user_key)
     audit_log(action="password_reset_completed", user_id=str(user.id))

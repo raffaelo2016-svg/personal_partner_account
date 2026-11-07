@@ -3,7 +3,8 @@ import {
   Building, Edit, Ban, CheckCircle, AlertCircle, Loader2, ShieldCheck, X, Trash2, RefreshCw, Link2,
   WalletCards, CircleDollarSign, Clock3, Gift, CalendarClock, Search, ChevronLeft, ChevronRight,
 } from 'lucide-react';
-import { useDeferredValue, useState } from 'react';
+import { useDeferredValue, useEffect, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams, useNavigate } from 'react-router';
 import {
   useBindPartnerBitrixCollab,
@@ -13,6 +14,8 @@ import {
   useUpdatePartner,
 } from '@/app/hooks/usePartners';
 import { useAdminClients } from '@/app/hooks/useClients';
+import { bindPartnerToAgent, listAgents } from '@/app/api/agent';
+import { getApiErrorMessage } from '@/app/utils/apiError';
 import { getStatusBadgeClass, getStatusLabel } from '@/app/data/clientStatuses';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
@@ -400,6 +403,33 @@ export default function AdminPartnerDetails() {
   const deletePartnerMutation = useDeletePartner();
   const retryBitrixSync = useRetryPartnerBitrixSync();
   const bindBitrixCollab = useBindPartnerBitrixCollab();
+  const queryClient = useQueryClient();
+  const [agentValue, setAgentValue] = useState('');
+  const [agentReason, setAgentReason] = useState('');
+  const { data: agentsList = [] } = useQuery({
+    queryKey: ['admin', 'agents', ''],
+    queryFn: () => listAgents(),
+  });
+  useEffect(() => {
+    setAgentValue(partner?.agent_id ?? '');
+  }, [partner?.agent_id]);
+
+  const bindAgentMutation = useMutation({
+    mutationFn: () =>
+      bindPartnerToAgent(
+        id as string,
+        agentValue || null,
+        agentReason.trim(),
+        Boolean(partner?.agent_id),
+      ),
+    onSuccess: async () => {
+      toast.success('Привязка к агенту обновлена');
+      setAgentReason('');
+      setAgentValue('');
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'partners'] });
+    },
+    onError: (err) => toast.error(getApiErrorMessage(err)),
+  });
   const [showConfirm, setShowConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
@@ -523,6 +553,46 @@ export default function AdminPartnerDetails() {
             </div>
           </div>
         </div>
+      </div>
+
+      {/* Агент */}
+      <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+          <h2 className="text-lg font-semibold text-gray-900">Агент</h2>
+          <span className={`text-sm ${partner.agent_name ? 'text-gray-900' : 'text-gray-500'}`}>
+            {partner.agent_name ? `Закреплён: ${partner.agent_name}` : 'Не закреплён'}
+          </span>
+        </div>
+        <div className="flex flex-col md:flex-row gap-3">
+          <select
+            value={agentValue}
+            onChange={(e) => setAgentValue(e.target.value)}
+            className="md:w-72 px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white"
+          >
+            <option value="">Без агента</option>
+            {agentsList.map((agent) => (
+              <option key={agent.id} value={agent.id}>
+                {agent.full_name} ({agent.code})
+              </option>
+            ))}
+          </select>
+          <input
+            value={agentReason}
+            onChange={(e) => setAgentReason(e.target.value)}
+            placeholder="Причина изменения"
+            className="flex-1 px-3 py-2 border border-gray-300 rounded-lg text-sm"
+          />
+          <button
+            onClick={() => bindAgentMutation.mutate()}
+            disabled={!agentReason.trim() || bindAgentMutation.isPending}
+            className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 disabled:opacity-50"
+          >
+            Сохранить
+          </button>
+        </div>
+        <p className="text-xs text-gray-400 mt-2">
+          Привязка меняется только с причиной и попадает в журнал. Перепривязка возможна, отвязка — тоже.
+        </p>
       </div>
 
       {/* Финансовая информация */}

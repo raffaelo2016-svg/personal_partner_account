@@ -58,7 +58,13 @@ class Settings(BaseSettings):
     SMTP_FROM_EMAIL: str = ""
     SMTP_USE_SSL: bool = True
     SMTP_USE_STARTTLS: bool = False
+    # Путь к PEM-файлу с корневыми сертификатами. Пусто — использовать certifi.
+    SMTP_CA_BUNDLE: str = ""
     PASSWORD_RESET_EXPIRE_MINUTES: int = 30
+
+    # Агентская программа: ставка за клиента, дошедшего до процедуры (в копейках).
+    AGENT_ACCRUAL_RATE: int = 100_000
+    AGENT_ACCRUAL_STATUS: str = "restructuring"
 
     # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
     # the local application's credentials stay only in the server environment.

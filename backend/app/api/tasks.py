@@ -23,7 +23,7 @@ router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 async def _resolve_partner_id(db: AsyncSession, user: User) -> str | None:
     """Return partner_id for partner users, None for admins."""
-    if user.role == "admin":
+    if user.role in ("admin", "super_admin"):
         return None
     row = await db.execute(select(Partner).where(Partner.user_id == user.id, Partner.deleted_at.is_(None)))
     partner = row.scalar_one_or_none()

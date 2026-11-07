@@ -18,6 +18,9 @@ const TYPE_ICONS: Record<string, string> = {
   overdue_payment: '⚠️',
   new_partner: '🤝',
   news: '📰',
+  agent_accrual: '💰',
+  agent_payout: '💸',
+  agent_requisites: '🏦',
 };
 
 export default function NotificationBell() {

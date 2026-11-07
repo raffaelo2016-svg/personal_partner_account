@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import structlog
 from fastapi import APIRouter, BackgroundTasks, Cookie, Depends, HTTPException, Request, Response
 from sqlalchemy import or_, select
@@ -11,6 +13,8 @@ from app.database import get_db
 from app.models.partner import Partner
 from app.models.settings import NotificationPreference
 from app.models.user import User
+from app.schemas.admin_access import InviteInfo, RegisterByInviteRequest
+from app.schemas.agent import AgentRegisterRequest
 from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
@@ -22,6 +26,8 @@ from app.schemas.auth import (
     TokenResponse,
     UserRead,
 )
+from app.services import admin_access_service as access
+from app.services import agent_service, login_guard
 from app.services.audit import audit_log
 from app.services.auth_service import (
     authenticate_user,
@@ -103,13 +109,59 @@ async def login(
     db: AsyncSession = Depends(get_db),  # noqa: B008
 ):
     ip = request.client.host if request.client else None
-    user = await authenticate_user(db, body.email, body.password)
+    ua = request.headers.get("user-agent")
+    identifier = body.resolved_identifier
+
+    failures = await login_guard.get_failures(identifier, ip)
+    if failures >= login_guard.LOCK_THRESHOLD:
+        logger.warning("login_locked", failures=failures, ip=ip)
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "code": "ACCOUNT_LOCKED",
+                "message": "Слишком много неудачных попыток. Повторите через 15 минут.",
+            },
+            headers={"code": "ACCOUNT_LOCKED", "Retry-After": str(login_guard.WINDOW_SECONDS)},
+        )
+
+    if failures >= login_guard.CAPTCHA_THRESHOLD and settings.YANDEX_CAPTCHA_SECRET_KEY:
+        if not body.captcha_token:
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "CAPTCHA_REQUIRED", "message": "Подтвердите, что вы не робот"},
+                headers={"code": "CAPTCHA_REQUIRED"},
+            )
+        from app.services.captcha_service import verify_captcha
+
+        if not await verify_captcha(body.captcha_token, ip):
+            raise HTTPException(
+                status_code=400,
+                detail={"code": "CAPTCHA_INVALID", "message": "Капча не прошла проверку"},
+                headers={"code": "CAPTCHA_INVALID"},
+            )
+
+    try:
+        user = await authenticate_user(db, identifier, body.password)
+    except InvalidCredentials:
+        await login_guard.register_failure(identifier, ip)
+        raise
+
+    await login_guard.clear_failures(identifier, ip)
+    user.last_login_at = datetime.now(UTC)
+    await db.commit()
     access_token, refresh_token = await create_tokens(user)
     _set_refresh_cookie(response, refresh_token)
+    audit_log(
+        action="login_success",
+        user_id=str(user.id),
+        actor_label=user.email,
+        ip_address=ip,
+        user_agent=ua[:512] if ua else None,
+    )
     logger.info("login_success", user_id=str(user.id), role=user.role, ip=ip)
     return TokenResponse(
         access_token=access_token,
-        user=UserRead(id=str(user.id), email=user.email, role=user.role),
+        user=UserRead(id=str(user.id), email=user.email, login=user.login, role=user.role),
     )
 
 
@@ -143,6 +195,123 @@ async def logout(
     return {"detail": "Logged out"}
 
 
+@router.get("/invite/{token}", response_model=InviteInfo)
+@limiter.limit("30/minute")
+async def invite_info(request: Request, token: str, db: AsyncSession = Depends(get_db)):  # noqa: B008
+    invite = await access.get_invite_by_token(db, token)
+    if invite is None:
+        raise HTTPException(
+            status_code=404,
+            detail={"code": "INVITE_INVALID", "message": "Ссылка недействительна"},
+            headers={"code": "INVITE_INVALID"},
+        )
+    inviter = await db.get(User, invite.created_by) if invite.created_by else None
+    return InviteInfo(
+        email=invite.email,
+        role=invite.role,
+        status=invite.status,
+        expires_at=invite.expires_at,
+        inviter_label=inviter.email if inviter else None,
+    )
+
+
+@router.post("/invite/register", response_model=TokenResponse, status_code=201)
+@limiter.limit("10/minute")
+async def register_by_invite(
+    request: Request,
+    response: Response,
+    body: RegisterByInviteRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    user = await access.accept_invite(
+        db,
+        token=body.token,
+        login=body.login,
+        password=body.password,
+        full_name=body.full_name,
+        phone=body.phone,
+        ip=ip,
+        user_agent=ua[:512] if ua else None,
+    )
+    await db.commit()
+    user.last_login_at = datetime.now(UTC)
+    await db.commit()
+    access_token, refresh_token = await create_tokens(user)
+    _set_refresh_cookie(response, refresh_token)
+    audit_log(
+        action="login_success",
+        user_id=str(user.id),
+        actor_label=user.email,
+        ip_address=ip,
+        user_agent=ua[:512] if ua else None,
+        details={"source": "invite_registration"},
+    )
+    return TokenResponse(
+        access_token=access_token,
+        user=UserRead(id=str(user.id), email=user.email, login=user.login, role=user.role),
+    )
+
+
+@router.post("/register-agent", response_model=TokenResponse, status_code=201)
+@limiter.limit("3/minute")
+async def register_agent(
+    request: Request,
+    response: Response,
+    body: AgentRegisterRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    import re
+
+    ip = request.client.host if request.client else None
+    ua = request.headers.get("user-agent")
+    email = body.email.strip().lower()
+
+    has_letter = bool(re.search(r"[A-Za-zА-Яа-я]", body.password))
+    has_digit = bool(re.search(r"\d", body.password))
+    if len(body.password) < 10 or not has_letter or not has_digit:
+        raise HTTPException(
+            status_code=400,
+            detail={"code": "WEAK_PASSWORD", "message": "Пароль: не менее 10 символов, буквы и цифры"},
+            headers={"code": "WEAK_PASSWORD"},
+        )
+
+    existing = await db.execute(select(User).where(User.email == email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=409,
+            detail={"code": "EMAIL_TAKEN", "message": "Эта почта уже используется"},
+            headers={"code": "EMAIL_TAKEN"},
+        )
+
+    user = await register_user(db, email, body.password, role="agent")
+    agent = await agent_service.create_agent_profile(
+        db,
+        user,
+        full_name=body.full_name,
+        phone=body.phone,
+        company_name=body.company_name,
+    )
+    await db.commit()
+
+    access_token, refresh_token = await create_tokens(user)
+    _set_refresh_cookie(response, refresh_token)
+    audit_log(
+        action="login_success",
+        user_id=str(user.id),
+        actor_label=user.email,
+        ip_address=ip,
+        user_agent=ua[:512] if ua else None,
+        details={"source": "agent_registration"},
+    )
+    logger.info("agent_registered", agent_id=str(agent.id), user_id=str(user.id))
+    return TokenResponse(
+        access_token=access_token,
+        user=UserRead(id=str(user.id), email=user.email, login=user.login, role=user.role),
+    )
+
+
 @router.post("/register", response_model=RegisterResponse, status_code=201)
 @limiter.limit("3/minute")
 async def register(
@@ -155,7 +324,7 @@ async def register(
 
     # Публичная форма регистрации требует капчу, если ключ сконфигурирован.
     # Bearer-токен админа оставлен как совместимый обход для служебных сценариев.
-    is_admin_bypass = current_user is not None and current_user.role == "admin"
+    is_admin_bypass = current_user is not None and current_user.role in ("admin", "super_admin")
     if not is_admin_bypass and settings.YANDEX_CAPTCHA_SECRET_KEY:
         from app.services.captcha_service import verify_captcha
 
@@ -201,6 +370,11 @@ async def register(
     db.add(partner)
     await db.flush()
 
+    if body.agent_code:
+        from app.services.agent_service import link_partner_by_code
+
+        await link_partner_by_code(db, partner, body.agent_code)
+
     from app.services.chat_service import ensure_rooms_for_partner
 
     await ensure_rooms_for_partner(db, str(partner.id))
@@ -211,7 +385,7 @@ async def register(
                 select(User)
                 .outerjoin(NotificationPreference, NotificationPreference.user_id == User.id)
                 .where(
-                    User.role == "admin",
+                    User.role.in_(["admin", "super_admin"]),
                     User.is_active.is_(True),
                     or_(
                         NotificationPreference.user_id.is_(None),

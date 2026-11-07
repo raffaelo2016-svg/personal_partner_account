@@ -18,8 +18,23 @@ def _validate_password_strength(value: str) -> str:
 
 
 class LoginRequest(BaseModel):
-    email: EmailStr
+    """Вход по почте или логину. Поля email/login сохранены для совместимости."""
+
+    email: EmailStr | None = None
+    login: str | None = Field(default=None, max_length=32)
+    identifier: str | None = Field(default=None, max_length=255)
     password: str = Field(min_length=1)
+    captcha_token: str | None = Field(default=None, max_length=4096)
+
+    @model_validator(mode="after")
+    def _require_identifier(self) -> Self:
+        if not (self.identifier or self.email or self.login):
+            raise ValueError("Укажите почту или логин")
+        return self
+
+    @property
+    def resolved_identifier(self) -> str:
+        return (self.identifier or self.email or self.login or "").strip().lower()
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -56,6 +71,7 @@ class RefreshResponse(BaseModel):
 class UserRead(BaseModel):
     id: str
     email: str
+    login: str | None = None
     role: UserRole
     company_name: str | None = None
 
@@ -70,6 +86,8 @@ class RegisterRequest(BaseModel):
     @classmethod
     def _check_password(cls, v: str) -> str:
         return _validate_password_strength(v)
+
+    agent_code: str | None = Field(default=None, max_length=16)
 
     partner_type: str = Field(default="individual", pattern=r"^(individual|legal|entrepreneur)$")
     company_name: str = Field(min_length=1, max_length=255)

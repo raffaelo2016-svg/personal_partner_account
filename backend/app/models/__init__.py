@@ -1,3 +1,4 @@
+from app.models.agent import Agent, AgentAccrual, AgentPayoutRequest
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bitrix_installation import BitrixInstallation
@@ -7,6 +8,7 @@ from app.models.client import Client
 from app.models.client_status_log import ClientStatusLog
 from app.models.court_fee import CourtFee
 from app.models.file_upload import FileUpload
+from app.models.invite import BootstrapToken, Invite
 from app.models.news import NewsPost, NewsReceipt
 from app.models.notification import Notification
 from app.models.partner import Partner
@@ -17,12 +19,16 @@ from app.models.transaction import Transaction
 from app.models.user import User
 
 __all__ = [
+    "Agent",
+    "AgentAccrual",
+    "AgentPayoutRequest",
     "AuditLog",
     "Base",
     "BitrixInstallation",
     "BitrixEntityMap",
     "BitrixInboundEvent",
     "BitrixOutboxOperation",
+    "BootstrapToken",
     "ChatMessage",
     "ChatMessageEvent",
     "ChatRoom",
@@ -32,6 +38,7 @@ __all__ = [
     "FAQ",
     "FileUpload",
     "ImportantNote",
+    "Invite",
     "Instruction",
     "LoginHistory",
     "Notification",
