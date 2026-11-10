@@ -1,3 +1,6 @@
 @import './fonts.css';
 @import './tailwind.css';
 @import './theme.css';
+/* Фолбэк палитры для браузеров без oklch()/color-mix() — должен идти последним,
+   чтобы непривязанные к слоям правила перекрывали @layer theme. */
+@import './legacy-colors.css';

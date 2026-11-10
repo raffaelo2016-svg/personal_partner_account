@@ -1,0 +1,289 @@
+/*
+ * СГЕНЕРИРОВАННЫЙ ФАЙЛ — правьте scripts/generate_legacy_colors.py.
+ *
+ * Фолбэк цветов для браузеров без поддержки oklch()/color-mix():
+ * Chrome/Edge < 111, Safari < 16.4, Firefox < 113, старые сборки
+ * Chromium-браузеров (устаревшие Яндекс.Браузер, Opera, WebView и т.п.).
+ *
+ * Без него все цвета палитры становятся невалидными: фон кнопок — прозрачный,
+ * текст — белым на белом, и кнопка «Создать карточку клиента» есть в DOM,
+ * но не видна. Значения пересчитаны oklch → sRGB из палитры Tailwind,
+ * поэтому в старых браузерах цвета выглядят так же, как в современных.
+ *
+ * В браузерах с поддержкой oklch() блок целиком пропускается.
+ */
+@supports not (color: oklch(0% 0 0)) {
+  :root {
+    --color-amber-100: #fef3c6;
+    --color-amber-200: #fee685;
+    --color-amber-300: #ffd230;
+    --color-amber-400: #ffb900;
+    --color-amber-50: #fffbeb;
+    --color-amber-500: #fe9a00;
+    --color-amber-600: #e17100;
+    --color-amber-700: #bb4d00;
+    --color-amber-800: #973c00;
+    --color-amber-900: #7b3306;
+    --color-black: #000000;
+    --color-blue-100: #dbeafe;
+    --color-blue-200: #bedbff;
+    --color-blue-300: #8ec5ff;
+    --color-blue-400: #51a2ff;
+    --color-blue-50: #eff6ff;
+    --color-blue-500: #2b7fff;
+    --color-blue-600: #155dfc;
+    --color-blue-700: #1447e6;
+    --color-blue-800: #193cb8;
+    --color-blue-900: #1c398e;
+    --color-blue-950: #162456;
+    --color-cyan-100: #cefafe;
+    --color-cyan-200: #a2f4fd;
+    --color-cyan-400: #00d3f2;
+    --color-cyan-50: #ecfeff;
+    --color-cyan-500: #00b8db;
+    --color-cyan-600: #0092b8;
+    --color-cyan-700: #007595;
+    --color-emerald-100: #d0fae5;
+    --color-emerald-200: #a4f4cf;
+    --color-emerald-300: #5ee9b5;
+    --color-emerald-400: #00d492;
+    --color-emerald-50: #ecfdf5;
+    --color-emerald-500: #00bc7d;
+    --color-emerald-600: #009966;
+    --color-emerald-700: #007a55;
+    --color-emerald-800: #006045;
+    --color-emerald-900: #004f3b;
+    --color-gray-100: #f3f4f6;
+    --color-gray-200: #e5e7eb;
+    --color-gray-300: #d1d5dc;
+    --color-gray-400: #99a1af;
+    --color-gray-50: #f9fafb;
+    --color-gray-500: #6a7282;
+    --color-gray-600: #4a5565;
+    --color-gray-700: #364153;
+    --color-gray-800: #1e2939;
+    --color-gray-900: #101828;
+    --color-gray-950: #030712;
+    --color-green-100: #dcfce7;
+    --color-green-200: #b9f8cf;
+    --color-green-300: #7bf1a8;
+    --color-green-400: #05df72;
+    --color-green-50: #f0fdf4;
+    --color-green-500: #00c950;
+    --color-green-600: #00a63e;
+    --color-green-700: #008236;
+    --color-green-900: #0d542b;
+    --color-indigo-100: #e0e7ff;
+    --color-indigo-200: #c6d2ff;
+    --color-indigo-300: #a3b3ff;
+    --color-indigo-400: #7c86ff;
+    --color-indigo-50: #eef2ff;
+    --color-indigo-500: #615fff;
+    --color-indigo-600: #4f39f6;
+    --color-indigo-700: #432dd7;
+    --color-orange-100: #ffedd4;
+    --color-orange-200: #ffd6a7;
+    --color-orange-400: #ff8904;
+    --color-orange-50: #fff7ed;
+    --color-orange-500: #ff6900;
+    --color-orange-600: #f54900;
+    --color-orange-700: #ca3500;
+    --color-pink-50: #fdf2f8;
+    --color-pink-500: #f6339a;
+    --color-pink-600: #e60076;
+    --color-pink-700: #c6005c;
+    --color-purple-100: #f3e8ff;
+    --color-purple-200: #e9d4ff;
+    --color-purple-400: #c27aff;
+    --color-purple-50: #faf5ff;
+    --color-purple-500: #ad46ff;
+    --color-purple-600: #9810fa;
+    --color-purple-700: #8200db;
+    --color-red-100: #ffe2e2;
+    --color-red-200: #ffc9c9;
+    --color-red-300: #ffa2a2;
+    --color-red-400: #ff6467;
+    --color-red-50: #fef2f2;
+    --color-red-500: #fb2c36;
+    --color-red-600: #e7000b;
+    --color-red-700: #c10007;
+    --color-red-800: #9f0712;
+    --color-red-900: #82181a;
+    --color-sky-100: #dff2fe;
+    --color-sky-200: #b8e6fe;
+    --color-sky-50: #f0f9ff;
+    --color-sky-500: #00a6f4;
+    --color-sky-700: #0069a8;
+    --color-slate-100: #f1f5f9;
+    --color-slate-200: #e2e8f0;
+    --color-slate-300: #cad5e2;
+    --color-slate-400: #90a1b9;
+    --color-slate-50: #f8fafc;
+    --color-slate-500: #62748e;
+    --color-slate-600: #45556c;
+    --color-slate-700: #314158;
+    --color-slate-800: #1d293d;
+    --color-slate-900: #0f172b;
+    --color-teal-100: #cbfbf1;
+    --color-teal-200: #96f7e4;
+    --color-teal-50: #f0fdfa;
+    --color-teal-500: #00bba7;
+    --color-teal-600: #009689;
+    --color-teal-700: #00786f;
+    --color-violet-100: #ede9fe;
+    --color-violet-200: #ddd6ff;
+    --color-violet-400: #a684ff;
+    --color-violet-50: #f5f3ff;
+    --color-violet-500: #8e51ff;
+    --color-violet-600: #7f22fe;
+    --color-violet-700: #7008e7;
+    --color-white: #ffffff;
+    --color-yellow-100: #fef9c2;
+    --color-yellow-200: #fff085;
+    --color-yellow-300: #ffdf20;
+    --color-yellow-400: #fdc700;
+    --color-yellow-50: #fefce8;
+    --color-yellow-500: #f0b100;
+    --color-yellow-600: #d08700;
+    --color-yellow-700: #a65f00;
+    --color-yellow-800: #894b00;
+    --color-yellow-900: #733e0a;
+    --accent: #e9ebef;
+    --accent-foreground: #030213;
+    --background: #ffffff;
+    --border: rgba(0, 0, 0, 0.1);
+    --card: #ffffff;
+    --card-foreground: #0a0a0a;
+    --destructive: #d4183d;
+    --foreground: #0a0a0a;
+    --input-background: #f3f3f5;
+    --muted: #ececf0;
+    --muted-foreground: #717182;
+    --popover: #ffffff;
+    --popover-foreground: #0a0a0a;
+    --primary: #030213;
+    --primary-foreground: #ffffff;
+    --ring: #a1a1a1;
+    --secondary: #eceef2;
+    --secondary-foreground: #030213;
+    --sidebar: #fafafa;
+    --sidebar-accent: #f5f5f5;
+    --sidebar-accent-foreground: #171717;
+    --sidebar-border: #e5e5e5;
+    --sidebar-foreground: #0a0a0a;
+    --sidebar-ring: #a1a1a1;
+    --switch-background: #cbced4;
+  }
+
+  .dark {
+    --accent: #262626;
+    --accent-foreground: #fafafa;
+    --background: #0a0a0a;
+    --border: #262626;
+    --card: #0a0a0a;
+    --card-foreground: #fafafa;
+    --destructive: #82181a;
+    --foreground: #fafafa;
+    --input: #262626;
+    --muted: #262626;
+    --muted-foreground: #a1a1a1;
+    --popover: #0a0a0a;
+    --popover-foreground: #fafafa;
+    --primary: #fafafa;
+    --primary-foreground: #171717;
+    --ring: #525252;
+    --secondary: #262626;
+    --secondary-foreground: #fafafa;
+    --sidebar: #171717;
+    --sidebar-accent: #262626;
+    --sidebar-accent-foreground: #fafafa;
+    --sidebar-border: #262626;
+    --sidebar-foreground: #fafafa;
+    --sidebar-ring: #525252;
+  }
+
+  /* Полупрозрачные фоны и рамки (в Tailwind — через color-mix) */
+  .\[\&_\.recharts-cartesian-grid_line\[stroke\=\'\#ccc\'\]\]\:stroke-border\/50 .recharts-cartesian-grid line[stroke="#ccc"] { stroke: rgba(0, 0, 0, 0.05); }
+  .aria-invalid\:ring-destructive\/20[aria-invalid=true] { --tw-ring-color: rgba(212, 24, 61, 0.2); }
+  .bg-black\/10 { background-color: rgba(0, 0, 0, 0.1); }
+  .bg-black\/40 { background-color: rgba(0, 0, 0, 0.4); }
+  .bg-black\/50 { background-color: rgba(0, 0, 0, 0.5); }
+  .bg-black\/70 { background-color: rgba(0, 0, 0, 0.7); }
+  .bg-blue-50\/45 { background-color: rgba(239, 246, 255, 0.45); }
+  .bg-emerald-50\/50 { background-color: rgba(236, 253, 245, 0.5); }
+  .bg-gray-50\/70 { background-color: rgba(249, 250, 251, 0.7); }
+  .bg-gray-950\/35 { background-color: rgba(3, 7, 18, 0.35); }
+  .bg-indigo-50\/40 { background-color: rgba(238, 242, 255, 0.4); }
+  .bg-muted\/50 { background-color: rgba(236, 236, 240, 0.5); }
+  .bg-primary\/20 { background-color: rgba(3, 2, 19, 0.2); }
+  .bg-red-50\/45 { background-color: rgba(254, 242, 242, 0.45); }
+  .bg-red-50\/70 { background-color: rgba(254, 242, 242, 0.7); }
+  .bg-sky-50\/60 { background-color: rgba(240, 249, 255, 0.6); }
+  .bg-slate-900\/45 { background-color: rgba(15, 23, 43, 0.45); }
+  .bg-violet-50\/45 { background-color: rgba(245, 243, 255, 0.45); }
+  .bg-white\/10 { background-color: rgba(255, 255, 255, 0.1); }
+  .bg-white\/15 { background-color: rgba(255, 255, 255, 0.15); }
+  .bg-white\/20 { background-color: rgba(255, 255, 255, 0.2); }
+  .bg-white\/50 { background-color: rgba(255, 255, 255, 0.5); }
+  .bg-white\/70 { background-color: rgba(255, 255, 255, 0.7); }
+  .bg-white\/80 { background-color: rgba(255, 255, 255, 0.8); }
+  .border-border\/50 { border-color: rgba(0, 0, 0, 0.05); }
+  .border-gray-300\/50 { border-color: rgba(209, 213, 220, 0.5); }
+  .border-white\/30 { border-color: rgba(255, 255, 255, 0.3); }
+  .border-white\/50 { border-color: rgba(255, 255, 255, 0.5); }
+  .border-white\/80 { border-color: rgba(255, 255, 255, 0.8); }
+  .dark\:aria-invalid\:ring-destructive\/40:is(.dark *)[aria-invalid=true] { --tw-ring-color: rgba(130, 24, 26, 0.4); }
+  .dark\:bg-destructive\/60:is(.dark *) { background-color: rgba(130, 24, 26, 0.6); }
+  .dark\:bg-input\/30:is(.dark *) { background-color: rgba(38, 38, 38, 0.3); }
+  .dark\:data-\[active\=true\]\:aria-invalid\:ring-destructive\/40:is(.dark *)[data-active=true][aria-invalid=true] { --tw-ring-color: rgba(130, 24, 26, 0.4); }
+  .dark\:data-\[state\=active\]\:bg-input\/30:is(.dark *)[data-state=active] { background-color: rgba(38, 38, 38, 0.3); }
+  .dark\:data-\[state\=unchecked\]\:bg-input\/80:is(.dark *)[data-state=unchecked] { background-color: rgba(38, 38, 38, 0.8); }
+  .dark\:data-\[variant\=destructive\]\:focus\:bg-destructive\/20:is(.dark *)[data-variant=destructive]:focus { background-color: rgba(130, 24, 26, 0.2); }
+  .dark\:focus-visible\:ring-destructive\/40:is(.dark *):focus-visible { --tw-ring-color: rgba(130, 24, 26, 0.4); }
+  .dark\:hover\:bg-accent\/50:is(.dark *):hover { background-color: rgba(38, 38, 38, 0.5); }
+  .dark\:hover\:bg-input\/50:is(.dark *):hover { background-color: rgba(38, 38, 38, 0.5); }
+  .data-\[active\=true\]\:aria-invalid\:ring-destructive\/20[data-active=true][aria-invalid=true] { --tw-ring-color: rgba(212, 24, 61, 0.2); }
+  .data-\[active\=true\]\:bg-accent\/50[data-active=true] { background-color: rgba(233, 235, 239, 0.5); }
+  .data-\[active\=true\]\:ring-ring\/50[data-active=true] { --tw-ring-color: rgba(161, 161, 161, 0.5); }
+  .data-\[state\=open\]\:bg-accent\/50[data-state=open] { background-color: rgba(233, 235, 239, 0.5); }
+  .data-\[variant\=destructive\]\:focus\:bg-destructive\/10[data-variant=destructive]:focus { background-color: rgba(212, 24, 61, 0.1); }
+  .focus-visible\:ring-destructive\/20:focus-visible { --tw-ring-color: rgba(212, 24, 61, 0.2); }
+  .focus-visible\:ring-ring\/50:focus-visible { --tw-ring-color: rgba(161, 161, 161, 0.5); }
+  .focus\:ring-blue-500\/20:focus { --tw-ring-color: rgba(43, 127, 255, 0.2); }
+  .from-white\/40 { --tw-gradient-from: rgba(255, 255, 255, 0.4); }
+  .hover\:bg-blue-50\/20:hover { background-color: rgba(239, 246, 255, 0.2); }
+  .hover\:bg-blue-50\/30:hover { background-color: rgba(239, 246, 255, 0.3); }
+  .hover\:bg-blue-50\/40:hover { background-color: rgba(239, 246, 255, 0.4); }
+  .hover\:bg-destructive\/90:hover { background-color: rgba(212, 24, 61, 0.9); }
+  .hover\:bg-gray-50\/60:hover { background-color: rgba(249, 250, 251, 0.6); }
+  .hover\:bg-muted\/50:hover { background-color: rgba(236, 236, 240, 0.5); }
+  .hover\:bg-primary\/90:hover { background-color: rgba(3, 2, 19, 0.9); }
+  .hover\:bg-secondary\/80:hover { background-color: rgba(236, 238, 242, 0.8); }
+  .hover\:bg-slate-700\/50:hover { background-color: rgba(49, 65, 88, 0.5); }
+  .hover\:bg-white\/20:hover { background-color: rgba(255, 255, 255, 0.2); }
+  .ring-blue-500\/20 { --tw-ring-color: rgba(43, 127, 255, 0.2); }
+  .ring-ring\/50 { --tw-ring-color: rgba(161, 161, 161, 0.5); }
+  .shadow-amber-400\/30 { --tw-shadow-color: rgba(255, 185, 0, 0.3); }
+  .shadow-amber-500\/50 { --tw-shadow-color: rgba(254, 154, 0, 0.5); }
+  .shadow-blue-400\/30 { --tw-shadow-color: rgba(81, 162, 255, 0.3); }
+  .shadow-blue-500\/50 { --tw-shadow-color: rgba(43, 127, 255, 0.5); }
+  .shadow-cyan-400\/30 { --tw-shadow-color: rgba(0, 211, 242, 0.3); }
+  .shadow-cyan-500\/50 { --tw-shadow-color: rgba(0, 184, 219, 0.5); }
+  .shadow-emerald-400\/30 { --tw-shadow-color: rgba(0, 212, 146, 0.3); }
+  .shadow-emerald-500\/50 { --tw-shadow-color: rgba(0, 188, 125, 0.5); }
+  .shadow-gray-200\/40 { --tw-shadow-color: rgba(229, 231, 235, 0.4); }
+  .shadow-gray-200\/50 { --tw-shadow-color: rgba(229, 231, 235, 0.5); }
+  .shadow-gray-300\/20 { --tw-shadow-color: rgba(209, 213, 220, 0.2); }
+  .shadow-gray-400\/30 { --tw-shadow-color: rgba(153, 161, 175, 0.3); }
+  .shadow-green-400\/30 { --tw-shadow-color: rgba(5, 223, 114, 0.3); }
+  .shadow-green-500\/50 { --tw-shadow-color: rgba(0, 201, 80, 0.5); }
+  .shadow-indigo-300\/50 { --tw-shadow-color: rgba(163, 179, 255, 0.5); }
+  .shadow-indigo-400\/30 { --tw-shadow-color: rgba(124, 134, 255, 0.3); }
+  .shadow-indigo-500\/50 { --tw-shadow-color: rgba(97, 95, 255, 0.5); }
+  .shadow-orange-400\/30 { --tw-shadow-color: rgba(255, 137, 4, 0.3); }
+  .shadow-orange-500\/50 { --tw-shadow-color: rgba(255, 105, 0, 0.5); }
+  .shadow-purple-400\/30 { --tw-shadow-color: rgba(194, 122, 255, 0.3); }
+  .shadow-purple-500\/50 { --tw-shadow-color: rgba(173, 70, 255, 0.5); }
+  .text-sidebar-foreground\/70 { color: rgba(10, 10, 10, 0.7); }
+  .via-white\/30 { --tw-gradient-via: rgba(255, 255, 255, 0.3); }
+}
