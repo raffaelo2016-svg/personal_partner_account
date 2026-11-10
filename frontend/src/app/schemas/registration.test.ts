@@ -176,6 +176,7 @@ describe('flattenZodErrors', () => {
   it('returns empty object for successful parse', () => {
     const valid = {
       partnerType: 'legal' as const,
+      region: 'Москва',
       companyName: 'ООО Ромашка',
       inn: '1234567890',
       kpp: '770401001',
