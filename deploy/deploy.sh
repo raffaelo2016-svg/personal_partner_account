@@ -110,7 +110,26 @@ if [ -f "$APP_DIR/.env" ]; then
     esac
   done < "$APP_DIR/.env"
 fi
-VITE_API_URL=https://finzdorovie.ru/api/v1 npm run build
+# Собираем в отдельный каталог релиза и переключаем симлинк атомарно.
+# Раньше сборка шла прямо в живой dist (симлинк), и пока vite перезаписывал
+# файлы, nginx отдавал наполовину собранный каталог — часть ассетов 404.
+# Теперь nginx в любой момент видит либо старый релиз целиком, либо новый.
+RELEASE_NAME="release-$(date -u +%Y%m%dT%H%M%SZ)"
+RELEASE_DIR="releases/$RELEASE_NAME"
+PREVIOUS_RELEASE="$(readlink dist || true)"
+mkdir -p releases
+npx tsc --noEmit
+VITE_API_URL=https://finzdorovie.ru/api/v1 npx vite build --outDir "$RELEASE_DIR" --emptyOutDir
+ln -sfn "$RELEASE_DIR" dist.new
+mv -T dist.new dist
+echo "  release: $RELEASE_DIR"
+echo "  previous: ${PREVIOUS_RELEASE:-none} (для отката: ln -sfn <previous> dist.new && mv -T dist.new dist)"
+
+# Старые релизы не удаляем автоматически: это точки отката. Только показываем,
+# сколько их и сколько занимают — чистку делаем руками, осознанно.
+RELEASES_COUNT="$(find releases -mindepth 1 -maxdepth 1 -type d | wc -l)"
+RELEASES_SIZE="$(du -sh releases 2>/dev/null | cut -f1 || true)"
+echo "  releases: ${RELEASES_COUNT} шт., ${RELEASES_SIZE}"
 cd ..
 
 echo "[nginx] Sync configs and reload if changed"
