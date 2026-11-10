@@ -27,6 +27,7 @@ class ClientStatus(StrEnum):
     RESTRUCTURING = "restructuring"
     AUCTION = "auction"
     REALIZATION = "realization"
+    COMPLETED = "completed"
 
 
 class TaskStatus(StrEnum):

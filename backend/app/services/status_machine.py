@@ -19,7 +19,8 @@ STATUS_TRANSITIONS: dict[ClientStatus, list[ClientStatus]] = {
     ClientStatus.WAITING_HEARING: [ClientStatus.RESTRUCTURING, ClientStatus.DOCUMENTS_DECISION],
     ClientStatus.RESTRUCTURING: [ClientStatus.AUCTION, ClientStatus.WAITING_HEARING],
     ClientStatus.AUCTION: [ClientStatus.REALIZATION, ClientStatus.RESTRUCTURING],
-    ClientStatus.REALIZATION: [ClientStatus.AUCTION],
+    ClientStatus.REALIZATION: [ClientStatus.AUCTION, ClientStatus.COMPLETED],
+    ClientStatus.COMPLETED: [ClientStatus.REALIZATION],
 }
 
 STAGE_ORDER: list[ClientStatus] = [
@@ -31,6 +32,7 @@ STAGE_ORDER: list[ClientStatus] = [
     ClientStatus.RESTRUCTURING,
     ClientStatus.AUCTION,
     ClientStatus.REALIZATION,
+    ClientStatus.COMPLETED,
 ]
 
 

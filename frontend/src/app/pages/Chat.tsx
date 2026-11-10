@@ -1,6 +1,6 @@
 import { decodeChatText } from '@/app/utils/chatText';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X, LifeBuoy } from 'lucide-react';
+import { Send, User, Bot, Loader2, WifiOff, Paperclip, FileText, X, LifeBuoy, Check } from 'lucide-react';
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import {
   fetchChatRooms,
@@ -14,7 +14,7 @@ import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, formatFileSize, FILE_SIZE_LIMITS_LABEL, partitionFiles } from '../utils/files';
 
 const PAGE_SIZE = 20;
 
@@ -137,12 +137,12 @@ export default function Chat() {
     const { valid, invalidFormat, tooLarge } = partitionFiles(files);
     if (invalidFormat.length > 0) {
       setSelectedFile(null);
-      setFileError('Можно прикрепить PDF, JPG, PNG, DOC, DOCX или ZIP');
+      setFileError('Можно прикрепить PDF, JPG, PNG, DOC, DOCX, ZIP или MP3');
       return;
     }
     if (tooLarge.length > 0) {
       setSelectedFile(null);
-      setFileError(`Файл должен быть не больше ${MAX_FILE_SIZE_LABEL}`);
+      setFileError(`Превышен допустимый размер файла. ${FILE_SIZE_LIMITS_LABEL}.`);
       return;
     }
     setSelectedFile(valid[0] ?? null);
@@ -155,6 +155,7 @@ export default function Chat() {
         href={msg.attachment_url}
         target="_blank"
         rel="noreferrer"
+        translate="no"
         className={`mt-2 flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
           isOwn
             ? 'border-blue-400 bg-blue-500 hover:bg-blue-700 text-white'
@@ -208,6 +209,7 @@ export default function Chat() {
             return (
               <button
                 key={room.id}
+                translate="no"
                 onClick={() => { setActiveRoomId(room.id); clearWsMessages(); isInitialLoad.current = true; }}
                 className={`w-full p-4 flex items-center gap-3 border-b border-gray-100 transition-colors ${
                   activeRoomId === room.id ? 'bg-blue-50 hover:bg-blue-50' : 'hover:bg-gray-50'
@@ -234,7 +236,7 @@ export default function Chat() {
           <div className={`w-10 h-10 ${isCurrentRoomActive ? activeConfig.color : 'bg-gray-300'} rounded-full flex items-center justify-center`}>
             <ActiveIcon className="w-5 h-5 text-white" />
           </div>
-          <div>
+          <div translate="no">
             <h3 className="font-semibold text-gray-900">{activeConfig.name}</h3>
             <p className="text-sm text-gray-600">{activeConfig.description}</p>
           </div>
@@ -250,10 +252,20 @@ export default function Chat() {
           )}
           {allMessages.map((msg) => {
             const isUser = msg.sender_type === 'user';
+            if (msg.sender_type === 'system') {
+              return (
+                <div key={msg.id} className="flex justify-center px-4">
+                  <div className="inline-flex max-w-full items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800">
+                    <Check className="h-3.5 w-3.5 flex-shrink-0" />
+                    <span className="break-words">{decodeChatText(msg.text)}</span>
+                  </div>
+                </div>
+              );
+            }
             return (
               <div key={msg.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                 <div className="max-w-md">
-                  <div className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
+                  <div translate="no" className={`rounded-2xl px-4 py-3 ${isUser ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
                     {msg.text ? <p>{decodeChatText(msg.text)}</p> : null}
                     {renderAttachment(msg, isUser)}
                   </div>
@@ -276,7 +288,7 @@ export default function Chat() {
             <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-blue-100 bg-blue-50 px-3 py-2">
               <div className="flex min-w-0 items-center gap-2">
                 <FileText className="w-4 h-4 text-blue-600 flex-shrink-0" />
-                <span className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
+                <span translate="no" className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
                 <span className="text-xs text-gray-500 flex-shrink-0">{formatFileSize(selectedFile.size)}</span>
               </div>
               <button
@@ -309,7 +321,7 @@ export default function Chat() {
             >
               <Paperclip className="w-5 h-5" />
             </button>
-            <input type="text" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
+            <input type="text" translate="no" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
               placeholder="Введите сообщение..." className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
             <button type="submit" disabled={sendMutation.isPending}
               className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 disabled:opacity-50">

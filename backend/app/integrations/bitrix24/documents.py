@@ -23,15 +23,16 @@ from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
 from app.models.client import Client
+from app.models.file_deletion_tombstone import FileDeletionTombstone
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.services.audit import audit_log
 from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
 from app.validation.files import (
     ALLOWED_EXTENSIONS,
-    MAX_FILE_SIZE_BYTES,
     file_extension,
     has_valid_signature,
+    max_file_size_for_filename,
     mime_type_for_filename,
 )
 
@@ -165,6 +166,19 @@ async def _has_file_mapping(db: AsyncSession, file_id: uuid.UUID, member_id: str
     )
 
 
+async def _is_deleted_disk_file(db: AsyncSession, client_id: uuid.UUID, disk_file_id: str) -> bool:
+    """A document deleted in the cabinet must not be imported back from the CRM."""
+    return (
+        await db.scalar(
+            select(FileDeletionTombstone.id).where(
+                FileDeletionTombstone.client_id == client_id,
+                FileDeletionTombstone.bitrix_disk_file_id == disk_file_id,
+            )
+        )
+        is not None
+    )
+
+
 async def schedule_file_creation(db: AsyncSession, record: FileUpload, *, retry: bool = False) -> bool:
     installation = await active_installation(db)
     if installation is None:
@@ -277,20 +291,40 @@ def _object_id(value: Any) -> str | None:
     return str(candidate).strip() if candidate is not None and str(candidate).strip() else None
 
 
+def _folder_name(child: dict[str, Any]) -> str:
+    return str(child.get("NAME") or child.get("name") or "")
+
+
 async def _find_folder_child(client: Bitrix24Client, parent_id: str, name: str) -> dict[str, Any] | None:
+    """Resolve a folder by name, tolerating case-only renames of the card.
+
+    Bitrix24 keeps folder names unique per parent without regard to letter case,
+    so a partner renamed from ``евлахов …`` to ``Евлахов …`` still owns the same
+    folder. Fetch the children unfiltered: the portal's NAME filter is not
+    guaranteed to be case-insensitive, and the parent lists stay small.
+    """
     children = await client.list_all(
         "disk.folder.getchildren",
-        {"id": parent_id, "filter": {"NAME": name}},
+        {"id": parent_id},
         max_pages=20,
     )
+    same_case: dict[str, Any] | None = None
+    folded: list[dict[str, Any]] = []
     for child in children:
         if not isinstance(child, dict):
             continue
         if str(child.get("TYPE") or child.get("type") or "").lower() != "folder":
             continue
-        if str(child.get("NAME") or child.get("name") or "") == name and _object_id(child):
-            return child
-    return None
+        if not _object_id(child):
+            continue
+        child_name = _folder_name(child)
+        if child_name == name:
+            same_case = child
+        elif child_name.casefold() == name.casefold():
+            folded.append(child)
+    if same_case is not None:
+        return same_case
+    return folded[0] if len(folded) == 1 else None
 
 
 async def _ensure_subfolder(client: Bitrix24Client, parent_id: str, name: str) -> dict[str, Any]:
@@ -508,6 +542,13 @@ def _activity_files(activity: dict[str, Any]) -> list[dict[str, Any]]:
     return [item if isinstance(item, dict) else {"ID": item} for item in values if item]
 
 
+def _is_call_activity(activity: dict[str, Any]) -> bool:
+    """Keep automatic call recordings in Bitrix24, outside partner documents."""
+    activity_type = str(activity.get("TYPE_ID") or activity.get("typeId") or "").strip()
+    provider = str(activity.get("PROVIDER_ID") or activity.get("providerId") or "").strip().upper()
+    return activity_type == "2" or provider == "VOXIMPLANT_CALL"
+
+
 def _activity_deal_id(activity: dict[str, Any]) -> str | None:
     owner_type = str(activity.get("OWNER_TYPE_ID") or activity.get("ownerTypeId") or "")
     owner_id = str(activity.get("OWNER_ID") or activity.get("ownerId") or "").strip()
@@ -574,6 +615,8 @@ async def _import_remote_files(
         disk_file_id = str(item.get("id") or item.get("ID") or "").strip()
         if not disk_file_id:
             return _mark_inbound_failure(receipt, "REMOTE_FILE_ID_MISSING")
+        if await _is_deleted_disk_file(db, local_client.id, disk_file_id):
+            continue
         remote_reference = f"{parent_id}:{disk_file_id}"
         existing_mapping = await db.scalar(
             select(BitrixEntityMap.id).where(
@@ -595,10 +638,11 @@ async def _import_remote_files(
             announced_size = int(info.get("SIZE") or info.get("size") or item.get("size") or 0)
         except (TypeError, ValueError):
             return _mark_inbound_failure(receipt, "INVALID_FILE_RESPONSE")
-        if announced_size > MAX_FILE_SIZE_BYTES:
+        max_size = max_file_size_for_filename(name)
+        if announced_size > max_size:
             return _mark_inbound_failure(receipt, "FILE_TOO_LARGE")
         download_url = str(info.get("DOWNLOAD_URL") or info.get("downloadUrl") or "")
-        data = await remote.download_file(download_url, max_bytes=MAX_FILE_SIZE_BYTES)
+        data = await remote.download_file(download_url, max_bytes=max_size)
         extension = file_extension(name)
         if not has_valid_signature(data, extension):
             return _mark_inbound_failure(receipt, "INVALID_FILE_CONTENT")
@@ -707,6 +751,15 @@ async def import_initial_documents_from_folder(
                 select(FileUpload.bitrix_disk_file_id).where(
                     FileUpload.client_id == local_client.id,
                     FileUpload.bitrix_disk_file_id.is_not(None),
+                )
+            )
+        ).all()
+    )
+    known_file_ids.update(
+        (
+            await db.scalars(
+                select(FileDeletionTombstone.bitrix_disk_file_id).where(
+                    FileDeletionTombstone.client_id == local_client.id
                 )
             )
         ).all()
@@ -893,6 +946,11 @@ async def process_crm_activity_add_event(db: AsyncSession, receipt: BitrixInboun
         token = await _installation_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, token) as remote:
             activity = await _read_crm_activity(remote, activity_id)
+            if _is_call_activity(activity):
+                receipt.status = "ignored"
+                receipt.processed_at = datetime.now(UTC)
+                receipt.attempts += 1
+                return True
             if FILE_MARKER_PREFIX in str(activity.get("DESCRIPTION") or activity.get("description") or ""):
                 receipt.status = "ignored"
                 receipt.processed_at = datetime.now(UTC)

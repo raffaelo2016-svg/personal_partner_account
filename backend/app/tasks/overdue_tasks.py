@@ -1,10 +1,10 @@
 import structlog
-from sqlalchemy import update
+from sqlalchemy import func, select
 
 from app.celery_app import celery
 from app.config import settings
-from app.core.time import moscow_today
 from app.models.task import Task
+from app.services.task_service import _overdue_condition
 
 logger = structlog.get_logger()
 
@@ -18,12 +18,8 @@ def check_overdue_tasks():
     engine = create_engine(sync_url)
 
     with Session(engine) as session:
-        result = session.execute(
-            update(Task)
-            .where(Task.due_date < moscow_today(), Task.status.in_(["pending", "in_progress"]))
-            .values(status="overdue")
-            .returning(Task.id)
-        )
-        updated_ids = [str(row[0]) for row in result]
-        session.commit()
-        logger.info("overdue_tasks_checked", marked_overdue=len(updated_ids))
+        # Overdue is a deadline projection, not a lifecycle status: preserving
+        # in_progress lets a later deadline extension restore the correct state.
+        count = session.scalar(select(func.count()).select_from(Task).where(_overdue_condition())) or 0
+        logger.info("overdue_tasks_checked", overdue=count)
+    engine.dispose()

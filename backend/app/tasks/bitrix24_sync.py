@@ -18,7 +18,7 @@ from app.integrations.bitrix24.clients import retry_client_deal_events
 from app.integrations.bitrix24.documents import retry_document_events
 from app.integrations.bitrix24.partners import reconcile_remote_partner_profiles
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
-from app.integrations.bitrix24.tasks import reconcile_remote_tasks, retry_task_status_events
+from app.integrations.bitrix24.tasks import discover_remote_tasks, reconcile_remote_tasks, retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
 
 logger = structlog.get_logger()
@@ -121,6 +121,22 @@ async def _retry_task_events() -> tuple[int, int]:
 async def _reconcile_remote_tasks() -> dict[str, int]:
     async with async_session() as db:
         return await reconcile_remote_tasks(db, limit=settings.BITRIX_OUTBOX_BATCH_SIZE)
+
+
+async def _discover_partner_tasks() -> dict[str, int]:
+    async with async_session() as db:
+        return await discover_remote_tasks(db)
+
+
+@celery.task(name="app.tasks.bitrix24_sync.discover_bitrix_partner_tasks")
+def discover_bitrix_partner_tasks() -> dict[str, int]:
+    try:
+        result = _run_async(_discover_partner_tasks())
+    except Exception as exc:
+        logger.warning("bitrix_partner_task_discovery_failed", error_type=type(exc).__name__)
+        return {"scanned": 0, "imported": 0, "updated": 0, "failed": 1}
+    logger.info("bitrix_partner_tasks_discovered", **result)
+    return result
 
 
 async def _retry_client_events() -> tuple[int, int]:

@@ -192,7 +192,7 @@ async def bitrix24_handler(
                 await db.commit()
     logger.info(
         "bitrix_event_received",
-        event=event_name,
+        bitrix_event=event_name,
         member_id=member_id,
         duplicate=not created,
         event_receipt_id=str(event_id) if event_id else None,

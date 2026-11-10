@@ -12,7 +12,7 @@ from app.models.client import Client
 from app.models.court_fee import CourtFee
 from app.models.partner import Partner
 from app.models.transaction import Transaction
-from app.services.client_service import BEFORE_COURT_STATUSES, IN_COURT_STATUSES
+from app.services.client_service import BEFORE_COURT_STATUSES, COMPLETED_STATUSES, IN_COURT_STATUSES
 
 router = APIRouter(prefix="/admin/dashboard", tags=["admin-dashboard"])
 
@@ -103,22 +103,22 @@ async def admin_dashboard(
     client_stats_q = select(
         func.count().label("total"),
         func.count().label("new"),
-        func.count().filter(Client.status.notin_(["documents_collection", "realization"])).label("in_progress"),
-        func.count().filter(Client.status == "realization").label("completed"),
+        func.count().filter(Client.status.notin_(["documents_collection", *COMPLETED_STATUSES])).label("in_progress"),
+        func.count().filter(Client.status.in_(COMPLETED_STATUSES)).label("completed"),
     ).where(Client.deleted_at.is_(None), _in_period(Client.created_at))
     c_row = (await db.execute(client_stats_q)).one()
 
     client_flow_q = select(
         func.count().filter(Client.status.in_(BEFORE_COURT_STATUSES)).label("before_court"),
         func.count().filter(Client.status.in_(IN_COURT_STATUSES)).label("in_court"),
-        func.count().filter(Client.status == "realization").label("completed"),
+        func.count().filter(Client.status.in_(COMPLETED_STATUSES)).label("completed"),
     ).where(Client.deleted_at.is_(None), _in_period(Client.created_at))
     flow_row = (await db.execute(client_flow_q)).one()
 
     stale_before = datetime.combine(snapshot_date - timedelta(days=14), time.max)
     clients_without_movement_q = select(func.count()).where(
         Client.deleted_at.is_(None),
-        Client.status != "realization",
+        Client.status.notin_(COMPLETED_STATUSES),
         Client.created_at < upper_bound,
         Client.updated_at < stale_before,
     )

@@ -255,6 +255,7 @@ async def test_partner_registration_api_passes_agent_code(client, db_session):
             "password": PASSWORD,
             "agent_code": agent.code,
             "partner_type": "individual",
+            "region": "Москва",
             "company_name": "ИП Новый Партнёр",
             "director_name": "Новый Партнёр",
             "inn": "",

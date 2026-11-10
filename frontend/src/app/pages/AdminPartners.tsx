@@ -1,4 +1,4 @@
-import { Users, Mail, Phone, Calendar, Search, Filter, Plus, Loader2 } from 'lucide-react';
+import { Users, Mail, Phone, Calendar, Search, Filter, Plus, Loader2, Clock3 } from 'lucide-react';
 import { useState, useCallback, useMemo } from 'react';
 import { Link } from 'react-router';
 import CustomSelect from '../components/ui/CustomSelect';
@@ -246,13 +246,22 @@ export default function AdminPartners() {
             Всего партнеров: {stats?.total_partners ?? total}
           </p>
         </div>
-        <Link
-          to="/admin/partners/new"
-          className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
-        >
-          <Plus className="w-5 h-5" />
-          Добавить партнера
-        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            to="/admin/partners/without-clients"
+            className="inline-flex items-center gap-2 px-4 py-2 border border-amber-200 bg-amber-50 text-amber-700 rounded-lg hover:bg-amber-100 transition-colors font-medium"
+          >
+            <Clock3 className="w-5 h-5" />
+            Без клиентов
+          </Link>
+          <Link
+            to="/admin/partners/new"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+          >
+            <Plus className="w-5 h-5" />
+            Добавить партнера
+          </Link>
+        </div>
       </div>
 
       {/* Statistics */}

@@ -67,6 +67,7 @@ export interface RegisterPayload {
   postal_address?: string;
   kpp?: string;
   agent_code?: string;
+  region: string;
   captcha_token?: string;
 }
 

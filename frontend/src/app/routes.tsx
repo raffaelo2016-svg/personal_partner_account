@@ -78,6 +78,7 @@ export const router = createBrowserRouter([
         element: <RoleGuard allowedRoles={['partner']}><Layout /></RoleGuard>,
         children: [
           { index: true, Component: Dashboard },
+          { path: 'sro', lazy: lazyPage(() => import('./pages/SroDetails')) },
           { path: 'clients', lazy: lazyPage(() => import('./pages/ClientsList')) },
           { path: 'clients/new', lazy: lazyPage(() => import('./pages/ClientForm')) },
           { path: 'clients/:id', lazy: lazyPage(() => import('./pages/ClientDetails')) },
@@ -106,6 +107,7 @@ export const router = createBrowserRouter([
         children: [
           { index: true, lazy: lazyPage(() => import('./pages/AdminDashboard')) },
           { path: 'partners', lazy: lazyPage(() => import('./pages/AdminPartners')) },
+          { path: 'partners/without-clients', lazy: lazyPage(() => import('./pages/AdminPartnersWithoutClients')) },
           { path: 'partners/new', lazy: lazyPage(() => import('./pages/AdminAddPartner')) },
           { path: 'partners/:id', lazy: lazyPage(() => import('./pages/AdminPartnerDetails')) },
           { path: 'clients', lazy: lazyPage(() => import('./pages/AdminClients')) },
@@ -116,6 +118,7 @@ export const router = createBrowserRouter([
           { path: 'bitrix-attention', lazy: lazyPage(() => import('./pages/AdminBitrixAttention')) },
           { path: 'transactions', lazy: lazyPage(() => import('./pages/AdminTransactions')) },
           { path: 'chat', lazy: lazyPage(() => import('./pages/AdminChat')) },
+          { path: 'documents-inbox', lazy: lazyPage(() => import('./pages/AdminChatDocuments')) },
           { path: 'news', lazy: lazyPage(() => import('./pages/AdminNews')) },
           { path: 'settings', lazy: lazyPage(() => import('./pages/AdminSettings')) },
           { path: 'agents', lazy: lazyPage(() => import('./pages/AdminAgents')) },

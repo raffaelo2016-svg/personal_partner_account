@@ -112,7 +112,9 @@ export function useUpdateAdminClient() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, data }: { id: string; data: ClientUpdatePayload }) => updateAdminClient(id, data),
-    onSuccess: () => {
+    onSuccess: (updatedClient, variables) => {
+      // Сразу показываем сохранённые значения, не дожидаясь перезапроса.
+      queryClient.setQueryData(['adminClient', variables.id], updatedClient);
       queryClient.invalidateQueries({ queryKey: ['adminClients'] });
       queryClient.invalidateQueries({ queryKey: ['adminClient'] });
     },

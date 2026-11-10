@@ -10,6 +10,7 @@ import {
   CheckSquare,
   GraduationCap,
   Newspaper,
+  FileText,
   Settings,
   Menu,
   X,
@@ -55,6 +56,7 @@ export default function Layout() {
   const navigation = [
     { name: 'Дашборд', href: '/dashboard', icon: LayoutDashboard, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Клиенты', href: '/dashboard/clients', icon: Users, color: 'text-purple-600', bgColor: 'bg-purple-50' },
+    { name: 'Реквизиты СРО', href: '/dashboard/sro', icon: FileText, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Добавить клиента', href: '/dashboard/clients/new', icon: UserPlus, color: 'text-green-600', bgColor: 'bg-green-50' },
     { name: 'Список задач', href: '/dashboard/tasks', icon: CheckSquare, color: 'text-pink-600', bgColor: 'bg-pink-50' },
     { name: 'Финансы', href: '/dashboard/finance/court-fees', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
@@ -95,7 +97,7 @@ export default function Layout() {
                   active ? 'bg-blue-50 shadow-sm' : 'hover:bg-gray-50'
                 }`}
               >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center relative ${active ? item.bgColor : 'bg-gray-100'}`}>
+                <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center relative ${active ? item.bgColor : 'bg-gray-100'}`}>
                   <Icon className={`w-5 h-5 ${active ? item.color : 'text-gray-500'}`} />
                   {!!badge && badge > 0 && (
                     <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center">
@@ -106,6 +108,11 @@ export default function Layout() {
                 <span className={`font-medium ${active ? 'text-gray-900' : 'text-gray-700'}`}>
                   {item.name}
                 </span>
+                {item.href === '/dashboard/sro' && (
+                  <span className="ml-auto shrink-0 rounded-full bg-blue-100 px-1.5 py-px text-[10px] font-medium uppercase text-blue-700">
+                    Новое
+                  </span>
+                )}
                 {item.href === '/dashboard/news' && (
                   <span className="ml-auto rounded-full bg-orange-600 px-1.5 py-px text-[11px] font-medium uppercase text-white">
                     Новое

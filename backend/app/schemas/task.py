@@ -1,37 +1,55 @@
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
 
-class TaskCreate(BaseModel):
-    client_id: str
+class TaskDeadline(BaseModel):
+    due_date: date | None = None
+    due_at: AwareDatetime | None = None
+
+    @field_validator("due_at")
+    @classmethod
+    def deadline_in_utc(cls, value: datetime | None) -> datetime | None:
+        return value.astimezone(UTC) if value is not None else None
+
+
+class TaskCreate(TaskDeadline):
+    partner_id: str | None = None
+    client_id: str | None = None
     title: str = Field(min_length=1, max_length=255)
     description: str | None = None
-    priority: str = "medium"
-    assigned_to: str = "partner"
-    due_date: date
+    priority: Literal["low", "medium", "high"] = "medium"
+    assigned_to: Literal["partner", "uritech", "admin"] = "partner"
 
-
-class TaskUpdate(BaseModel):
-    title: str | None = None
+class TaskUpdate(TaskDeadline):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None
     status: Literal["pending", "in_progress", "completed"] | None = None
-    priority: str | None = None
-    assigned_to: str | None = None
-    due_date: date | None = None
+    priority: Literal["low", "medium", "high"] | None = None
+    assigned_to: Literal["partner", "uritech", "admin"] | None = None
+
+    @model_validator(mode="after")
+    def reject_null_required_fields(self) -> "TaskUpdate":
+        for name in ("title", "status", "priority", "assigned_to"):
+            if name in self.model_fields_set and getattr(self, name) is None:
+                raise ValueError(f"{name} cannot be null")
+        return self
 
 
 class TaskRead(BaseModel):
     id: str
-    client_id: str
+    partner_id: str | None = None
+    partner_name: str | None = None
+    client_id: str | None = None
     title: str
     description: str | None = None
     status: str
     priority: str
     assigned_to: str
     created_by: str
-    due_date: date
+    due_date: date | None = None
+    due_at: datetime | None = None
     completed_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
@@ -39,6 +57,8 @@ class TaskRead(BaseModel):
     bitrix_sync_status: str = "not_scheduled"
     bitrix_sync_error_code: str | None = None
     bitrix_task_id: str | None = None
+    bitrix_imported: bool = False
+    bitrix_published: bool = True
     bitrix_sync_requested_at: datetime | None = None
     bitrix_synced_at: datetime | None = None
 

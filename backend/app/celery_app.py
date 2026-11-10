@@ -40,4 +40,8 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.bitrix24_sync.reconcile_bitrix_sync",
         "schedule": crontab(minute="*/5"),
     },
+    "discover-bitrix24-partner-tasks": {
+        "task": "app.tasks.bitrix24_sync.discover_bitrix_partner_tasks",
+        "schedule": 60.0,
+    },
 }

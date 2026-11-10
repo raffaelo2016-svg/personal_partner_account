@@ -9,6 +9,8 @@ const STATUS_ORDER = [
   'restructuring',
   'auction',
   'realization',
+  // Терминальный статус: для него все восемь этапов считаются пройденными.
+  'completed',
 ];
 
 const STAGE_DEFS = [

@@ -27,6 +27,7 @@ from app.models.bitrix_sync import BitrixOutboxOperation
 from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
 from app.models.partner import Partner
 from app.services.s3_service import download_file_async, upload_file_async
+from app.validation.files import ALLOWED_EXTENSIONS, MAX_FILE_SIZE_BYTES, has_valid_signature, normalize_mime_type
 
 logger = structlog.get_logger()
 
@@ -37,8 +38,8 @@ BOT_MESSAGE_METHOD = "imbot.v2.Chat.Message.send"
 BOT_FILE_METHOD = "imbot.v2.File.upload"
 BOT_CODE = "uritech_partner_cabinet"
 CHAT_EVENT_SUBSCRIPTION_MAX_AGE = timedelta(hours=24)
-CHAT_IMPORT_MAX_BYTES = 10 * 1024 * 1024
-CHAT_FILE_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx"}
+CHAT_IMPORT_MAX_BYTES = MAX_FILE_SIZE_BYTES
+CHAT_FILE_EXTENSIONS = ALLOWED_EXTENSIONS - {".zip"}
 PARTNER_CHAT_TITLE_PREFIX = "ЮРИТЕХ — "
 PARTNER_CHAT_DESCRIPTION_PREFIX = "Личный кабинет партнёра ЮРИТЕХ"
 CHAT_POLL_ADVISORY_LOCK_ID = 9_172_401
@@ -563,6 +564,10 @@ async def _import_attachment(
     if len(content) > CHAT_IMPORT_MAX_BYTES:
         return None
     mime_type = str(file_data.get("mimeType") or mimetypes.guess_type(name)[0] or "application/octet-stream")
+    if extension == ".mp3":
+        mime_type = normalize_mime_type(name, mime_type)
+        if mime_type is None or not has_valid_signature(content, extension):
+            return None
     s3_key = await upload_file_async(content, name, mime_type)
     return s3_key, name, len(content), mime_type
 

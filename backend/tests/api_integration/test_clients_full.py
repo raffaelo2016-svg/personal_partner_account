@@ -255,6 +255,8 @@ VALID_TRANSITIONS = [
     ("auction", "realization"),
     ("auction", "restructuring"),
     ("realization", "auction"),
+    ("realization", "completed"),
+    ("completed", "realization"),
 ]
 
 INVALID_TRANSITIONS = [
@@ -264,6 +266,8 @@ INVALID_TRANSITIONS = [
     ("documents_formation", "waiting_hearing"),
     ("sent_to_court", "auction"),
     ("realization", "documents_collection"),
+    ("completed", "documents_collection"),
+    ("completed", "auction"),
 ]
 
 
@@ -305,6 +309,7 @@ class TestStatusTransitions:
             "restructuring",
             "auction",
             "realization",
+            "completed",
         ]
         for status in chain:
             resp = await client.post(

@@ -24,14 +24,17 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdminClient, useRetryAdminClientBitrix, useUpdateAdminClient } from '@/app/hooks/useClients';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { formatFileSize, uploadAllSettled } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles, uploadAllSettled } from '@/app/utils/files';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
+import CaseArbitrLink from '../components/CaseArbitrLink';
+import CaseNumberCard from '../components/CaseNumberCard';
 import { captureError } from '@/app/sentry';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import DocumentDeleteButton from '../components/DocumentDeleteButton';
 import {
   CLIENT_STATUSES,
   STATUS_LABELS,
@@ -128,10 +131,21 @@ export default function AdminDebtorDetails() {
     const selectedFiles = event.target.files;
     if (!selectedFiles || selectedFiles.length === 0 || !id) return;
 
+    const { valid, invalidFormat, tooLarge } = partitionFiles(selectedFiles);
+    if (invalidFormat.length > 0) {
+      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+    }
+    if (tooLarge.length > 0) {
+      toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
+    }
+    if (valid.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     setIsUploadingForPartner(true);
     try {
-      const items = Array.from(selectedFiles);
-      const result = await uploadAllSettled(items, (file) => uploadFile(file, id, 'uritech_review'));
+      const result = await uploadAllSettled(valid, (file) => uploadFile(file, id, 'uritech_review'));
       await queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
 
       if (result.failed.length === 0) {
@@ -244,17 +258,23 @@ export default function AdminDebtorDetails() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-green-100 rounded-lg flex items-center justify-center">
-              <FileText className="w-5 h-5 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm text-gray-600">Номер дела</p>
-              <p className="font-semibold text-gray-900 font-mono">{client.case_number || '—'}</p>
-            </div>
-          </div>
-        </div>
+        <CaseNumberCard
+          value={client.case_number}
+          onSave={async (caseNumber) => {
+            await new Promise<void>((resolve, reject) => {
+              updateClient.mutate(
+                { id: client.id, data: { case_number: caseNumber } },
+                {
+                  onSuccess: () => {
+                    toast.success(caseNumber ? 'Номер дела сохранён' : 'Номер дела удалён');
+                    resolve();
+                  },
+                  onError: () => reject(new Error('case_number_update_failed')),
+                },
+              );
+            });
+          }}
+        />
       </div>
 
       {client.type === 'before_court' && (
@@ -432,7 +452,9 @@ export default function AdminDebtorDetails() {
                 {client.case_number && (
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Номер дела</p>
-                    <p className="text-gray-900 font-mono">{client.case_number}</p>
+                    <p className="text-gray-900 font-mono">
+                      <CaseArbitrLink caseNumber={client.case_number} />
+                    </p>
                   </div>
                 )}
                 {client.court_procedure_date && (
@@ -683,7 +705,7 @@ export default function AdminDebtorDetails() {
                 ref={fileInputRef}
                 type="file"
                 multiple
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.zip"
+                accept={ALLOWED_FILE_EXTENSIONS.join(',')}
                 onChange={handleUploadForPartner}
                 className="hidden"
               />
@@ -752,12 +774,13 @@ export default function AdminDebtorDetails() {
                       </a>
                       <a
                         href={file.url}
-                        download
+                        download={file.filename}
                         className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Скачать"
                       >
                         <Download className="w-4 h-4" />
                       </a>
+                      <DocumentDeleteButton file={file} />
                     </div>
                   );
                 })}

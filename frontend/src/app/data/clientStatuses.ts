@@ -1,4 +1,4 @@
-import { FileText, FileCog, Send, Gavel, Clock } from 'lucide-react';
+import { CheckCircle2, FileText, FileCog, Send, Gavel, Clock } from 'lucide-react';
 import type { ComponentType } from 'react';
 
 export const CLIENT_STATUSES = [
@@ -10,6 +10,7 @@ export const CLIENT_STATUSES = [
   'restructuring',
   'auction',
   'realization',
+  'completed',
 ] as const;
 
 export type ClientStatus = (typeof CLIENT_STATUSES)[number];
@@ -27,7 +28,7 @@ export const IN_COURT_STATUSES: ClientStatus[] = [
   'auction',
 ];
 
-export const COMPLETED_STATUSES: ClientStatus[] = ['realization'];
+export const COMPLETED_STATUSES: ClientStatus[] = ['realization', 'completed'];
 
 export const STATUS_LABELS: Record<ClientStatus, string> = {
   documents_collection: 'Сбор документов',
@@ -38,6 +39,7 @@ export const STATUS_LABELS: Record<ClientStatus, string> = {
   restructuring: 'Реструктуризация',
   auction: 'Торги',
   realization: 'Реализация',
+  completed: 'Завершено',
 };
 
 export const STATUS_BADGE_CLASSES: Record<ClientStatus, string> = {
@@ -49,6 +51,7 @@ export const STATUS_BADGE_CLASSES: Record<ClientStatus, string> = {
   restructuring: 'bg-purple-100 text-purple-700',
   auction: 'bg-amber-100 text-amber-700',
   realization: 'bg-green-100 text-green-700',
+  completed: 'bg-teal-100 text-teal-700',
 };
 
 export const STATUS_BADGE_BORDERED: Record<ClientStatus, string> = {
@@ -60,6 +63,7 @@ export const STATUS_BADGE_BORDERED: Record<ClientStatus, string> = {
   restructuring: 'bg-purple-100 text-purple-700 border-purple-200',
   auction: 'bg-amber-100 text-amber-700 border-amber-200',
   realization: 'bg-green-100 text-green-700 border-green-200',
+  completed: 'bg-teal-100 text-teal-700 border-teal-200',
 };
 
 export const STATUS_DOT_CLASSES: Record<ClientStatus, string> = {
@@ -71,6 +75,7 @@ export const STATUS_DOT_CLASSES: Record<ClientStatus, string> = {
   restructuring: 'bg-purple-500',
   auction: 'bg-amber-500',
   realization: 'bg-green-500',
+  completed: 'bg-teal-500',
 };
 
 type Icon = ComponentType<{ className?: string }>;
@@ -89,6 +94,7 @@ export const STATUS_OPTIONS: {
   { value: 'restructuring', label: STATUS_LABELS.restructuring, icon: Clock, color: 'text-purple-600' },
   { value: 'auction', label: STATUS_LABELS.auction, icon: Gavel, color: 'text-amber-600' },
   { value: 'realization', label: STATUS_LABELS.realization, icon: FileText, color: 'text-green-600' },
+  { value: 'completed', label: STATUS_LABELS.completed, icon: CheckCircle2, color: 'text-teal-600' },
 ];
 
 export function isClientStatus(value: string): value is ClientStatus {

@@ -32,6 +32,12 @@ async def _resolve_partner_id(db: AsyncSession, user: User) -> str | None:
     return str(partner.id)
 
 
+def _scope_partner(actual: str | None, requested: str | None) -> str | None:
+    if actual and requested and actual != requested:
+        raise HTTPException(status_code=403, detail="Access denied")
+    return actual or requested
+
+
 @router.get("", response_model=PaginatedResponse[TaskRead])
 async def list_tasks_endpoint(
     status: str | None = Query(None),  # noqa: B008
@@ -39,11 +45,12 @@ async def list_tasks_endpoint(
     assigned_to: str | None = Query(None),  # noqa: B008
     search: str | None = Query(None, max_length=100),  # noqa: B008
     client_id: str | None = Query(None),  # noqa: B008
+    partner_id: str | None = Query(None),  # noqa: B008
     pagination: PaginationParams = Depends(),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    partner_id = await _resolve_partner_id(db, current_user)
+    partner_id = _scope_partner(await _resolve_partner_id(db, current_user), partner_id)
     items, total = await list_tasks(
         db,
         partner_id=partner_id,
@@ -68,19 +75,21 @@ async def list_tasks_endpoint(
 @router.get("/stats", response_model=TaskStats)
 async def tasks_stats_endpoint(
     assigned_to: str | None = Query(None),  # noqa: B008
+    partner_id: str | None = Query(None),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    partner_id = await _resolve_partner_id(db, current_user)
+    partner_id = _scope_partner(await _resolve_partner_id(db, current_user), partner_id)
     return await get_task_stats(db, partner_id=partner_id, assigned_to=assigned_to)
 
 
 @router.get("/urgent", response_model=list[TaskRead])
 async def urgent_tasks_endpoint(
+    partner_id: str | None = Query(None),  # noqa: B008
     db: AsyncSession = Depends(get_db),  # noqa: B008
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
-    partner_id = await _resolve_partner_id(db, current_user)
+    partner_id = _scope_partner(await _resolve_partner_id(db, current_user), partner_id)
     return await get_urgent_tasks(db, partner_id=partner_id)
 
 

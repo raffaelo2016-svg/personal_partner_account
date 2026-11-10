@@ -64,6 +64,9 @@ async def _get_partner_id_for_user(session: AsyncSession, user_id: str) -> str:
 
 BEFORE_COURT_STATUSES = ["documents_collection", "documents_formation", "sent_to_court", "documents_decision"]
 IN_COURT_STATUSES = ["waiting_hearing", "restructuring", "auction"]
+# «Реализация» исторически считается завершённой стадией в аналитике;
+# новый явный статус «Завершено» добавлен рядом, без сброса старых цифр.
+COMPLETED_STATUSES = ["realization", "completed"]
 
 
 async def list_clients(
@@ -99,7 +102,7 @@ async def list_clients(
     elif category == "in_court":
         base_q = base_q.where(Client.status.in_(IN_COURT_STATUSES))
     elif category == "completed":
-        base_q = base_q.where(Client.status == "realization")
+        base_q = base_q.where(Client.status.in_(COMPLETED_STATUSES))
 
     total = (await session.execute(select(func.count()).select_from(base_q.subquery()))).scalar() or 0
     rows = (
@@ -176,6 +179,29 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     # not attempt implicit IO and raise MissingGreenlet.
     await session.refresh(client, ["updated_at"])
 
+    from app.integrations.bitrix24.chat import schedule_chat_message
+    from app.models.chat import ChatMessage
+    from app.services.chat_service import _msg_to_read, ensure_rooms_for_partner
+
+    rooms = await ensure_rooms_for_partner(session, partner_id)
+    room = next(room for room in rooms if room.type == "admin")
+    name = partner.director_name.strip() if partner and partner.director_name else ""
+    greeting = f"{name}, вы" if name else "Вы"
+    message = ChatMessage(
+        room_id=room.id,
+        sender_id=None,
+        sender_type="admin",
+        text=(
+            f"{greeting} добавили нового клиента — {client.full_name}. Спасибо за доверие!\n\n"
+            "Мы оперативно возьмём его в работу и сообщим вам о результатах в этом чате."
+        ),
+    )
+    session.add(message)
+    await session.flush()
+    await schedule_chat_message(session, message, room=room)
+    await session.refresh(message)
+    session.info.setdefault("new_client_chat_messages", []).append(_msg_to_read(message))
+
     admin_ids = (
         await session.scalars(select(User.id).where(User.role.in_(["admin", "super_admin"]), User.is_active.is_(True)))
     ).all()
@@ -230,20 +256,30 @@ async def update_client(
     if client_type := update_data.get("type"):
         update_data["type"] = client_type.value
     court_date_changed = "court_procedure_date" in update_data
+    previous_case_number = client.case_number
     for key, value in update_data.items():
         if hasattr(client, key):
             setattr(client, key, value)
+    case_number_changed = "case_number" in update_data and client.case_number != previous_case_number
 
     await session.flush()
-    # updated_at обновляется server-side (onupdate=func.now()) — обновим только его.
-    await session.refresh(client, ["updated_at"])
 
     partner = await session.get(Partner, client.partner_id)
+
+    if case_number_changed:
+        from app.integrations.bitrix24.clients import schedule_client_case_number_update
+
+        await schedule_client_case_number_update(session, client)
 
     if court_date_changed and client.court_procedure_date:
         from app.services.finance_service import recalculate_due_date
 
         await recalculate_due_date(session, client, partner)
+
+    # updated_at обновляется server-side (onupdate=func.now()) при любом UPDATE,
+    # поэтому обновляем его после всех изменений клиента (включая планирование
+    # синхронизации с Битрикс24), иначе обращение к нему сделает лишний IO.
+    await session.refresh(client, ["updated_at"])
 
     audit_log(action="update_client", target_id=str(client.id), target_type="client", details=update_data)
     logger.info(
@@ -292,7 +328,7 @@ async def get_client_stats(session: AsyncSession, partner_id: str) -> ClientStat
     total = (await session.execute(base)).scalar() or 0
     before_court = (await session.execute(base.where(Client.type == "before_court"))).scalar() or 0
     in_court = (await session.execute(base.where(Client.type == "in_court"))).scalar() or 0
-    completed = (await session.execute(base.where(Client.status == "realization"))).scalar() or 0
+    completed = (await session.execute(base.where(Client.status.in_(COMPLETED_STATUSES)))).scalar() or 0
 
     new_this_week = (
         await session.execute(base.where(Client.created_at >= func.now() - text("interval '7 days'")))

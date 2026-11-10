@@ -6,6 +6,7 @@ import { useIntersectionObserver } from '../hooks/useIntersectionObserver';
 import CustomSelect from '../components/ui/CustomSelect';
 import { formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import CaseArbitrLink from '../components/CaseArbitrLink';
 
 export default function AdminClients() {
   const tz = useTimezone();
@@ -40,6 +41,7 @@ export default function AdminClients() {
       restructuring: 'Реструктуризация',
       auction: 'Торги',
       realization: 'Реализация',
+      completed: 'Завершено',
     };
     return labels[status] || status;
   };
@@ -54,6 +56,7 @@ export default function AdminClients() {
       restructuring: 'bg-purple-100 text-purple-700 border-purple-200',
       auction: 'bg-amber-100 text-amber-700 border-amber-200',
       realization: 'bg-green-100 text-green-700 border-green-200',
+      completed: 'bg-teal-100 text-teal-700 border-teal-200',
     };
     return colors[status] || 'bg-gray-100 text-gray-700 border-gray-200';
   };
@@ -133,6 +136,7 @@ export default function AdminClients() {
                     { value: 'restructuring', label: 'Реструктуризация' },
                     { value: 'auction', label: 'Торги' },
                     { value: 'realization', label: 'Реализация' },
+                    { value: 'completed', label: 'Завершено' },
                   ]}
                 />
               </div>
@@ -243,7 +247,9 @@ export default function AdminClients() {
                         <p className="text-sm text-gray-600">{client.region ?? '—'}</p>
                       </td>
                       <td className="px-3 py-3">
-                        <p className="text-sm font-mono text-gray-700">{client.case_number ?? '—'}</p>
+                        <p className="text-sm font-mono text-gray-700">
+                          <CaseArbitrLink caseNumber={client.case_number} />
+                        </p>
                       </td>
                       <td className="px-3 py-3">
                         <p className="text-sm font-semibold text-gray-900">

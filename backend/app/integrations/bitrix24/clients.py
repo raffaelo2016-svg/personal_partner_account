@@ -24,8 +24,10 @@ from app.services.audit import audit_log
 
 CLIENT_CONTACT_ENTITY_TYPE = "client_contact"
 CLIENT_DEAL_ENTITY_TYPE = "client_deal"
+CLIENT_DEAL_UPDATE_ENTITY_TYPE = "client_deal_update"
 CLIENT_CONTACT_CREATE_METHOD = "crm.contact.add"
 CLIENT_DEAL_CREATE_METHOD = "crm.deal.add"
+CLIENT_DEAL_UPDATE_METHOD = "crm.deal.update"
 CLIENT_DEAL_CATEGORY_ID = settings.BITRIX_DEAL_CATEGORY_ID
 CLIENT_DEAL_STAGE_ID = f"C{CLIENT_DEAL_CATEGORY_ID}:NEW"
 CLIENT_SUPPORT_DEAL_CATEGORY_ID = settings.BITRIX_SUPPORT_DEAL_CATEGORY_ID
@@ -263,6 +265,73 @@ async def enqueue_client_deal(
         )
         .on_conflict_do_nothing(constraint="uq_bitrix_outbox_operation_key")
     )
+
+
+async def _linked_client_deal_id(db: AsyncSession, client: Client) -> str | None:
+    if client.bitrix_deal_id:
+        return client.bitrix_deal_id
+    return await db.scalar(
+        select(BitrixEntityMap.bitrix_entity_id)
+        .where(
+            BitrixEntityMap.local_entity_type == CLIENT_DEAL_ENTITY_TYPE,
+            BitrixEntityMap.local_entity_id == client.id,
+        )
+        .limit(1)
+    )
+
+
+async def schedule_client_case_number_update(db: AsyncSession, client: Client) -> bool:
+    """Queue an outbound case-number update for an already linked deal.
+
+    The payload carries only the deal id: the value is rebuilt from the current
+    client row right before the Bitrix call, so coalesced updates cannot send a
+    stale case number. Existing pending/retry operations are reused; an update
+    that is already processing gets a fresh follow-up operation.
+    """
+    installation = await active_installation(db)
+    if installation is None:
+        return False
+
+    deal_id = await _linked_client_deal_id(db, client)
+    if not deal_id:
+        # The initial deal projection already contains the case number.
+        return False
+
+    pending = await db.scalar(
+        select(BitrixOutboxOperation)
+        .where(
+            BitrixOutboxOperation.member_id == installation.member_id,
+            BitrixOutboxOperation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE,
+            BitrixOutboxOperation.local_entity_id == client.id,
+            BitrixOutboxOperation.status.in_(("pending", "retry")),
+        )
+        .order_by(BitrixOutboxOperation.created_at)
+        .limit(1)
+    )
+    if pending is None:
+        await db.execute(
+            insert(BitrixOutboxOperation)
+            .values(
+                id=uuid.uuid4(),
+                member_id=installation.member_id,
+                operation_key=f"client:deal:update:{client.id}:{uuid.uuid4()}",
+                local_entity_type=CLIENT_DEAL_UPDATE_ENTITY_TYPE,
+                local_entity_id=client.id,
+                bitrix_method=CLIENT_DEAL_UPDATE_METHOD,
+                payload={"deal_id": deal_id},
+                correlation_id=uuid.uuid4(),
+                max_attempts=settings.BITRIX_OUTBOX_MAX_ATTEMPTS,
+            )
+            .on_conflict_do_nothing(constraint="uq_bitrix_outbox_operation_key")
+        )
+    else:
+        pending.payload = {"deal_id": deal_id}
+
+    client.bitrix_sync_status = "pending"
+    client.bitrix_sync_error_code = None
+    client.bitrix_sync_requested_at = datetime.now(UTC)
+    await db.flush()
+    return True
 
 
 async def _installation_token(db: AsyncSession, installation: BitrixInstallation) -> str:

@@ -15,6 +15,7 @@ from app.integrations.bitrix24.tasks import (
     TASK_AUDITORS_SETTING,
     TASK_CREATOR_SETTING,
     TASK_EVENT_HANDLER,
+    TASK_PARTNER_TAG,
     TASK_RESPONSIBLE_SETTING_PREFIX,
     TASK_UPDATE_EVENT,
 )
@@ -46,6 +47,33 @@ async def _event_is_bound(client: Bitrix24Client, event_name: str) -> bool:
         and str(item.get("handler") or item.get("HANDLER") or "").rstrip("/") == TASK_EVENT_HANDLER.rstrip("/")
         for item in events
     )
+
+
+def _enabled(value: object) -> bool:
+    return value is True or str(value).strip().casefold() in {"y", "yes", "true", "1"}
+
+
+async def ensure_partner_task_binding(client: Bitrix24Client, *, apply: bool) -> bool:
+    """Expose the partner smart process in task CRM links without removing other links."""
+    params = {"entityTypeId": settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}
+    result = await client.call("crm.type.getByEntityTypeId", params)
+    remote_type = result.get("type", {}) if isinstance(result, dict) else {}
+    if not isinstance(remote_type, dict) or not remote_type.get("id"):
+        raise SystemExit("Partner smart process configuration was not found")
+    links = remote_type.get("linkedUserFields") or {}
+    if not isinstance(links, dict):
+        links = {}
+    linked = _enabled(remote_type.get("isUseInUserfieldEnabled")) and _enabled(links.get("TASKS_TASK|UF_CRM_TASK"))
+    if linked or not apply:
+        return linked
+    await client.call(
+        "crm.type.update",
+        {
+            "id": remote_type["id"],
+            "fields": {"isUseInUserfieldEnabled": "Y", "linkedUserFields": {**links, "TASKS_TASK|UF_CRM_TASK": "true"}},
+        },
+    )
+    return await ensure_partner_task_binding(client, apply=False)
 
 
 async def _active_user_ids(client: Bitrix24Client) -> set[int]:
@@ -157,6 +185,7 @@ async def run(
             raise SystemExit("Configured Bitrix24 user IDs must belong to active users")
         update_event_bound = await _event_is_bound(client, TASK_UPDATE_EVENT)
         add_event_bound = await _event_is_bound(client, TASK_ADD_EVENT)
+        partner_task_binding = await ensure_partner_task_binding(client, apply=apply)
         if apply:
             await _save_ids(requested, auditor_ids=auditor_ids)
             if not update_event_bound:
@@ -170,6 +199,8 @@ async def run(
         raise SystemExit("Bitrix24 task update event could not be verified")
     if apply and not add_event_bound:
         raise SystemExit("Bitrix24 task add event could not be verified")
+    if apply and not partner_task_binding:
+        raise SystemExit("Bitrix24 partner task binding could not be verified")
 
     configured = await _configured_ids()
     configured_auditor_ids = await _configured_auditor_ids()
@@ -180,6 +211,8 @@ async def run(
     print(f"task_configured_users_valid={valid}/{len(configured_users)}")
     print(f"task_update_event={'bound' if update_event_bound else 'missing'}")
     print(f"task_add_event={'bound' if add_event_bound else 'missing'}")
+    print(f"partner_task_binding={'enabled' if partner_task_binding else 'missing'}")
+    print(f"partner_task_publish_tag={TASK_PARTNER_TAG}")
 
 
 def main() -> None:

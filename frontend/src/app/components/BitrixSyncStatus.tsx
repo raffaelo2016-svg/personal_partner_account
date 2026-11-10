@@ -1,5 +1,6 @@
 import { AlertCircle, CheckCircle2, Clock3, Loader2, RefreshCw } from 'lucide-react';
 import type { BitrixSyncStatus as SyncStatus } from '../api/clients';
+import { FILE_SIZE_LIMITS_LABEL } from '../utils/files';
 
 const STATUS_CONFIG: Record<SyncStatus, { label: string; className: string; icon: typeof Clock3 }> = {
   not_scheduled: { label: 'Не отправлено в Битрикс24', className: 'bg-gray-100 text-gray-700 border-gray-200', icon: Clock3 },
@@ -13,16 +14,16 @@ const STATUS_CONFIG: Record<SyncStatus, { label: string; className: string; icon
 const ERROR_MESSAGES: Record<string, string> = {
   INSTALLATION_NOT_FOUND: 'Подключение к Битрикс24 не найдено',
   CLIENT_NOT_SYNCED: 'Сначала должна быть передана карточка клиента',
+  PARTNER_NOT_SYNCED: 'Сначала должна быть передана карточка партнёра',
+  TASK_NOT_PUBLISHED: 'Публикация задачи в ЛКП отключена в Битрикс24',
+  AMBIGUOUS_TASK_PARTNER: 'В задаче выбраны карточки разных партнёров',
+  CRM_REFERENCE_REQUIRED: 'Выберите карточку партнёра или клиента в задаче Битрикс24',
+  INVALID_TASK_DEADLINE: 'Проверьте срок задачи в Битрикс24',
   LOCAL_FILE_UNAVAILABLE: 'Файл временно недоступен',
   TIMEOUT: 'Битрикс24 не ответил вовремя',
   TRANSPORT_ERROR: 'Нет связи с Битрикс24',
   QUERY_LIMIT_EXCEEDED: 'Битрикс24 временно ограничил число запросов',
   INVALID_RESPONSE: 'Битрикс24 вернул неполный ответ',
-  UNKNOWN_ERROR: 'Причина ошибки не сохранена. Повторите обмен для диагностики',
-  HTTP_400: 'Битрикс24 отклонил запрос',
-  HTTP_403: 'В Битрикс24 недостаточно прав для этой операции',
-  HTTP_404: 'Объект в Битрикс24 не найден',
-  INVALID_UPLOAD_URL: 'Битрикс24 вернул небезопасный адрес загрузки',
   PARTNER_NOT_LINKED: 'В сделке не выбран партнёр ЮРИТЕХ',
   PARTNER_NOT_FOUND: 'Выбранный партнёр не связан с кабинетом',
   CONTACT_NOT_LINKED: 'В сделке не выбран контакт клиента',
@@ -37,7 +38,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   REMOTE_FILE_ID_MISSING: 'Битрикс24 не передал идентификатор файла',
   INVALID_FILE_RESPONSE: 'Не удалось прочитать сведения о файле',
   INVALID_DOWNLOAD_URL: 'Битрикс24 вернул небезопасную ссылку на файл',
-  FILE_TOO_LARGE: 'Размер файла превышает 10 МБ',
+  FILE_TOO_LARGE: `Превышен допустимый размер файла. ${FILE_SIZE_LIMITS_LABEL}.`,
   UNSUPPORTED_FILE_TYPE: 'Тип файла не поддерживается кабинетом',
   INVALID_FILE_CONTENT: 'Содержимое файла не соответствует его типу',
 };

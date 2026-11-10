@@ -65,6 +65,11 @@ class DuplicateEmail(AppException):
         super().__init__(status_code=409, detail="Email already registered", code="DUPLICATE_EMAIL")
 
 
+class Conflict(AppException):
+    def __init__(self, detail: str = "Conflict", code: str = "CONFLICT"):
+        super().__init__(status_code=409, detail=detail, code=code)
+
+
 class FileTooLarge(AppException):
     def __init__(self):
         super().__init__(status_code=413, detail="File too large", code="FILE_TOO_LARGE")
