@@ -7,6 +7,7 @@ export const STATUS_LABELS: Record<string, string> = {
   restructuring: 'Реструктуризация',
   auction: 'Торги',
   realization: 'Реализация',
+  completed: 'Завершено',
 };
 
 export const STATUS_BADGE_COLORS: Record<string, string> = {
@@ -18,6 +19,7 @@ export const STATUS_BADGE_COLORS: Record<string, string> = {
   restructuring: 'bg-purple-100 text-purple-700',
   auction: 'bg-amber-100 text-amber-700',
   realization: 'bg-green-100 text-green-700',
+  completed: 'bg-teal-100 text-teal-700',
 };
 
 export const STATUS_DOT_COLORS: Record<string, string> = {
@@ -29,6 +31,7 @@ export const STATUS_DOT_COLORS: Record<string, string> = {
   restructuring: 'bg-purple-500',
   auction: 'bg-amber-500',
   realization: 'bg-green-500',
+  completed: 'bg-teal-500',
 };
 
 export const PARTNER_STATUS_LABELS: Record<string, string> = {

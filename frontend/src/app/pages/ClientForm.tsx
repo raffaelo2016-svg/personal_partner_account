@@ -25,7 +25,7 @@ import { clientFormSchema } from '@/app/schemas/client';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import { syntheticChange } from '../utils/form';
-import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_LABEL } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, partitionFiles, formatFileSize, uploadAllSettled, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
 
 interface UploadedFile {
   file: File;
@@ -270,10 +270,10 @@ export default function ClientForm() {
 
       const errors: string[] = [];
       if (invalidFormat.length > 0) {
-        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP`);
+        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
       }
       if (tooLarge.length > 0) {
-        errors.push(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
+        errors.push(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}`);
       }
       if (errors.length > 0) {
         setUploadError(errors.join('. '));
@@ -304,10 +304,10 @@ export default function ClientForm() {
       const { valid, invalidFormat, tooLarge } = partitionFiles(files);
 
       if (invalidFormat.length > 0) {
-        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP`);
+        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
       }
       if (tooLarge.length > 0) {
-        toast.error(`Превышен размер ${MAX_FILE_SIZE_LABEL}: ${tooLarge.join(', ')}`);
+        toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
       }
 
       if (valid.length > 0) {
@@ -489,17 +489,19 @@ export default function ClientForm() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
+                <label htmlFor="client-region-in-court" className="block text-sm font-medium text-gray-700 mb-1">
                   Регион <span className="text-red-500">*</span>
                 </label>
                 <CustomSelect
+                  id="client-region-in-court"
+                  searchable
                   value={formData.region}
                   onChange={(val) => handleChange(syntheticChange('region', val))}
                   groups={REGION_GROUPS.map((group) => ({
                     label: group.district,
                     options: group.regions.map((r) => ({ value: r.name, label: r.name })),
                   }))}
-                  placeholder="Выберите регион"
+                  placeholder="Начните вводить регион"
                   size="lg"
                   triggerClassName={regionError ? 'border-red-500' : ''}
                 />
@@ -760,17 +762,19 @@ export default function ClientForm() {
               </h2>
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                  <label htmlFor="client-region-before-court" className="block text-sm font-medium text-gray-700 mb-1">
                     Регион подачи
                   </label>
                   <CustomSelect
+                    id="client-region-before-court"
+                    searchable
                     value={formData.region}
                     onChange={(val) => handleChange(syntheticChange('region', val))}
                     groups={REGION_GROUPS.map((group) => ({
                       label: group.district,
                       options: group.regions.map((r) => ({ value: r.name, label: r.name })),
                     }))}
-                    placeholder="Выберите регион"
+                    placeholder="Начните вводить регион"
                     size="lg"
                     triggerClassName={regionError ? 'border-red-500' : ''}
                   />
@@ -808,7 +812,7 @@ export default function ClientForm() {
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP. Максимальный размер файла: 10 МБ
+                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3. {FILE_SIZE_LIMITS_LABEL}.
               </p>
               
               <div className="space-y-3">
@@ -857,7 +861,7 @@ export default function ClientForm() {
                           onChange={(e) => handleDocumentUpload(doc.id, e)}
                           className="hidden"
                           id={`doc-upload-${doc.id}`}
-                          accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip"
+                          accept={ALLOWED_FILE_EXTENSIONS.join(',')}
                         />
                         <label
                           htmlFor={`doc-upload-${doc.id}`}

@@ -12,6 +12,7 @@ export const registrationStep1Schema = z.object({
   kpp: z.string().optional(),
   ogrn: z.string().optional(),
   legalAddress: z.string().optional(),
+  region: z.string().min(1, REQUIRED),
 }).superRefine((data, ctx) => {
   const add = (path: string, message = REQUIRED) => {
     ctx.addIssue({ code: z.ZodIssueCode.custom, path: [path], message });

@@ -3,6 +3,8 @@ import { Link } from 'react-router';
 import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo-color.svg';
 import { PhoneField } from '@/app/components/PhoneField';
+import CustomSelect from '@/app/components/ui/CustomSelect';
+import { REGION_GROUPS } from '@/app/data/arbitrageCourts';
 import { registerApi } from '../api/auth';
 import { normalizePhoneForApi, validatePhoneField } from '../utils/phone';
 import {
@@ -46,6 +48,7 @@ export default function Registration() {
     kpp: '',
     ogrn: '',
     legalAddress: '',
+    region: '',
     
     // Контактное лицо
     contactName: '',
@@ -105,6 +108,7 @@ export default function Registration() {
       kpp: formData.kpp,
       ogrn: formData.ogrn,
       legalAddress: formData.legalAddress,
+      region: formData.region,
     });
     const newErrors = flattenZodErrors(result);
     setErrors(newErrors);
@@ -190,6 +194,7 @@ export default function Registration() {
         phone: phoneE164,
         full_legal_name: formData.partnerType === 'legal' ? formData.companyName : undefined,
         legal_address: formData.partnerType === 'legal' ? formData.legalAddress : undefined,
+        region: formData.region,
         captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });
       setStep(3);
@@ -217,6 +222,7 @@ export default function Registration() {
           else if (loc.includes('company_name')) fieldErrors.companyName = msg;
           else if (loc.includes('inn')) fieldErrors.inn = msg;
           else if (loc.includes('kpp')) fieldErrors.kpp = msg;
+          else if (loc.includes('region')) fieldErrors.region = msg;
           else if (loc.includes('password')) fieldErrors.password = msg;
         }
         const mapped = Object.keys(fieldErrors).length;
@@ -534,6 +540,40 @@ export default function Registration() {
                     )}
                   </>
                 )}
+
+                <div>
+                  <label
+                    className="block text-sm font-medium text-gray-700 mb-1"
+                    htmlFor="partner-region"
+                  >
+                    Регион <span className="text-red-500">*</span>
+                  </label>
+                  <CustomSelect
+                    id="partner-region"
+                    value={formData.region}
+                    onChange={(value) => {
+                      setFormData({ ...formData, region: value });
+                      if (errors.region) setErrors({ ...errors, region: '' });
+                    }}
+                    groups={REGION_GROUPS.map((group) => ({
+                      label: group.district,
+                      options: group.regions.map((region) => ({
+                        value: region.name,
+                        label: region.name,
+                      })),
+                    }))}
+                    placeholder="Выберите регион"
+                    searchable
+                    size="lg"
+                    triggerClassName={errors.region ? 'border-red-500' : ''}
+                  />
+                  <p className="mt-1.5 text-xs text-gray-500">
+                    Укажите регион, в котором работаете. По нему автоматически определим часовой пояс.
+                  </p>
+                  {errors.region && (
+                    <p className="text-sm text-red-500 mt-1">{errors.region}</p>
+                  )}
+                </div>
               </div>
 
               <div className="mt-8 flex justify-between">

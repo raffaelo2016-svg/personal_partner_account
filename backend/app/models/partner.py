@@ -43,6 +43,8 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
     legal_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     postal_address: Mapped[str | None] = mapped_column(String(500), nullable=True)
     kpp: Mapped[str | None] = mapped_column(String(9), nullable=True)
+    region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    timezone: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     court_fee_per_client: Mapped[int] = mapped_column(default=1_500_000)
     payment_term_days: Mapped[int] = mapped_column(default=10)

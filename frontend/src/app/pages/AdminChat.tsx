@@ -1,6 +1,7 @@
 import { decodeChatText } from '@/app/utils/chatText';
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, X, History, Trash2 } from 'lucide-react';
+import { Send, Search, User, Loader2, WifiOff, MessageSquare, Paperclip, FileText, Inbox, X, History, Trash2 } from 'lucide-react';
+import { Link } from 'react-router';
 import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   fetchAdminChatRooms,
@@ -15,7 +16,7 @@ import { useWsChat } from '../hooks/useWsChat';
 import MessageStatus from '../components/ui/MessageStatus';
 import { formatTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { ALLOWED_FILE_EXTENSIONS, formatFileSize, MAX_FILE_SIZE_LABEL, partitionFiles } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, formatFileSize, FILE_SIZE_LIMITS_LABEL, partitionFiles } from '../utils/files';
 
 const PAGE_SIZE = 20;
 
@@ -159,12 +160,12 @@ export default function AdminChat() {
     const { valid, invalidFormat, tooLarge } = partitionFiles(files);
     if (invalidFormat.length > 0) {
       setSelectedFile(null);
-      setFileError('Можно прикрепить PDF, JPG, PNG, DOC, DOCX или ZIP');
+      setFileError('Можно прикрепить PDF, JPG, PNG, DOC, DOCX, ZIP или MP3');
       return;
     }
     if (tooLarge.length > 0) {
       setSelectedFile(null);
-      setFileError(`Файл должен быть не больше ${MAX_FILE_SIZE_LABEL}`);
+      setFileError(`Превышен допустимый размер файла. ${FILE_SIZE_LIMITS_LABEL}.`);
       return;
     }
     setSelectedFile(valid[0] ?? null);
@@ -173,26 +174,38 @@ export default function AdminChat() {
   const renderAttachment = (msg: ChatMessageData, isOwn: boolean) => {
     if (!msg.attachment_filename || !msg.attachment_url) return null;
     return (
-      <a
-        href={msg.attachment_url}
-        target="_blank"
-        rel="noreferrer"
-        className={`mt-2 flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
-          isOwn
-            ? 'border-slate-500 bg-slate-600 hover:bg-slate-800 text-white'
-            : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-900'
-        }`}
-      >
-        <FileText className="w-5 h-5 flex-shrink-0" />
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">{msg.attachment_filename}</span>
-          {msg.attachment_size ? (
-            <span className={`block text-xs ${isOwn ? 'text-slate-200' : 'text-gray-500'}`}>
-              {formatFileSize(msg.attachment_size)}
-            </span>
-          ) : null}
-        </span>
-      </a>
+      <div className="mt-2 space-y-1.5">
+        <a
+          href={msg.attachment_url}
+          target="_blank"
+          rel="noreferrer"
+          translate="no"
+          className={`flex items-center gap-3 rounded-lg border px-3 py-2 transition-colors ${
+            isOwn
+              ? 'border-slate-500 bg-slate-600 hover:bg-slate-800 text-white'
+              : 'border-gray-200 bg-gray-50 hover:bg-gray-100 text-gray-900'
+          }`}
+        >
+          <FileText className="w-5 h-5 flex-shrink-0" />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{msg.attachment_filename}</span>
+            {msg.attachment_size ? (
+              <span className={`block text-xs ${isOwn ? 'text-slate-200' : 'text-gray-500'}`}>
+                {formatFileSize(msg.attachment_size)}
+              </span>
+            ) : null}
+          </span>
+        </a>
+        {!isOwn && (
+          <Link
+            to={`/admin/documents-inbox?message=${msg.id}`}
+            className="inline-flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-700"
+          >
+            <Inbox className="h-3.5 w-3.5" />
+            Прикрепить к клиенту
+          </Link>
+        )}
+      </div>
     );
   };
 
@@ -231,7 +244,7 @@ export default function AdminChat() {
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
-            <input type="text" value={searchText} onChange={(e) => setSearchText(e.target.value)}
+            <input type="text" translate="no" value={searchText} onChange={(e) => setSearchText(e.target.value)}
               placeholder="Поиск по партнёру..."
               className="w-full pl-10 pr-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
           </div>
@@ -243,6 +256,7 @@ export default function AdminChat() {
           )}
           {(rooms ?? []).map((room) => (
             <button key={room.id}
+              translate="no"
               onClick={() => { setActiveRoomId(room.id); clearWsMessages(); isInitialLoad.current = true; }}
               className={`w-full p-4 flex items-center gap-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${activeRoomId === room.id ? 'bg-blue-50' : ''}`}>
               <div className={`w-11 h-11 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center flex-shrink-0`}>
@@ -267,7 +281,7 @@ export default function AdminChat() {
               <div className={`w-10 h-10 ${roomType === 'tech_support' ? 'bg-teal-600' : 'bg-blue-600'} rounded-full flex items-center justify-center`}>
                 <span className="text-white font-semibold text-sm">{(activeRoom.partner_name ?? 'П').slice(0, 2).toUpperCase()}</span>
               </div>
-              <div>
+              <div translate="no">
                 <h3 className="font-semibold text-gray-900">{activeRoom.partner_name ?? 'Партнёр'}</h3>
                 <p className="text-sm text-gray-500">{roomType === 'tech_support' ? 'Техническая поддержка' : 'Чат с партнёром'}</p>
               </div>
@@ -323,7 +337,7 @@ export default function AdminChat() {
                           <span className="text-xs text-gray-500">Партнёр</span>
                         </div>
                       )}
-                      <div className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
+                      <div translate="no" className={`rounded-2xl px-4 py-3 ${isAdmin ? 'bg-slate-700 text-white' : 'bg-white border border-gray-200 text-gray-900'}`}>
                         {msg.text ? <p>{decodeChatText(msg.text)}</p> : null}
                         {renderAttachment(msg, isAdmin)}
                       </div>
@@ -360,7 +374,7 @@ export default function AdminChat() {
                 <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                   <div className="flex min-w-0 items-center gap-2">
                     <FileText className="w-4 h-4 text-slate-600 flex-shrink-0" />
-                    <span className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
+                    <span translate="no" className="truncate text-sm font-medium text-gray-900">{selectedFile.name}</span>
                     <span className="text-xs text-gray-500 flex-shrink-0">{formatFileSize(selectedFile.size)}</span>
                   </div>
                   <button
@@ -393,7 +407,7 @@ export default function AdminChat() {
                 >
                   <Paperclip className="w-5 h-5" />
                 </button>
-                <input type="text" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
+                <input type="text" translate="no" value={inputText} onChange={(e) => { setInputText(e.target.value); sendTyping(); }}
                   placeholder="Введите сообщение..."
                   className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500" />
                 <button type="submit" disabled={sendMutation.isPending}

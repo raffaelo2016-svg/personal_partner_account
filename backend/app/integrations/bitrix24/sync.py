@@ -17,6 +17,8 @@ from app.integrations.bitrix24.client import Bitrix24Client, Bitrix24Error
 from app.integrations.bitrix24.clients import (
     CLIENT_CONTACT_ENTITY_TYPE,
     CLIENT_DEAL_ENTITY_TYPE,
+    CLIENT_DEAL_FIELDS,
+    CLIENT_DEAL_UPDATE_ENTITY_TYPE,
     enqueue_client_deal,
     extract_client_deal_event_reference,
 )
@@ -37,7 +39,12 @@ from app.integrations.bitrix24.preparation_notice import (
     execute_preparation_notice,
     schedule_preparation_notice,
 )
-from app.integrations.bitrix24.tasks import TASK_ENTITY_TYPE, extract_task_event_reference, schedule_task_creation
+from app.integrations.bitrix24.tasks import (
+    TASK_ENTITY_TYPE,
+    extract_task_event_reference,
+    refresh_task_create_payload,
+    schedule_task_creation,
+)
 from app.integrations.bitrix24.token_storage import decrypt_token
 from app.models.bitrix_installation import BitrixInstallation
 from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
@@ -70,7 +77,7 @@ def event_fingerprint(payload: dict[str, Any]) -> tuple[str, str]:
         "event": str(payload.get("event", "UNKNOWN")).upper(),
         "event_id": payload.get("event_id"),
         "event_ts": payload.get("event_ts") or payload.get("ts"),
-        "data": payload.get("data"),
+        "data": payload.get("data") or {key: value for key, value in payload.items() if key.startswith("data[")},
     }
     payload_hash = hashlib.sha256(_canonical_json(safe_shape).encode()).hexdigest()
     supplied_key = str(payload.get("event_id") or "").strip()
@@ -234,7 +241,9 @@ async def claim_outbox_batch(db: AsyncSession, *, limit: int | None = None) -> l
             partner = await db.get(Partner, operation.local_entity_id)
             if partner is not None:
                 partner.bitrix_sync_status = "processing"
-        elif operation.local_entity_type in _CLIENT_ENTITY_TYPES:
+        elif operation.local_entity_type in _CLIENT_ENTITY_TYPES or (
+            operation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE
+        ):
             client = await db.get(Client, operation.local_entity_id)
             if client is not None:
                 client.bitrix_sync_status = "processing"
@@ -304,6 +313,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     operation.result_reference = _safe_result_reference(result)
     await _complete_partner_projection(db, operation)
     await _complete_client_projection(db, operation)
+    await _complete_client_case_number_update(db, operation)
     await _complete_task_projection(db, operation)
     await _complete_file_projection(db, operation)
     await _complete_chat_message_projection(db, operation)
@@ -332,12 +342,19 @@ async def _execute_operation(
         return await execute_chat_message(client, operation)
     if operation.local_entity_type == PREPARATION_NOTICE_ENTITY_TYPE:
         return await execute_preparation_notice(client, operation)
+    if operation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE:
+        if db is None:
+            raise RuntimeError("Client deal update requires a database session")
+        await refresh_client_case_number_payload(db, operation)
+        return await client.call(operation.bitrix_method, operation.payload)
     list_method = None
     if operation.local_entity_type == CLIENT_CONTACT_ENTITY_TYPE:
         list_method = "crm.contact.list"
     elif operation.local_entity_type == CLIENT_DEAL_ENTITY_TYPE:
         list_method = "crm.deal.list"
     elif operation.local_entity_type == TASK_ENTITY_TYPE:
+        if db is not None:
+            await refresh_task_create_payload(db, operation)
         existing = await client.call(
             "tasks.task.list",
             {
@@ -349,7 +366,13 @@ async def _execute_operation(
         if isinstance(tasks, list) and tasks:
             first = tasks[0]
             if isinstance(first, dict) and (first.get("id") or first.get("ID")):
-                return first.get("id") or first.get("ID")
+                task_id = first.get("id") or first.get("ID")
+                if db is not None:
+                    fields = dict(operation.payload.get("fields", {}))
+                    fields.pop("CREATED_BY", None)
+                    fields.setdefault("DEADLINE", "")
+                    await client.call("tasks.task.update", {"taskId": task_id, "fields": fields})
+                return task_id
     if list_method:
         fields = operation.payload.get("fields", {})
         originator_id = fields.get("ORIGINATOR_ID")
@@ -376,7 +399,9 @@ async def _update_projection_failure(
 ) -> None:
     if operation.local_entity_type == PARTNER_ENTITY_TYPE:
         entity = await db.get(Partner, operation.local_entity_id)
-    elif operation.local_entity_type in _CLIENT_ENTITY_TYPES:
+    elif operation.local_entity_type in _CLIENT_ENTITY_TYPES or (
+        operation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE
+    ):
         entity = await db.get(Client, operation.local_entity_id)
     elif operation.local_entity_type == TASK_ENTITY_TYPE:
         entity = await db.get(Task, operation.local_entity_id)
@@ -457,6 +482,76 @@ async def _complete_partner_projection(db: AsyncSession, operation: BitrixOutbox
 
         for client in pending_clients:
             await schedule_client_creation(db, client, partner=partner)
+    pending_tasks = list(
+        (
+            await db.scalars(
+                select(Task).where(
+                    Task.partner_id == partner.id,
+                    Task.client_id.is_(None),
+                    Task.bitrix_sync_status == "pending",
+                    Task.bitrix_sync_error_code == "PARTNER_NOT_SYNCED",
+                )
+            )
+        ).all()
+    )
+    for task in pending_tasks:
+        await schedule_task_creation(db, task)
+
+
+async def refresh_client_case_number_payload(
+    db: AsyncSession,
+    operation: BitrixOutboxOperation,
+) -> None:
+    """Build the outbound deal update from the current client row.
+
+    The operation stores only the deal id, so a coalesced or retried update
+    always carries the latest case number instead of a stale snapshot.
+    """
+    client = await db.get(Client, operation.local_entity_id)
+    if client is None:
+        raise Bitrix24Error("CLIENT_NOT_FOUND", "Client not found")
+    deal_id = client.bitrix_deal_id or await db.scalar(
+        select(BitrixEntityMap.bitrix_entity_id)
+        .where(
+            BitrixEntityMap.local_entity_type == CLIENT_DEAL_ENTITY_TYPE,
+            BitrixEntityMap.local_entity_id == client.id,
+        )
+        .limit(1)
+    )
+    if not deal_id:
+        raise Bitrix24Error("DEAL_NOT_SYNCED", "Client deal is not linked")
+    operation.payload = {
+        "id": deal_id,
+        "fields": {CLIENT_DEAL_FIELDS["case_number"]: client.case_number or ""},
+    }
+
+
+async def _complete_client_case_number_update(
+    db: AsyncSession,
+    operation: BitrixOutboxOperation,
+) -> None:
+    if operation.local_entity_type != CLIENT_DEAL_UPDATE_ENTITY_TYPE:
+        return
+    client = await db.get(Client, operation.local_entity_id)
+    if client is None:
+        return
+    newer_operation = await db.scalar(
+        select(BitrixOutboxOperation.id)
+        .where(
+            BitrixOutboxOperation.member_id == operation.member_id,
+            BitrixOutboxOperation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE,
+            BitrixOutboxOperation.local_entity_id == client.id,
+            BitrixOutboxOperation.id != operation.id,
+            BitrixOutboxOperation.status.in_(("pending", "retry", "processing")),
+        )
+        .limit(1)
+    )
+    client.bitrix_sync_error_code = None
+    if newer_operation is None:
+        client.bitrix_sync_status = "synced"
+        client.bitrix_synced_at = datetime.now(UTC)
+    else:
+        client.bitrix_sync_status = "pending"
 
 
 async def _complete_client_projection(db: AsyncSession, operation: BitrixOutboxOperation) -> None:

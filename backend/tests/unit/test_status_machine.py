@@ -33,6 +33,12 @@ class TestStatusTransitionsMap:
     def test_realization_can_go_back_to_auction(self):
         assert ClientStatus.AUCTION in STATUS_TRANSITIONS[ClientStatus.REALIZATION]
 
+    def test_realization_can_be_completed(self):
+        assert ClientStatus.COMPLETED in STATUS_TRANSITIONS[ClientStatus.REALIZATION]
+
+    def test_completed_can_reopen_realization(self):
+        assert STATUS_TRANSITIONS[ClientStatus.COMPLETED] == [ClientStatus.REALIZATION]
+
     def test_documents_collection_only_forward(self):
         targets = STATUS_TRANSITIONS[ClientStatus.DOCUMENTS_COLLECTION]
         assert targets == [ClientStatus.DOCUMENTS_FORMATION]
@@ -49,6 +55,8 @@ class TestStatusTransitionsMap:
             (ClientStatus.RESTRUCTURING, ClientStatus.AUCTION),
             (ClientStatus.AUCTION, ClientStatus.REALIZATION),
             (ClientStatus.REALIZATION, ClientStatus.AUCTION),
+            (ClientStatus.REALIZATION, ClientStatus.COMPLETED),
+            (ClientStatus.COMPLETED, ClientStatus.REALIZATION),
         ],
     )
     def test_valid_transition_exists(self, from_s, to_s):
@@ -62,6 +70,8 @@ class TestStatusTransitionsMap:
             (ClientStatus.DOCUMENTS_FORMATION, ClientStatus.WAITING_HEARING),
             (ClientStatus.SENT_TO_COURT, ClientStatus.AUCTION),
             (ClientStatus.REALIZATION, ClientStatus.DOCUMENTS_COLLECTION),
+            (ClientStatus.COMPLETED, ClientStatus.DOCUMENTS_COLLECTION),
+            (ClientStatus.COMPLETED, ClientStatus.AUCTION),
         ],
     )
     def test_invalid_transition_not_exists(self, from_s, to_s):
@@ -70,7 +80,7 @@ class TestStatusTransitionsMap:
     def test_forward_path_exists(self):
         """Можно пройти от первого до последнего статуса."""
         current = ClientStatus.DOCUMENTS_COLLECTION
-        target = ClientStatus.REALIZATION
+        target = ClientStatus.COMPLETED
         visited = set()
         for _ in range(20):
             if current == target:
@@ -96,7 +106,9 @@ class TestStageOrder:
 
     def test_stages_match_linear_order(self):
         stage_keys = [s["status_key"] for s in STAGES]
-        assert stage_keys == LINEAR_STATUS_ORDER
+        # «Завершено» — терминальный статус, а не отдельный этап прогресса.
+        assert stage_keys == LINEAR_STATUS_ORDER[:-1]
+        assert LINEAR_STATUS_ORDER[-1] == ClientStatus.COMPLETED
 
     def test_stages_have_sequential_ids(self):
         ids = [s["id"] for s in STAGES]
@@ -107,6 +119,10 @@ class TestStageOrder:
             assert isinstance(s["title"], str)
             assert len(s["title"]) > 0
 
+    def test_completed_is_after_all_progress_stages(self):
+        """Для статуса «Завершено» все этапы считаются пройденными."""
+        assert _get_status_index("completed") == len(STAGES)
+
 
 class TestGetStatusIndex:
     """_get_status_index — pure function."""
@@ -115,6 +131,7 @@ class TestGetStatusIndex:
         assert _get_status_index("documents_collection") == 0
 
     def test_last_status(self):
+        assert _get_status_index("completed") == 8
         assert _get_status_index("realization") == 7
 
     def test_middle_status(self):
@@ -128,7 +145,7 @@ class TestGetStatusIndex:
 
     def test_monotonic(self):
         indices = [_get_status_index(s.value) for s in LINEAR_STATUS_ORDER]
-        assert indices == list(range(8))
+        assert indices == list(range(9))
 
 
 class TestClientStatusEnum:
@@ -146,7 +163,7 @@ class TestClientStatusEnum:
             ClientStatus("invalid")
 
     def test_count(self):
-        assert len(ClientStatus) == 8
+        assert len(ClientStatus) == 9
 
     def test_client_type_count(self):
         from app.models.enums import ClientType

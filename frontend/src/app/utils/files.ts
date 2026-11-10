@@ -7,12 +7,22 @@ export const ALLOWED_FILE_FORMATS = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'audio/mpeg',
+  'audio/mp3',
+  'audio/x-mp3',
 ];
 
-export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.zip'];
+export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.zip', '.mp3'];
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_FILE_SIZE_LABEL = '10 МБ';
+export const MAX_ZIP_FILE_SIZE_BYTES = 100 * 1024 * 1024;
+export const MAX_ZIP_FILE_SIZE_LABEL = '100 МБ';
+export const FILE_SIZE_LIMITS_LABEL = `ZIP — до ${MAX_ZIP_FILE_SIZE_LABEL}, остальные файлы — до ${MAX_FILE_SIZE_LABEL}`;
+
+export function maxFileSizeForFilename(filename: string): number {
+  return filename.toLowerCase().endsWith('.zip') ? MAX_ZIP_FILE_SIZE_BYTES : MAX_FILE_SIZE_BYTES;
+}
 
 export interface PartitionedFiles {
   valid: File[];
@@ -31,7 +41,7 @@ export function partitionFiles(files: FileList | File[]): PartitionedFiles {
       invalidFormat.push(file.name);
       return;
     }
-    if (file.size > MAX_FILE_SIZE_BYTES) {
+    if (file.size > maxFileSizeForFilename(file.name)) {
       tooLarge.push(file.name);
       return;
     }

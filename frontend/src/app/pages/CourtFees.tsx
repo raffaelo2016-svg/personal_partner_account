@@ -210,6 +210,7 @@ export default function CourtFees() {
     restructuring: 'Реструктуризация',
     auction: 'Торги',
     realization: 'Реализация',
+    completed: 'Завершено',
   };
 
   const clientDebts = (feesData?.items ?? []).map((f) => ({

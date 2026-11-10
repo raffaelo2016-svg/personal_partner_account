@@ -33,6 +33,7 @@ from app.services.auth_service import (
 )
 from app.services.notification_service import create_notification
 from app.services.password_reset_service import deliver_password_reset, request_password_reset, reset_password
+from app.validation.regions import timezone_for_region
 
 logger = structlog.get_logger()
 
@@ -194,6 +195,8 @@ async def register(
         legal_address=body.legal_address,
         postal_address=body.postal_address,
         kpp=body.kpp,
+        region=body.region,
+        timezone=timezone_for_region(body.region),
         court_fee_per_client=1_500_000,
         payment_term_days=10,
         status="pending",

@@ -108,6 +108,11 @@ async def create_client_endpoint(
     partner_id = await _get_partner_id_for_user(db, str(current_user.id))
     result = await create_client(db, partner_id, body)
     await db.commit()
+    from app.api.chat import _message_payload
+    from app.api.ws_chat import broadcast_new_message
+
+    for message in db.info.pop("new_client_chat_messages", []):
+        await broadcast_new_message(_message_payload(message), room_id=message.room_id)
     return result
 
 

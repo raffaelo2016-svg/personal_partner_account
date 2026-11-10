@@ -1,5 +1,3 @@
-import os
-
 import structlog
 from fastapi import UploadFile
 from sqlalchemy import func, select
@@ -9,22 +7,23 @@ from app.core.exceptions import BadRequest, FileTooLarge, Forbidden, NotFound, U
 from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
 from app.schemas.chat import ChatMessageEventRead, ChatMessageRead, ChatRoomRead
 from app.services.s3_service import delete_file_async, get_presigned_url, upload_file_async
+from app.validation.files import (
+    ALLOWED_EXTENSIONS,
+    ALLOWED_MIME_TYPES,
+    MAX_FILE_SIZE_BYTES,
+    file_extension,
+    has_valid_signature,
+    max_file_size_for_filename,
+    normalize_mime_type,
+)
 
 logger = structlog.get_logger()
 
 ROOM_TYPES = ["admin", "tech_support", "arbitration_manager", "assistant", "ai_assistant"]
 STAFF_ROOM_TYPES = {"admin", "tech_support"}
-CHAT_UPLOAD_MAX_SIZE_MB = 10
-CHAT_ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".zip"}
-CHAT_ALLOWED_MIME_TYPES = {
-    "application/zip",
-    "application/x-zip-compressed",
-    "application/pdf",
-    "image/jpeg",
-    "image/png",
-    "application/msword",
-    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-}
+CHAT_UPLOAD_MAX_SIZE_MB = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+CHAT_ALLOWED_EXTENSIONS = ALLOWED_EXTENSIONS
+CHAT_ALLOWED_MIME_TYPES = ALLOWED_MIME_TYPES
 
 
 def _msg_to_read(m: ChatMessage) -> ChatMessageRead:
@@ -59,19 +58,20 @@ async def upload_chat_file(file: UploadFile) -> tuple[str, str, int, str]:
     if not file.filename:
         raise BadRequest("No filename")
 
-    ext = os.path.splitext(file.filename)[1].lower()
+    ext = file_extension(file.filename)
     if ext not in CHAT_ALLOWED_EXTENSIONS:
         raise UnsupportedFileType()
 
-    content_type = file.content_type or ""
-    if ext == ".zip" and content_type in {"", "application/octet-stream", "application/x-zip-compressed"}:
-        content_type = "application/zip"
-    if content_type not in CHAT_ALLOWED_MIME_TYPES:
+    content_type = normalize_mime_type(file.filename, file.content_type)
+    if content_type is None:
         raise UnsupportedFileType()
 
-    data = await file.read()
-    if len(data) > CHAT_UPLOAD_MAX_SIZE_MB * 1024 * 1024:
+    max_size = max_file_size_for_filename(file.filename)
+    data = await file.read(max_size + 1)
+    if len(data) > max_size:
         raise FileTooLarge()
+    if ext == ".mp3" and not has_valid_signature(data, ext):
+        raise UnsupportedFileType()
 
     s3_key = await upload_file_async(data, file.filename, content_type)
     return s3_key, file.filename, len(data), content_type

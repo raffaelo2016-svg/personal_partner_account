@@ -1,5 +1,5 @@
 import calendar
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 
 import structlog
 from sqlalchemy import case, func, select
@@ -12,8 +12,18 @@ from app.models.client import Client
 from app.models.court_fee import CourtFee
 from app.models.partner import Partner
 from app.models.user import User
-from app.schemas.partner import PartnerBitrixCollabBinding, PartnerCreate, PartnerRead, PartnerStats, PartnerUpdate
+from app.schemas.partner import (
+    PartnerBitrixCollabBinding,
+    PartnerClientPauseCounts,
+    PartnerClientPauseRead,
+    PartnerCreate,
+    PartnerRead,
+    PartnerStats,
+    PartnerUpdate,
+)
 from app.services.audit import audit_log
+from app.services.client_service import COMPLETED_STATUSES
+from app.validation.regions import timezone_for_region
 
 logger = structlog.get_logger()
 
@@ -84,6 +94,115 @@ async def list_partners(
     return items, total
 
 
+#: Порог «партнёр без клиента», совпадающий с карточкой дашборда
+#: «Нет первого клиента — активны более 14 дней».
+PARTNER_CLIENT_PAUSE_DAYS = 14
+PARTNER_CLIENT_PAUSE_MODES = ("no_clients", "stalled")
+
+
+def client_pause_days(reference: datetime | None, now: datetime) -> int:
+    """Сколько полных дней прошло с ``reference`` (0, если даты нет)."""
+    if reference is None:
+        return 0
+    if reference.tzinfo is None:
+        reference = reference.replace(tzinfo=UTC)
+    return max((now - reference).days, 0)
+
+
+async def list_partners_with_client_pause(
+    session: AsyncSession,
+    *,
+    mode: str,
+    snapshot_date: date | None = None,
+    offset: int = 0,
+    limit: int = 20,
+) -> tuple[list[PartnerClientPauseRead], int, PartnerClientPauseCounts]:
+    """Активные партнёры без клиентского потока.
+
+    ``mode="no_clients"`` — за всё время не передали ни одного клиента
+    («не рабочие»); ``mode="stalled"`` — клиенты были, но последний
+    появился раньше порога («затихшие»).
+    """
+    if mode not in PARTNER_CLIENT_PAUSE_MODES:
+        raise ValueError(f"Unsupported mode: {mode}")
+
+    snapshot = snapshot_date or date.today()
+    cutoff = datetime.combine(snapshot - timedelta(days=PARTNER_CLIENT_PAUSE_DAYS), time.max)
+
+    # Одна агрегация на всех: клиенты партнёра + дата последнего клиента.
+    activity = (
+        select(
+            Partner.id.label("partner_id"),
+            func.count(Client.id).label("clients_count"),
+            func.max(Client.created_at).label("last_client_at"),
+        )
+        .select_from(Partner)
+        .outerjoin(Client, (Client.partner_id == Partner.id) & Client.deleted_at.is_(None))
+        .where(
+            Partner.deleted_at.is_(None),
+            Partner.status == "active",
+            Partner.created_at < cutoff,
+        )
+        .group_by(Partner.id)
+        .subquery()
+    )
+
+    no_clients_condition = activity.c.clients_count == 0
+    stalled_condition = (activity.c.clients_count > 0) & (activity.c.last_client_at < cutoff)
+
+    counts_row = (
+        await session.execute(
+            select(
+                func.count().filter(no_clients_condition).label("no_clients"),
+                func.count().filter(stalled_condition).label("stalled"),
+            ).select_from(activity)
+        )
+    ).one()
+    counts = PartnerClientPauseCounts(
+        no_clients=counts_row.no_clients or 0,
+        stalled=counts_row.stalled or 0,
+    )
+
+    condition = no_clients_condition if mode == "no_clients" else stalled_condition
+    total = (await session.execute(select(func.count()).select_from(activity).where(condition))).scalar() or 0
+
+    rows_q = (
+        select(Partner, User.email, activity.c.clients_count, activity.c.last_client_at)
+        .join(activity, activity.c.partner_id == Partner.id)
+        .join(User, Partner.user_id == User.id)
+        .where(condition)
+    )
+    if mode == "no_clients":
+        # Дольше всех ждём клиента — сверху.
+        rows_q = rows_q.order_by(Partner.created_at.asc())
+    else:
+        rows_q = rows_q.order_by(activity.c.last_client_at.asc())
+    rows_q = rows_q.offset(offset).limit(limit)
+
+    now = datetime.now(UTC)
+    items: list[PartnerClientPauseRead] = []
+    for partner, email, clients_count, last_client_at in (await session.execute(rows_q)).all():
+        counts_value = clients_count or 0
+        reference = partner.created_at if counts_value == 0 else last_client_at
+        items.append(
+            PartnerClientPauseRead(
+                id=str(partner.id),
+                company_name=partner.company_name,
+                director_name=partner.director_name,
+                email=email,
+                phone=partner.phone,
+                status=partner.status,
+                created_at=partner.created_at,
+                last_client_at=last_client_at,
+                clients_count=counts_value,
+                days_without_client=client_pause_days(reference, now),
+                never_had_client=counts_value == 0,
+            )
+        )
+
+    return items, total, counts
+
+
 async def get_partner(session: AsyncSession, partner_id: str) -> PartnerRead:
     partner = await session.get(Partner, partner_id)
     if not partner or partner.deleted_at is not None:
@@ -121,7 +240,7 @@ async def _get_client_status_counts_batch(session: AsyncSession, partner_ids: li
             func.count().label("clients_count"),
             func.count().filter(Client.type == "before_court").label("before_court_count"),
             func.count().filter(Client.type == "in_court").label("in_court_count"),
-            func.count().filter(Client.status == "realization").label("completed_count"),
+            func.count().filter(Client.status.in_(COMPLETED_STATUSES)).label("completed_count"),
         )
         .where(Client.partner_id.in_(partner_ids), Client.deleted_at.is_(None))
         .group_by(Client.partner_id)
@@ -256,6 +375,8 @@ def _partner_to_read(
         legal_address=partner.legal_address,
         postal_address=partner.postal_address,
         kpp=partner.kpp,
+        region=partner.region,
+        timezone=partner.timezone,
         court_fee_per_client=partner.court_fee_per_client,
         payment_term_days=partner.payment_term_days,
         free_client_limit=partner.free_client_limit,
@@ -313,6 +434,8 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
         legal_address=data.legal_address,
         postal_address=data.postal_address,
         kpp=data.kpp,
+        region=data.region,
+        timezone=timezone_for_region(data.region),
         court_fee_per_client=data.court_fee_per_client if data.court_fee_per_client is not None else 1_500_000,
         payment_term_days=data.payment_term_days if data.payment_term_days is not None else 10,
         free_client_limit=free_client_limit,
@@ -331,6 +454,10 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
 
     await schedule_partner_creation(session, partner)
 
+    # Load generated attributes explicitly before response serialization.
+    await session.flush()
+    await session.refresh(partner)
+
     audit_log(action="create_partner", target_id=str(partner.id), target_type="partner")
     logger.info("partner_created", partner_id=str(partner.id), company=data.company_name)
 
@@ -338,7 +465,9 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
 
 
 async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUpdate) -> PartnerRead:
-    partner = await session.get(Partner, partner_id)
+    partner = (await session.execute(
+        select(Partner).where(Partner.id == partner_id).with_for_update()
+    )).scalar_one_or_none()
     if not partner or partner.deleted_at is not None:
         raise NotFound("Partner not found")
 
@@ -348,9 +477,12 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
     update_data = data.model_dump(exclude_unset=True)
     court_fee_submitted = "court_fee_per_client" in update_data
     payment_term_submitted = "payment_term_days" in update_data
+    region_submitted = "region" in update_data
     for key, value in update_data.items():
         if hasattr(partner, key):
             setattr(partner, key, value if not hasattr(value, "value") else value.value)
+    if region_submitted:
+        partner.timezone = timezone_for_region(partner.region)
 
     if partner.free_client_limit <= 0:
         partner.free_client_limit = 0
@@ -376,6 +508,10 @@ async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUp
             sync_amount=court_fee_submitted,
             sync_due_date=payment_term_submitted,
         )
+    if {"free_client_limit", "promotion_start_date", "promotion_end_date"} & update_data.keys():
+        from app.services.promotion_recalculation import apply_promotion_to_open_fees
+
+        await apply_promotion_to_open_fees(session, partner)
     if previous_status != "active" and partner.status == "active":
         from app.integrations.bitrix24.partners import schedule_partner_creation
 
@@ -457,6 +593,7 @@ async def delete_partner(session: AsyncSession, partner_id: str) -> None:
     client_ids_q = select(Client.id).where(Client.partner_id == partner.id)
     client_ids = list((await session.execute(client_ids_q)).scalars().all())
 
+    await session.execute(sa_delete(Task).where(Task.partner_id == partner.id))
     if client_ids:
         await session.execute(sa_delete(Task).where(Task.client_id.in_(client_ids)))
         await session.execute(sa_delete(FileUpload).where(FileUpload.client_id.in_(client_ids)))

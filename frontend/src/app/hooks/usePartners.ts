@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   fetchPartners,
+  fetchPartnersWithoutClients,
   fetchPartner,
   createPartner,
   updatePartner,
@@ -8,6 +9,7 @@ import {
   fetchPartnerStats,
   bindPartnerBitrixCollab,
   retryPartnerBitrixSync,
+  type PartnerClientPauseMode,
   type PartnerFilters,
 } from '@/app/api/partners';
 import type { PartnerBitrixCollabBinding, PartnerCreate, PartnerUpdate } from '@/app/types';
@@ -23,6 +25,17 @@ export function useInfinitePartners(filters: Omit<PartnerFilters, 'page'> = {}) 
   return useInfiniteQuery({
     queryKey: ['admin', 'partners', 'infinite', filters],
     queryFn: ({ pageParam = 1 }) => fetchPartners({ ...filters, page: pageParam, page_size: 20 }),
+    initialPageParam: 1,
+    refetchOnMount: 'always',
+    getNextPageParam: (lastPage) =>
+      lastPage.page < lastPage.pages ? lastPage.page + 1 : undefined,
+  });
+}
+
+export function useInfinitePartnersWithoutClients(mode: PartnerClientPauseMode) {
+  return useInfiniteQuery({
+    queryKey: ['admin', 'partners', 'without-clients', mode],
+    queryFn: ({ pageParam = 1 }) => fetchPartnersWithoutClients({ mode, page: pageParam, page_size: 20 }),
     initialPageParam: 1,
     refetchOnMount: 'always',
     getNextPageParam: (lastPage) =>

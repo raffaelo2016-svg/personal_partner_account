@@ -1,6 +1,7 @@
 import asyncio
 import uuid
 from pathlib import PurePosixPath
+from urllib.parse import quote
 
 import boto3
 import structlog
@@ -72,11 +73,17 @@ def upload_file(data: bytes, original_name: str, mime_type: str) -> str:
     return s3_key
 
 
-def get_presigned_url(s3_key: str, expires_in: int = 900) -> str:
+def get_presigned_url(s3_key: str, expires_in: int = 900, *, filename: str | None = None) -> str:
     client = _get_s3_public()
+    params = {"Bucket": settings.S3_BUCKET, "Key": s3_key}
+    if filename:
+        # Keep previews inline, but use the original UTF-8 name when saving.
+        # This also fixes existing objects stored under UUID keys without a migration.
+        name = filename.replace("\\", "/").rsplit("/", 1)[-1]
+        params["ResponseContentDisposition"] = f"inline; filename*=UTF-8''{quote(name, safe='')}"
     return client.generate_presigned_url(
         "get_object",
-        Params={"Bucket": settings.S3_BUCKET, "Key": s3_key},
+        Params=params,
         ExpiresIn=expires_in,
     )
 
@@ -102,8 +109,8 @@ async def upload_file_async(data: bytes, original_name: str, mime_type: str) -> 
     return await asyncio.to_thread(upload_file, data, original_name, mime_type)
 
 
-async def get_presigned_url_async(s3_key: str, expires_in: int = 900) -> str:
-    return await asyncio.to_thread(get_presigned_url, s3_key, expires_in)
+async def get_presigned_url_async(s3_key: str, expires_in: int = 900, *, filename: str | None = None) -> str:
+    return await asyncio.to_thread(get_presigned_url, s3_key, expires_in, filename=filename)
 
 
 async def delete_file_async(s3_key: str) -> None:

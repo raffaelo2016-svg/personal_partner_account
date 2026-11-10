@@ -18,6 +18,7 @@ import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { toast } from 'sonner';
 import type { Partner, PartnerUpdate } from '@/app/types';
+import CaseArbitrLink from '../components/CaseArbitrLink';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Активный',
@@ -891,7 +892,9 @@ export default function AdminPartnerDetails() {
                         >
                           {client.full_name}
                         </Link>
-                        <p className="mt-0.5 text-xs text-gray-500">{client.case_number || 'Дело не указано'}</p>
+                        <p className="mt-0.5 text-xs text-gray-500">
+                          <CaseArbitrLink caseNumber={client.case_number} emptyLabel="Дело не указано" />
+                        </p>
                       </td>
                       <td className="px-4 py-4 text-sm text-gray-600">{client.phone || '—'}</td>
                       <td className="px-4 py-4">

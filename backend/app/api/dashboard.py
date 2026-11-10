@@ -5,9 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user
 from app.database import get_db
 from app.models.client import Client
-from app.models.task import Task
 from app.models.user import User
-from app.services.client_service import _get_partner_id_for_user
+from app.services.client_service import COMPLETED_STATUSES, _get_partner_id_for_user
+from app.services.task_service import get_task_stats, get_urgent_tasks
 
 router = APIRouter(prefix="/dashboard", tags=["dashboard"])
 
@@ -26,40 +26,27 @@ async def partner_dashboard(
     total_clients = (await db.execute(base_clients)).scalar() or 0
     before_court = (await db.execute(base_clients.where(Client.type == "before_court"))).scalar() or 0
     in_court = (await db.execute(base_clients.where(Client.type == "in_court"))).scalar() or 0
-    completed = (await db.execute(base_clients.where(Client.status == "realization"))).scalar() or 0
+    completed = (await db.execute(base_clients.where(Client.status.in_(COMPLETED_STATUSES)))).scalar() or 0
     new_this_week = (
         await db.execute(base_clients.where(Client.created_at >= func.now() - text("interval '7 days'")))
     ).scalar() or 0
 
-    base_tasks = (
-        select(func.count())
-        .select_from(Task)
-        .join(Client, Task.client_id == Client.id)
-        .where(Client.partner_id == partner_id)
-    )
-    total_tasks = (await db.execute(base_tasks)).scalar() or 0
-    completed_tasks = (await db.execute(base_tasks.where(Task.status == "completed"))).scalar() or 0
+    task_stats = await get_task_stats(db, partner_id=str(partner_id))
+    total_tasks = task_stats.total
+    completed_tasks = task_stats.completed
     task_pct = round((completed_tasks / total_tasks) * 100) if total_tasks > 0 else 0
 
-    urgent_q = (
-        select(Task)
-        .join(Client, Task.client_id == Client.id)
-        .where(
-            Client.partner_id == partner_id,
-            Task.status.in_(["pending", "in_progress", "overdue"]),
-            Task.priority == "high",
-        )
-        .order_by(Task.due_date.asc())
-        .limit(5)
-    )
-    urgent_rows = (await db.execute(urgent_q)).scalars().all()
+    urgent_rows = await get_urgent_tasks(db, partner_id=str(partner_id), priority="high")
     urgent_tasks = [
         {
             "id": str(t.id),
             "title": t.title,
             "status": t.status,
             "priority": t.priority,
-            "due_date": str(t.due_date),
+            "due_date": t.due_date.isoformat() if t.due_date else None,
+            "due_at": t.due_at.isoformat() if t.due_at else None,
+            "client_id": t.client_id,
+            "client_name": t.client_name,
         }
         for t in urgent_rows
     ]

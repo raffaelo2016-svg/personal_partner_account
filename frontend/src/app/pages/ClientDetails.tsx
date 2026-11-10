@@ -34,11 +34,15 @@ import { useRetryTaskBitrix, useTasks } from '../hooks/useTasks';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import { captureError } from '@/app/sentry';
-import { uploadAllSettled } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, partitionFiles, uploadAllSettled } from '@/app/utils/files';
 import { formatDateShort, formatDateTime as fmtDateTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
+import { formatTaskDeadline } from '@/app/utils/taskDeadline';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
 import ClientDocumentPreparation from '../components/ClientDocumentPreparation';
+import CaseArbitrLink from '../components/CaseArbitrLink';
+import { resolveCaseUrl } from '../utils/courtCase';
+import DocumentDeleteButton from '../components/DocumentDeleteButton';
 
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return Image;
@@ -107,10 +111,20 @@ export default function ClientDetails() {
   const handleDirectUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0 || !id) return;
+    const { valid, invalidFormat, tooLarge } = partitionFiles(files);
+    if (invalidFormat.length > 0) {
+      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+    }
+    if (tooLarge.length > 0) {
+      toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
+    }
+    if (valid.length === 0) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
     setIsUploading(true);
     try {
-      const items = Array.from(files);
-      const result = await uploadAllSettled(items, (f) => uploadFile(f, id, 'other'));
+      const result = await uploadAllSettled(valid, (f) => uploadFile(f, id, 'other'));
       queryClient.invalidateQueries({ queryKey: ['clientFiles', id] });
       if (result.failed.length === 0) {
         toast.success(`Загружено файлов: ${result.succeeded.length}`);
@@ -131,6 +145,15 @@ export default function ClientDetails() {
     }
   };
   
+  // Ссылка на карточку дела, сохранённая при импорте (КАД Арбитр).
+  const storedCaseUrl = (() => {
+    const source = apiClient?.document_generation_data?.source_import;
+    const value = (source as Record<string, unknown> | undefined)?.case_url;
+    return typeof value === 'string' ? value : null;
+  })();
+
+  const caseUrl = resolveCaseUrl(apiClient?.case_number, storedCaseUrl);
+
   const client = apiClient
     ? {
         id: apiClient.id,
@@ -189,6 +212,7 @@ export default function ClientDetails() {
       restructuring: 'Реструктуризация',
       auction: 'Торги',
       realization: 'Реализация',
+      completed: 'Завершено',
     };
     return labels[status] || status;
   };
@@ -203,6 +227,7 @@ export default function ClientDetails() {
       restructuring: 'bg-purple-100 text-purple-700',
       auction: 'bg-amber-100 text-amber-700',
       realization: 'bg-green-100 text-green-700',
+      completed: 'bg-teal-100 text-teal-700',
     };
     return colors[status] || 'bg-gray-100 text-gray-700';
   };
@@ -219,6 +244,8 @@ export default function ClientDetails() {
     'restructuring',
     'auction',
     'realization',
+    // Терминальный статус: для него все восемь этапов считаются пройденными.
+    'completed',
   ];
 
   const STAGE_DEFS = [
@@ -322,7 +349,15 @@ export default function ClientDetails() {
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <p className="text-sm text-gray-600 mb-1">Номер судебного дела</p>
-                    <p className="text-gray-900 font-medium">{client.caseNumber || '—'}</p>
+                    <p className="text-gray-900 font-medium">
+                      <CaseArbitrLink
+                        caseNumber={client.caseNumber}
+                        explicitUrl={storedCaseUrl}
+                      />
+                    </p>
+                    {caseUrl ? (
+                      <p className="mt-1 text-xs text-gray-500">Откроется в КАД Арбитр</p>
+                    ) : null}
                   </div>
                 </div>
               </div>
@@ -483,7 +518,7 @@ export default function ClientDetails() {
               ref={fileInputRef}
               type="file"
               multiple
-              accept=".jpg,.jpeg,.png,.pdf,.doc,.docx,.zip"
+              accept={ALLOWED_FILE_EXTENSIONS.join(',')}
               className="hidden"
               onChange={handleDirectUpload}
             />
@@ -565,12 +600,13 @@ export default function ClientDetails() {
                       </a>
                       <a
                         href={file.url}
-                        download
+                        download={file.filename}
                         className="p-1.5 text-gray-400 hover:text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity"
                         title="Скачать"
                       >
                         <Download className="w-4 h-4" />
                       </a>
+                      <DocumentDeleteButton file={file} />
                     </div>
                   );
                 })}
@@ -607,7 +643,7 @@ export default function ClientDetails() {
                       : 'text-yellow-600';
                   const statusLabel = isCompleted
                     ? `Выполнено ${task.completed_at ? formatDate(task.completed_at) : ''}`
-                    : `${isInProgress ? 'В работе' : 'Ожидает'} • Срок: ${formatDate(task.due_date)}`;
+                    : `${isInProgress ? 'В работе' : 'Ожидает'} • Срок: ${formatTaskDeadline(task)}`;
 
                   return (
                     <div key={task.id} className={`p-3 rounded-lg border ${bg}`}>
@@ -622,7 +658,7 @@ export default function ClientDetails() {
                               status={task.bitrix_sync_status}
                               errorCode={task.bitrix_sync_error_code}
                               isRetrying={retryTaskMutation.isPending && retryTaskMutation.variables === task.id}
-                              onRetry={() => retryTaskMutation.mutate(task.id, {
+                              onRetry={task.assigned_to === 'partner' ? undefined : () => retryTaskMutation.mutate(task.id, {
                                 onSuccess: () => toast.success('Задача снова поставлена в очередь Битрикс24'),
                                 onError: () => toast.error('Не удалось повторить отправку задачи'),
                               })}
