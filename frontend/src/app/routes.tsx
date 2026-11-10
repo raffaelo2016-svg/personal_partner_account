@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard';
 import NotFound from './pages/NotFound';
 import Login from './pages/Login';
 import AdminLayout from './pages/AdminLayout';
+import AgentLayout from './pages/agent/AgentLayout';
 import RouteErrorPage from './pages/RouteErrorPage';
 
 const lazyPage = (loader: () => Promise<{ default: React.ComponentType }>) => async () => ({
@@ -26,12 +27,47 @@ export const router = createBrowserRouter([
     lazy: lazyPage(() => import('./pages/Registration')),
   },
   {
+    path: '/become-agent',
+    lazy: lazyPage(() => import('./pages/BecomeAgent')),
+  },
+  {
+    path: '/setup',
+    lazy: lazyPage(() => import('./pages/Setup')),
+  },
+  {
+    path: '/invite/:token',
+    lazy: lazyPage(() => import('./pages/InviteAccept')),
+  },
+  {
     path: '/forgot-password',
     lazy: lazyPage(() => import('./pages/ForgotPassword')),
   },
   {
     path: '/reset-password',
     lazy: lazyPage(() => import('./pages/ResetPassword')),
+  },
+  {
+    path: '/agent',
+    Component: AuthGuard,
+    ErrorBoundary: RouteErrorPage,
+    children: [
+      {
+        element: (
+          <RoleGuard allowedRoles={['agent']}>
+            <AgentLayout />
+          </RoleGuard>
+        ),
+        children: [
+          { index: true, lazy: lazyPage(() => import('./pages/agent/AgentDashboard')) },
+          { path: 'partners', lazy: lazyPage(() => import('./pages/agent/AgentPartners')) },
+          { path: 'accruals', lazy: lazyPage(() => import('./pages/agent/AgentAccruals')) },
+          { path: 'payouts', lazy: lazyPage(() => import('./pages/agent/AgentPayouts')) },
+          { path: 'requisites', lazy: lazyPage(() => import('./pages/agent/AgentRequisites')) },
+          { path: 'materials', lazy: lazyPage(() => import('./pages/agent/AgentMaterials')) },
+          { path: 'support', lazy: lazyPage(() => import('./pages/agent/AgentSupport')) },
+        ],
+      },
+    ],
   },
   {
     path: '/dashboard',
@@ -67,7 +103,7 @@ export const router = createBrowserRouter([
     ErrorBoundary: RouteErrorPage,
     children: [
       {
-        element: <RoleGuard allowedRoles={['admin']}><AdminLayout /></RoleGuard>,
+        element: <RoleGuard allowedRoles={['admin', 'super_admin']}><AdminLayout /></RoleGuard>,
         children: [
           { index: true, lazy: lazyPage(() => import('./pages/AdminDashboard')) },
           { path: 'partners', lazy: lazyPage(() => import('./pages/AdminPartners')) },
@@ -85,6 +121,8 @@ export const router = createBrowserRouter([
           { path: 'documents-inbox', lazy: lazyPage(() => import('./pages/AdminChatDocuments')) },
           { path: 'news', lazy: lazyPage(() => import('./pages/AdminNews')) },
           { path: 'settings', lazy: lazyPage(() => import('./pages/AdminSettings')) },
+          { path: 'agents', lazy: lazyPage(() => import('./pages/AdminAgents')) },
+          { path: 'admins', lazy: lazyPage(() => import('./pages/AdminAdmins')) },
         ],
       },
     ],

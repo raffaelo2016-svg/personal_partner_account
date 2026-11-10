@@ -2,6 +2,7 @@ import structlog
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.core.exceptions import BadRequest, NotFound
 from app.models.client import Client
 from app.models.client_status_log import ClientStatusLog
@@ -89,6 +90,12 @@ async def change_status(
     )
     session.add(log_entry)
     await session.flush()
+
+    # Введение клиента в процедуру даёт агенту начисление (одно дело — одно начисление).
+    if target.value == settings.AGENT_ACCRUAL_STATUS:
+        from app.services.agent_service import accrue_for_client
+
+        await accrue_for_client(session, client)
 
     audit_log(
         action="change_client_status",

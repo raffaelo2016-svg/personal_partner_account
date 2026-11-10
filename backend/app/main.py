@@ -11,6 +11,8 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from app.api.admin_access import router as admin_access_router
+from app.api.admin_agents import router as admin_agents_router
 from app.api.admin_bitrix_attention import router as admin_bitrix_attention_router
 from app.api.admin_chat import router as admin_chat_router
 from app.api.admin_clients import router as admin_clients_router
@@ -18,6 +20,7 @@ from app.api.admin_dashboard import router as admin_dashboard_router
 from app.api.admin_finance import router as admin_finance_router
 from app.api.admin_partners import router as admin_partners_router
 from app.api.admin_settings import router as admin_settings_router
+from app.api.agent import router as agent_router
 from app.api.auth import router as auth_router
 from app.api.bitrix24_integration import router as bitrix24_integration_router
 from app.api.chat import router as chat_router
@@ -331,6 +334,9 @@ app.include_router(training_router, prefix="/api/v1")
 app.include_router(admin_dashboard_router, prefix="/api/v1")
 app.include_router(admin_finance_router, prefix="/api/v1")
 app.include_router(admin_settings_router, prefix="/api/v1")
+app.include_router(admin_access_router, prefix="/api/v1")
+app.include_router(admin_agents_router, prefix="/api/v1")
+app.include_router(agent_router, prefix="/api/v1")
 app.include_router(admin_chat_router, prefix="/api/v1")
 app.include_router(admin_bitrix_attention_router, prefix="/api/v1")
 app.include_router(partner_settings_router, prefix="/api/v1")

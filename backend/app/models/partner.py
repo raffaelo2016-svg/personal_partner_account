@@ -11,6 +11,7 @@ from app.models.base import Base, SoftDeleteMixin, TimestampMixin
 from app.models.types import UTCDateTime
 
 if TYPE_CHECKING:
+    from app.models.agent import Agent
     from app.models.client import Client
     from app.models.user import User
 
@@ -53,6 +54,12 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
     promotion_end_date: Mapped[date | None] = mapped_column(default=None)
     status: Mapped[str] = mapped_column(String(20), default="pending")
 
+    # Агентская программа: партнёр закрепляется за агентом один раз.
+    agent_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("agents.id", ondelete="SET NULL"), default=None, index=True
+    )
+    agent_linked_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+
     # Bitrix24 is an operational projection. Cabinet requisites remain authoritative.
     bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
     bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
@@ -67,6 +74,8 @@ class Partner(Base, TimestampMixin, SoftDeleteMixin):
 
     user: Mapped[User] = relationship("User", back_populates="partner")
     clients: Mapped[list[Client]] = relationship("Client", back_populates="partner")
+
+    agent: Mapped[Agent | None] = relationship("Agent", back_populates="partners")
 
     def __repr__(self) -> str:
         return f"<Partner {self.company_name}>"

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_BYTES } from '../files';
+import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_BYTES, MAX_ZIP_FILE_SIZE_BYTES } from '../files';
 
 function makeFile(name: string, size: number, type = ''): File {
   const blob = new Blob([new Uint8Array(size)], { type });
@@ -13,7 +13,7 @@ describe('partitionFiles', () => {
   });
 
   it('отвергает ZIP больше лимита', () => {
-    const file = makeFile('documents.zip', MAX_FILE_SIZE_BYTES + 1, 'application/zip');
+    const file = makeFile('documents.zip', MAX_ZIP_FILE_SIZE_BYTES + 1, 'application/zip');
     expect(partitionFiles([file]).tooLarge).toEqual(['documents.zip']);
   });
 

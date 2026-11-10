@@ -1,5 +1,5 @@
 import structlog
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -63,17 +63,20 @@ async def revoke_access_token(token: str) -> None:
     await redis_client.setex(f"{ACCESS_BLACKLIST_PREFIX}{jti}", ttl, "1")
 
 
-async def authenticate_user(session: AsyncSession, email: str, password: str) -> User:
-    result = await session.execute(select(User).where(User.email == email))
+async def authenticate_user(session: AsyncSession, identifier: str, password: str) -> User:
+    needle = (identifier or "").strip().lower()
+    result = await session.execute(
+        select(User).where(or_(func.lower(User.email) == needle, func.lower(User.login) == needle))
+    )
     user = result.scalar_one_or_none()
     if not user:
         # Constant-time: always run bcrypt even when user doesn't exist
         verify_password(password, _DUMMY_HASH)
-        audit_log(action="login_failed", details={"email": email})
+        audit_log(action="login_failed", details={"identifier": needle})
         logger.warning("login_failed", reason="user_not_found")
         raise InvalidCredentials()
     if not verify_password(password, user.hashed_password):
-        audit_log(action="login_failed", details={"email": email})
+        audit_log(action="login_failed", details={"identifier": needle})
         logger.warning("login_failed", user_id=str(user.id), reason="wrong_password")
         raise InvalidCredentials()
     if not user.is_active:
@@ -109,7 +112,6 @@ async def create_tokens(user: User) -> tuple[str, str]:
     ttl = settings.REFRESH_TOKEN_EXPIRE_DAYS * 86400
     await redis_client.setex(f"{REFRESH_KEY_PREFIX}{jti}", ttl, str(user.id))
 
-    audit_log(action="login", user_id=str(user.id))
     logger.info("tokens_issued", user_id=str(user.id), role=user.role)
     return access_token, refresh_token
 
@@ -134,7 +136,7 @@ async def refresh_access_token(session: AsyncSession, refresh_token_str: str) ->
         raise InvalidCredentials()
 
     new_access = create_access_token({"sub": str(user.id), "role": user.role})
-    audit_log(action="token_refresh", user_id=str(user.id))
+    audit_log(action="token_refresh", user_id=str(user.id), actor_label=user.email)
     logger.info("token_refreshed", user_id=str(user.id))
     return new_access
 

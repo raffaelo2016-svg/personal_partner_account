@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import { ArrowRight, Check, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo-color.svg';
 import { PhoneField } from '@/app/components/PhoneField';
@@ -31,6 +31,8 @@ const CAPTCHA_SITEKEY = import.meta.env.VITE_YANDEX_CAPTCHA_CLIENT_KEY as string
 const CAPTCHA_ENABLED = Boolean(CAPTCHA_SITEKEY);
 
 export default function Registration() {
+  const [searchParams] = useSearchParams();
+  const agentCode = searchParams.get('agent')?.trim().toUpperCase() || undefined;
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [apiError, setApiError] = useState('');
@@ -194,6 +196,7 @@ export default function Registration() {
         phone: phoneE164,
         full_legal_name: formData.partnerType === 'legal' ? formData.companyName : undefined,
         legal_address: formData.partnerType === 'legal' ? formData.legalAddress : undefined,
+        agent_code: agentCode,
         region: formData.region,
         captcha_token: CAPTCHA_ENABLED ? captchaToken : undefined,
       });

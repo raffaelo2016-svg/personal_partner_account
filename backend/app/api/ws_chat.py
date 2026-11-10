@@ -139,7 +139,7 @@ async def get_room_participant_ids(room_id: str) -> set[str]:
         if partner:
             user_ids.add(str(partner.user_id))
         # All admin user_ids
-        admins = await session.execute(select(User.id).where(User.role == "admin"))
+        admins = await session.execute(select(User.id).where(User.role.in_(["admin", "super_admin"])))
         for row in admins:
             user_ids.add(str(row[0]))
     return user_ids

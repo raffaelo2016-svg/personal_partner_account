@@ -42,6 +42,19 @@ async def get_current_user(
             detail="User not found or inactive",
         )
 
+    # Сброс пароля завершает сессии, выданные до смены пароля.
+    issued_at = payload.get("iat")
+    changed_at = getattr(user, "password_changed_at", None)
+    if isinstance(issued_at, int | float) and changed_at is not None:
+        from datetime import UTC, datetime, timedelta
+
+        if datetime.fromtimestamp(issued_at, UTC) + timedelta(seconds=60) < changed_at:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Token issued before password change",
+                headers={"code": "TOKEN_REVOKED"},
+            )
+
     if user.role == "partner":
         row = await db.execute(select(Partner).where(Partner.user_id == user.id, Partner.deleted_at.is_(None)))
         partner = row.scalar_one_or_none()
@@ -74,13 +87,18 @@ async def get_current_user_optional(
 
 
 def require_role(*roles: str):
+    # Супер-администратор наследует все права обычного администратора.
+    allowed = set(roles)
+    if "admin" in allowed:
+        allowed.add("super_admin")
+
     async def checker(current_user=Depends(get_current_user)):  # noqa: B008
-        if current_user.role not in roles:
+        if current_user.role not in allowed:
             logger.warning(
                 "role_access_denied",
                 user_id=str(current_user.id),
                 user_role=current_user.role,
-                required_roles=list(roles),
+                required_roles=sorted(allowed),
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

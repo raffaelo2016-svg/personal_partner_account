@@ -202,7 +202,9 @@ async def create_client(session: AsyncSession, partner_id: str, data: ClientCrea
     await session.refresh(message)
     session.info.setdefault("new_client_chat_messages", []).append(_msg_to_read(message))
 
-    admin_ids = (await session.scalars(select(User.id).where(User.role == "admin", User.is_active.is_(True)))).all()
+    admin_ids = (
+        await session.scalars(select(User.id).where(User.role.in_(["admin", "super_admin"]), User.is_active.is_(True)))
+    ).all()
     session.add_all(
         Notification(
             user_id=admin_id,
