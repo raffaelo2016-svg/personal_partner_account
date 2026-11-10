@@ -465,9 +465,9 @@ async def create_partner(session: AsyncSession, data: PartnerCreate) -> PartnerR
 
 
 async def update_partner(session: AsyncSession, partner_id: str, data: PartnerUpdate) -> PartnerRead:
-    partner = (await session.execute(
-        select(Partner).where(Partner.id == partner_id).with_for_update()
-    )).scalar_one_or_none()
+    partner = (
+        await session.execute(select(Partner).where(Partner.id == partner_id).with_for_update())
+    ).scalar_one_or_none()
     if not partner or partner.deleted_at is not None:
         raise NotFound("Partner not found")
 
