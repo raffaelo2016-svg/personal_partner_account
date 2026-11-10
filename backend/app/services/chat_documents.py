@@ -96,8 +96,6 @@ def normalize_document_name(requested: str | None, *, original_name: str) -> str
     return f"{stem}{original_extension}"
 
 
-
-
 def _normalize(value: str | None) -> str:
     """Lowercase, ё → е, punctuation → space (keeps name matching tolerant)."""
     if not value:
@@ -326,9 +324,7 @@ async def list_inbox(
 ) -> ChatDocumentInboxResponse:
     stmt = _apply_filters(_base_query(), status=status, partner_id=partner_id, search=search)
 
-    total = (
-        await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))
-    ).scalar() or 0
+    total = (await db.execute(select(func.count()).select_from(stmt.order_by(None).subquery()))).scalar() or 0
 
     rows = (
         await db.execute(
@@ -373,9 +369,7 @@ async def list_inbox(
 
 
 async def get_inbox_item(db: AsyncSession, message_id: str) -> ChatDocumentInboxItem:
-    row = (
-        await db.execute(_base_query().where(ChatMessage.id == message_id))
-    ).first()
+    row = (await db.execute(_base_query().where(ChatMessage.id == message_id))).first()
     if row is None:
         raise NotFound("Chat message not found")
     message, room, partner, assignment, client = row
@@ -468,11 +462,7 @@ async def assign_attachment(
     actual_document_type = file_record.document_type if file_record is not None else document_type
 
     if file_record is None:
-        mime_type = (
-            message.attachment_mime_type
-            or mimetypes.guess_type(source_name)[0]
-            or "application/octet-stream"
-        )
+        mime_type = message.attachment_mime_type or mimetypes.guess_type(source_name)[0] or "application/octet-stream"
         try:
             created_s3_key = await upload_file_async(data, requested_name, mime_type)
             file_record = FileUpload(

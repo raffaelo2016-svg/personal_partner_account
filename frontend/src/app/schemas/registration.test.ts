@@ -8,6 +8,7 @@ import {
 describe('registrationStep1Schema', () => {
   const valid = {
     partnerType: 'legal' as const,
+    region: 'Москва',
     companyName: 'ООО Ромашка',
     inn: '1234567890',
     kpp: '770401001',
@@ -34,6 +35,7 @@ describe('registrationStep1Schema', () => {
     const result = registrationStep1Schema.safeParse({
       companyName: '',
       partnerType: 'legal',
+      region: 'Москва',
       inn: '',
       ogrn: '',
       legalAddress: '',
@@ -57,6 +59,7 @@ describe('registrationStep1Schema', () => {
   it('accepts individual input without INN and company fields', () => {
     const result = registrationStep1Schema.safeParse({
       partnerType: 'individual',
+      region: 'Москва',
       lastName: 'Иванов',
       firstName: 'Иван',
       middleName: 'Иванович',
@@ -67,6 +70,7 @@ describe('registrationStep1Schema', () => {
   it('accepts entrepreneur input with 12-digit INN', () => {
     const result = registrationStep1Schema.safeParse({
       partnerType: 'entrepreneur',
+      region: 'Москва',
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '500100732259',
@@ -77,6 +81,7 @@ describe('registrationStep1Schema', () => {
   it('rejects entrepreneur INN with wrong length', () => {
     const result = registrationStep1Schema.safeParse({
       partnerType: 'entrepreneur',
+      region: 'Москва',
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '1234567890',
@@ -185,6 +190,7 @@ describe('flattenZodErrors', () => {
     const result = registrationStep1Schema.safeParse({
       companyName: 'ок',
       partnerType: 'legal',
+      region: 'Москва',
       inn: 'abc',
       kpp: '770401001',
       ogrn: '1234567890123',

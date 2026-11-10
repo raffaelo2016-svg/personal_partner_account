@@ -22,6 +22,7 @@ class TaskCreate(TaskDeadline):
     priority: Literal["low", "medium", "high"] = "medium"
     assigned_to: Literal["partner", "uritech", "admin"] = "partner"
 
+
 class TaskUpdate(TaskDeadline):
     title: str | None = Field(default=None, min_length=1, max_length=255)
     description: str | None = None

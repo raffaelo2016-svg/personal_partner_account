@@ -281,7 +281,9 @@ async def update_task(
     await session.refresh(task)
     # Audit JSON uses strings, while ORM writes above retain Python date/datetime values.
     audit_log(
-        action="update_task", target_id=str(task.id), target_type="task",
+        action="update_task",
+        target_id=str(task.id),
+        target_type="task",
         details=jsonable_encoder(update_data),
     )
     logger.info("task_updated", task_id=str(task.id), fields=list(update_data), new_status=target_status)
@@ -322,13 +324,15 @@ async def get_task_stats(
     pending = (
         await session.execute(base.where(Task.status.in_(["pending", "overdue"]), ~overdue_condition))
     ).scalar() or 0
-    in_progress = (
-        await session.execute(base.where(Task.status == "in_progress", ~overdue_condition))
-    ).scalar() or 0
+    in_progress = (await session.execute(base.where(Task.status == "in_progress", ~overdue_condition))).scalar() or 0
     completed = (await session.execute(base.where(Task.status == "completed"))).scalar() or 0
     overdue = (await session.execute(base.where(overdue_condition))).scalar() or 0
     return TaskStats(
-        total=total, pending=pending, in_progress=in_progress, completed=completed, overdue=overdue,
+        total=total,
+        pending=pending,
+        in_progress=in_progress,
+        completed=completed,
+        overdue=overdue,
         completion_percent=round((completed / total) * 100, 1) if total else 0.0,
     )
 
