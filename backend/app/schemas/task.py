@@ -22,6 +22,12 @@ class TaskCreate(TaskDeadline):
     priority: Literal["low", "medium", "high"] = "medium"
     assigned_to: Literal["partner", "uritech", "admin"] = "partner"
 
+    @model_validator(mode="after")
+    def require_owner(self) -> "TaskCreate":
+        if not self.client_id and not self.partner_id:
+            raise ValueError("Укажите клиента или партнёра")
+        return self
+
 
 class TaskUpdate(TaskDeadline):
     title: str | None = Field(default=None, min_length=1, max_length=255)

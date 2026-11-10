@@ -62,12 +62,12 @@ async def update_timezone(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
     partner = await _current_partner(db, current_user)
-    if partner is not None:
-        partner.timezone = body.timezone
-        await db.commit()
-        return TimezoneResponse(timezone=body.timezone, region=partner.region)
     if body.timezone != MOSCOW_TIMEZONE:
         raise BadRequest("Часовой пояс кабинета зафиксирован: Москва (МСК, UTC+3)")
+    if partner is not None:
+        partner.timezone = MOSCOW_TIMEZONE
+        await db.commit()
+        return TimezoneResponse(timezone=MOSCOW_TIMEZONE, region=partner.region)
     return TimezoneResponse(timezone=MOSCOW_TIMEZONE)
 
 

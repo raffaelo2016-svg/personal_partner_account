@@ -178,7 +178,8 @@ async def create_task(
     if partner_id and owner_id != partner_id:
         raise Forbidden("Access denied")
     if partner_id and data.assigned_to == "partner":
-        raise Forbidden("Only URITECH can assign tasks to a partner")
+        # Партнёр создаёт задачу для ЮРИТЕХ: назначение «партнёру» здесь недопустимо.
+        data = data.model_copy(update={"assigned_to": "uritech"})
     partner = await session.get(Partner, owner_id)
     if partner is None or partner.deleted_at is not None:
         raise NotFound("Partner not found")
