@@ -13,6 +13,7 @@ describe('registrationStep1Schema', () => {
     kpp: '770401001',
     ogrn: '1234567890123',
     legalAddress: 'г. Москва',
+    region: 'Белгородская область',
   };
 
   it('accepts valid input', () => {
@@ -37,6 +38,7 @@ describe('registrationStep1Schema', () => {
       inn: '',
       ogrn: '',
       legalAddress: '',
+      region: 'Белгородская область',
     });
     const errors = flattenZodErrors(result);
     expect(Object.keys(errors).length).toBe(5);
@@ -60,6 +62,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       middleName: 'Иванович',
+      region: 'Белгородская область',
     });
     expect(result.success).toBe(true);
   });
@@ -70,6 +73,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '500100732259',
+      region: 'Белгородская область',
     });
     expect(result.success).toBe(true);
   });
@@ -80,6 +84,7 @@ describe('registrationStep1Schema', () => {
       lastName: 'Иванов',
       firstName: 'Иван',
       inn: '1234567890',
+      region: 'Белгородская область',
     });
     expect(flattenZodErrors(result).inn).toBe('ИНН должен содержать 12 цифр');
   });
