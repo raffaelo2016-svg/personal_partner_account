@@ -71,6 +71,10 @@ services:
       COOKIE_SECURE: "true"
       COOKIE_SAMESITE: lax
       PUBLIC_APP_URL: https://finzdorovie.ru
+      # Временно: у агента VL8NCDEP (Масальский) ссылка ведёт на его лендинг,
+      # пока не появилась страница партнёрства на основном сайте. Код в ссылке
+      # обязателен — по нему заявка на лендинге помечается его кодом.
+      AGENT_REFERRAL_OVERRIDES: '{"VL8NCDEP":"https://partner.uriteh.ru/?agent=VL8NCDEP"}'
       # Основной канал отправки — HTTPS API: SMTP-порты недоступны с VPS.
       # API-ключ хранится только в серверном .env.
       RESEND_FROM_EMAIL: "ЮРИТЕХ <noreply@finzdorovie.ru>"

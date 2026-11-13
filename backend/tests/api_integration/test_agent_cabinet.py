@@ -3,6 +3,7 @@
 import pytest
 from sqlalchemy import select
 
+from app.config import settings
 from app.core.security import hash_password
 from app.models.agent import Agent, AgentAccrual, AgentPayoutRequest
 from app.models.client import Client
@@ -90,6 +91,27 @@ async def test_agent_registration_creates_profile(client, db_session):
 
     agent = (await db_session.execute(select(Agent))).scalar_one()
     assert agent.user_id is not None
+
+
+@pytest.mark.asyncio
+async def test_referral_link_override_for_single_agent(client, db_session, monkeypatch):
+    data = await _register_agent(client)
+    headers = {"Authorization": f"Bearer {data['access_token']}"}
+    agent = (await db_session.execute(select(Agent))).scalar_one()
+
+    default_link = (await client.get("/api/v1/agent/me", headers=headers)).json()["profile"]["referral_link"]
+    assert default_link.endswith(f"/register?agent={agent.code}")
+
+    # переопределение для конкретного кода: ссылка ведёт на лендинг агента
+    own_link = f"https://partner.uriteh.ru/?agent={agent.code}"
+    monkeypatch.setattr(settings, "AGENT_REFERRAL_OVERRIDES", f'{{"{agent.code}": "{own_link}"}}')
+    overridden = (await client.get("/api/v1/agent/me", headers=headers)).json()["profile"]["referral_link"]
+    assert overridden == own_link
+
+    # чужой код не влияет на этого агента
+    monkeypatch.setattr(settings, "AGENT_REFERRAL_OVERRIDES", '{"ZZZZZZZZ": "https://example.test/"}')
+    untouched = (await client.get("/api/v1/agent/me", headers=headers)).json()["profile"]["referral_link"]
+    assert untouched == default_link
 
 
 @pytest.mark.asyncio

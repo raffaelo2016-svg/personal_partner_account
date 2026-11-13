@@ -40,8 +40,20 @@ async def get_current_agent(
     return agent
 
 
-def _profile(agent: Agent) -> AgentProfile:
+def _referral_link(agent: Agent) -> str:
+    """Ссылка агента: по умолчанию — регистрация партнёра с его кодом.
+
+    Для отдельных агентов её можно временно переопределить через
+    AGENT_REFERRAL_OVERRIDES (например, когда трафик ведёт на свой лендинг).
+    """
+    override = settings.agent_referral_overrides.get(agent.code.strip().upper())
+    if override:
+        return override
     base = settings.PUBLIC_APP_URL.rstrip("/")
+    return f"{base}/register?agent={agent.code}"
+
+
+def _profile(agent: Agent) -> AgentProfile:
     return AgentProfile(
         id=str(agent.id),
         code=agent.code,
@@ -51,7 +63,7 @@ def _profile(agent: Agent) -> AgentProfile:
         status=agent.status,
         requisites_status=agent.requisites_status,
         requisites_recipient_type=agent.requisites_recipient_type,
-        referral_link=f"{base}/register?agent={agent.code}",
+        referral_link=_referral_link(agent),
     )
 
 

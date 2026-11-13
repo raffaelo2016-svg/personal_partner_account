@@ -65,6 +65,11 @@ class Settings(BaseSettings):
     # Агентская программа: ставка за клиента, дошедшего до процедуры (в копейках).
     AGENT_ACCRUAL_RATE: int = 100_000
     AGENT_ACCRUAL_STATUS: str = "restructuring"
+    # Временное переопределение реферальной ссылки для отдельных агентов:
+    # {"КОД": "https://..."}. Остальным ссылка собирается из PUBLIC_APP_URL.
+    # В переопределённой ссылке должен остаться ?agent=КОД, иначе регистрации
+    # не привяжутся к агенту.
+    AGENT_REFERRAL_OVERRIDES: str = "{}"
 
     # Bitrix24 OAuth integration. Tokens are stored encrypted in PostgreSQL;
     # the local application's credentials stay only in the server environment.
@@ -141,6 +146,27 @@ class Settings(BaseSettings):
         return tuple(item.strip().casefold() for item in value)
 
     @property
+    def agent_referral_overrides(self) -> dict[str, str]:
+        """Точечные ссылки агентов: код агента (в верхнем регистре) -> URL."""
+        try:
+            value = json.loads(self.AGENT_REFERRAL_OVERRIDES)
+        except json.JSONDecodeError as err:
+            raise RuntimeError(f"AGENT_REFERRAL_OVERRIDES is not valid JSON: {err}") from err
+        if not isinstance(value, dict):
+            raise RuntimeError("AGENT_REFERRAL_OVERRIDES must be a JSON object of {agent_code: url}")
+        overrides: dict[str, str] = {}
+        for code, link in value.items():
+            if not isinstance(code, str) or not code.strip():
+                raise RuntimeError("AGENT_REFERRAL_OVERRIDES keys must be non-empty agent codes")
+            if not isinstance(link, str) or not link.strip():
+                raise RuntimeError("AGENT_REFERRAL_OVERRIDES values must be non-empty URLs")
+            url = link.strip()
+            if not url.startswith(("http://", "https://")):
+                raise RuntimeError("AGENT_REFERRAL_OVERRIDES values must be absolute http(s) URLs")
+            overrides[code.strip().upper()] = url
+        return overrides
+
+    @property
     def sync_database_url(self) -> str:
         """URL with psycopg2 driver for Alembic migrations."""
         return self.DATABASE_URL.replace("+asyncpg", "+psycopg2")
@@ -166,3 +192,4 @@ settings.validate_production_secrets()
 _ = settings.cors_origins_list
 _ = settings.allowed_hosts_list
 _ = settings.bitrix_chat_support_user_ids
+_ = settings.agent_referral_overrides
