@@ -221,6 +221,15 @@ def _phone(value: Any) -> str:
     return digits
 
 
+PLACEHOLDER_EMAIL_SUFFIX = "@no-login.invalid"
+
+
+def _email_key(value: Any) -> str:
+    """Treat service placeholders as an empty address for profile comparison."""
+    text = _text(value).casefold()
+    return "" if text.endswith(PLACEHOLDER_EMAIL_SUFFIX) else text
+
+
 def _address(value: Any) -> str:
     # Bitrix24 address user fields append coordinates and a location id:
     # ``text address|latitude;longitude|location_id``.
@@ -270,8 +279,8 @@ async def partner_profile_differences(
         ),
         "phone": (_phone(partner.phone), _phone(_remote_value(remote_item, PARTNER_FIELDS["phone"]))),
         "email": (
-            _text(user.email if user else None).casefold(),
-            _text(_remote_value(remote_item, PARTNER_FIELDS["email"])).casefold(),
+            _email_key(user.email if user else None),
+            _email_key(_remote_value(remote_item, PARTNER_FIELDS["email"])),
         ),
         "legal_address": (
             _address(partner.legal_address),
