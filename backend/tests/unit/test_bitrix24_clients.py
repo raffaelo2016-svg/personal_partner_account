@@ -881,3 +881,11 @@ async def test_support_deal_without_partner_waits_silently(db_session: AsyncSess
     assert completed is True
     assert receipt.status == "ignored"
     assert receipt.error_code is None
+
+
+def test_service_placeholder_email_is_ignored_in_profile_comparison():
+    from app.integrations.bitrix24.partners import _email_key
+
+    assert _email_key("partner-bitrix-27@no-login.invalid") == ""
+    assert _email_key("  Client@Example.test ") == "client@example.test"
+    assert _email_key(None) == ""
