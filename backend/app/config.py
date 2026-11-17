@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     # Clients transferred before filing go to the Support department pipeline.
     BITRIX_SUPPORT_DEAL_CATEGORY_ID: int = 7
     BITRIX_SUPPORT_DEAL_STAGE_ID: str = "C7:UC_X16U4C"
+    # Deals created manually in the arbitration pipeline are linked to the
+    # cabinet client that already owns the same case number and parked here.
+    BITRIX_DUPLICATE_DEAL_STAGE_ID: str = "C3:3"
     BITRIX_ALLOWED_DOMAIN: str = "bitrix.uriteh.ru"
     BITRIX_TOKEN_ENCRYPTION_KEY: str = ""
     BITRIX_OUTBOX_BATCH_SIZE: int = 25

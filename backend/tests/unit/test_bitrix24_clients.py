@@ -450,7 +450,7 @@ async def test_removing_partner_from_existing_deal_returns_it_to_attention(db_se
 
 
 @pytest.mark.asyncio
-async def test_unmapped_deal_update_without_partner_is_ignored(db_session: AsyncSession):
+async def test_unmapped_deal_without_partner_requires_attention(db_session: AsyncSession):
     await _saved_entities(db_session)
     receipt = BitrixInboundEvent(
         member_id="member-stage-4",
@@ -473,11 +473,9 @@ async def test_unmapped_deal_update_without_partner_is_ignored(db_session: Async
     ):
         completed = await process_client_deal_add_event(db_session, receipt)
 
-    assert completed is True
-    assert receipt.status == "ignored"
-    assert receipt.error_code is None
-    assert receipt.processed_at is not None
-    assert receipt.attempts == 1
+    assert completed is False
+    assert receipt.status == "failed"
+    assert receipt.error_code == "PARTNER_NOT_LINKED"
 
 
 @pytest.mark.asyncio
@@ -557,7 +555,7 @@ async def test_deleted_remote_deal_resolves_old_warning(db_session: AsyncSession
 
 
 @pytest.mark.asyncio
-async def test_external_deal_without_partner_link_waits_silently_for_qualification(db_session: AsyncSession):
+async def test_external_deal_without_partner_link_requires_attention(db_session: AsyncSession):
     await _saved_entities(db_session)
     receipt = BitrixInboundEvent(
         member_id="member-stage-4",
@@ -579,10 +577,9 @@ async def test_external_deal_without_partner_link_waits_silently_for_qualificati
     ):
         completed = await process_client_deal_add_event(db_session, receipt)
 
-    assert completed is True
-    assert receipt.status == "ignored"
-    assert receipt.error_code is None
-    assert receipt.processed_at is not None
+    assert completed is False
+    assert receipt.status == "failed"
+    assert receipt.error_code == "PARTNER_NOT_LINKED"
 
 
 @pytest.mark.asyncio
@@ -652,3 +649,202 @@ async def test_unmanaged_deal_filter_preserves_qualified_partner_deals(deal, exp
     remote = AsyncMock()
     remote.call.return_value = deal
     assert await is_unmanaged_deal(remote, "456") is expected
+
+
+@pytest.mark.asyncio
+async def test_duplicate_case_number_links_client_and_parks_deal(db_session: AsyncSession):
+    partner, existing_client = await _saved_entities(db_session)
+    db_session.add(
+        BitrixEntityMap(
+            member_id="member-stage-4",
+            local_entity_type="partner_smart_process",
+            local_entity_id=partner.id,
+            bitrix_entity_type=f"crm_dynamic_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}",
+            bitrix_entity_id="321",
+        )
+    )
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="950",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.side_effect = [
+        {
+            "ID": "950",
+            "TITLE": "Иванов Иван Иванович",
+            "CATEGORY_ID": str(CLIENT_DEAL_CATEGORY_ID),
+            f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": "321",
+            CLIENT_DEAL_FIELDS["case_number"]: existing_client.case_number,
+        },
+        {},
+        {},
+    ]
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+        patch("app.services.finance_service.create_court_fee_for_client", new=AsyncMock(return_value=None)),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    clients_count = await db_session.scalar(select(func.count(Client.id)))
+    mapping = await db_session.scalar(
+        select(BitrixEntityMap).where(
+            BitrixEntityMap.bitrix_entity_type == "crm_deal",
+            BitrixEntityMap.bitrix_entity_id == "950",
+        )
+    )
+    called_methods = [call.args[0] for call in remote.call.await_args_list]
+    assert completed is True
+    assert receipt.status == "completed"
+    assert receipt.error_code is None
+    assert clients_count == 1
+    assert mapping is not None and mapping.local_entity_id == existing_client.id
+    assert "crm.timeline.comment.add" in called_methods
+    assert "crm.deal.update" in called_methods
+    stage_update = next(call for call in remote.call.await_args_list if call.args[0] == "crm.deal.update")
+    assert stage_update.args[1]["fields"]["STAGE_ID"] == settings.BITRIX_DUPLICATE_DEAL_STAGE_ID
+
+
+@pytest.mark.asyncio
+async def test_duplicate_case_number_of_other_partner_needs_review(db_session: AsyncSession):
+    partner, existing_client = await _saved_entities(db_session)
+    other_user = User(email="other-partner@example.test", hashed_password="hash", role="partner", is_active=True)
+    db_session.add(other_user)
+    await db_session.flush()
+    other_partner = Partner(
+        user_id=other_user.id,
+        partner_type="legal",
+        company_name="ООО Другой",
+        director_name="Сидоров Сидор Сидорович",
+        inn="7701234568",
+        phone="+79990000002",
+        status="active",
+        bitrix_partner_item_id="777",
+        bitrix_sync_status="synced",
+    )
+    db_session.add(other_partner)
+    db_session.add_all(
+        [
+            BitrixEntityMap(
+                member_id="member-stage-4",
+                local_entity_type="partner_smart_process",
+                local_entity_id=partner.id,
+                bitrix_entity_type=f"crm_dynamic_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}",
+                bitrix_entity_id="321",
+            ),
+            BitrixEntityMap(
+                member_id="member-stage-4",
+                local_entity_type="partner_smart_process",
+                local_entity_id=other_partner.id,
+                bitrix_entity_type=f"crm_dynamic_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}",
+                bitrix_entity_id="777",
+            ),
+        ]
+    )
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="951",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "ID": "951",
+        "TITLE": "Иванов Иван Иванович",
+        "CATEGORY_ID": str(CLIENT_DEAL_CATEGORY_ID),
+        f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": "777",
+        CLIENT_DEAL_FIELDS["case_number"]: existing_client.case_number,
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    clients_count = await db_session.scalar(select(func.count(Client.id)))
+    assert completed is False
+    assert receipt.status == "failed"
+    assert receipt.error_code == "DUPLICATE_CASE_NUMBER"
+    assert clients_count == 1
+    assert existing_client.partner_id == partner.id
+
+
+@pytest.mark.asyncio
+async def test_deal_without_contact_creates_contact_and_imports_client(db_session: AsyncSession):
+    partner, _ = await _saved_entities(db_session)
+    db_session.add(
+        BitrixEntityMap(
+            member_id="member-stage-4",
+            local_entity_type="partner_smart_process",
+            local_entity_id=partner.id,
+            bitrix_entity_type=f"crm_dynamic_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}",
+            bitrix_entity_id="321",
+        )
+    )
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="952",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.side_effect = [
+        {
+            "ID": "952",
+            "TITLE": "Клиент: Петров Пётр Петрович",
+            "CATEGORY_ID": str(CLIENT_DEAL_CATEGORY_ID),
+            "CONTACT_ID": "0",
+            f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}": "321",
+            CLIENT_DEAL_FIELDS["client_type"]: "in_court",
+            CLIENT_DEAL_FIELDS["client_status"]: "waiting_hearing",
+            CLIENT_DEAL_FIELDS["case_number"]: "А40-777/2026",
+            CLIENT_DEAL_FIELDS["region"]: "Москва",
+        },
+        "1234",
+        {},
+        {
+            "ID": "1234",
+            "LAST_NAME": "Петров",
+            "NAME": "Пётр",
+            "SECOND_NAME": "Петрович",
+        },
+    ]
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+        patch("app.services.finance_service.create_court_fee_for_client", new=AsyncMock(return_value=None)),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    imported = await db_session.scalar(select(Client).where(Client.bitrix_deal_id == "952"))
+    called_methods = [call.args[0] for call in remote.call.await_args_list]
+    assert completed is True
+    assert imported is not None
+    assert imported.bitrix_contact_id == "1234"
+    assert imported.full_name == "Петров Пётр Петрович"
+    assert imported.case_number == "А40-777/2026"
+    assert "crm.contact.add" in called_methods
+    assert "crm.deal.update" in called_methods

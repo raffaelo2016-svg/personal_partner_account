@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import re
 import uuid
 from contextlib import suppress
 from datetime import UTC, date, datetime, timedelta
 from typing import Any
 
+import structlog
 from sqlalchemy import and_, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,8 @@ from app.models.client import Client
 from app.models.enums import ClientStatus, ClientType
 from app.models.partner import Partner
 from app.services.audit import audit_log
+
+logger = structlog.get_logger()
 
 CLIENT_CONTACT_ENTITY_TYPE = "client_contact"
 CLIENT_DEAL_ENTITY_TYPE = "client_deal"
@@ -374,6 +378,142 @@ def _valid_enum_value(value: Any, enum_type: type[ClientType] | type[ClientStatu
     return candidate if candidate in {item.value for item in enum_type} else None
 
 
+_DEAL_TITLE_PREFIXES = ("клиент:", "лкп -", "лкп-", "лкп —")
+_DUPLICATE_CASE_MIN_KEY = 8
+
+
+def _clean_deal_title(value: Any) -> str:
+    """Return a plain client name from a manually created deal title."""
+    text = str(value or "").strip()
+    lowered = text.casefold()
+    for prefix in _DEAL_TITLE_PREFIXES:
+        if lowered.startswith(prefix):
+            text = text[len(prefix) :].strip()
+            break
+    text = re.sub(r"\([^)]*\)", " ", text)
+    return " ".join(text.split())
+
+
+def _case_key(value: Any) -> str:
+    normalized = str(value or "").upper().replace("Ё", "Е")
+    return re.sub(r"[^0-9A-ZА-Я]", "", normalized)
+
+
+async def _find_duplicate_client(db: AsyncSession, deal: dict[str, Any]) -> Client | None:
+    """Find the cabinet client that already owns the deal's case number."""
+    key = _case_key(deal.get(CLIENT_DEAL_FIELDS["case_number"]))
+    if len(key) < _DUPLICATE_CASE_MIN_KEY:
+        return None
+    rows = (
+        await db.execute(
+            select(Client.id, Client.case_number).where(
+                Client.deleted_at.is_(None),
+                Client.case_number.isnot(None),
+            )
+        )
+    ).all()
+    for client_id, case_number in rows:
+        if _case_key(case_number) == key:
+            return await db.get(Client, client_id)
+    return None
+
+
+async def _ensure_deal_contact(
+    remote: Bitrix24Client,
+    deal: dict[str, Any],
+    receipt: BitrixInboundEvent,
+) -> str | None:
+    """Create and link a contact for a deal created manually without one."""
+    full_name = _clean_deal_title(deal.get("TITLE"))
+    if len(full_name.split()) < 2:
+        return None
+    last_name, name, second_name = _split_full_name(full_name)
+    fields: dict[str, Any] = {
+        "LAST_NAME": last_name,
+        "ORIGINATOR_ID": SELF_ORIGINATOR_ID,
+        "ORIGIN_ID": receipt.remote_entity_id,
+    }
+    if name:
+        fields["NAME"] = name
+    if second_name:
+        fields["SECOND_NAME"] = second_name
+    created = await remote.call(CLIENT_CONTACT_CREATE_METHOD, {"fields": fields})
+    contact_id = str(created or "").strip()
+    if not contact_id:
+        return None
+    await remote.call(
+        CLIENT_DEAL_UPDATE_METHOD,
+        {"id": receipt.remote_entity_id, "fields": {"CONTACT_ID": contact_id}},
+    )
+    deal["CONTACT_ID"] = contact_id
+    return contact_id
+
+
+async def _complete_duplicate_deal(
+    db: AsyncSession,
+    *,
+    remote: Bitrix24Client,
+    receipt: BitrixInboundEvent,
+    client: Client,
+    deal_category_id: int,
+) -> bool:
+    """Park a manually created duplicate deal and keep one client per case."""
+    now = datetime.now(UTC)
+    await db.execute(
+        insert(BitrixEntityMap)
+        .values(
+            id=uuid.uuid4(),
+            member_id=receipt.member_id,
+            local_entity_type=CLIENT_DEAL_ENTITY_TYPE,
+            local_entity_id=client.id,
+            bitrix_entity_type="crm_deal",
+            bitrix_entity_id=receipt.remote_entity_id,
+            sync_version=1,
+            last_synced_at=now,
+            last_verified_at=now,
+        )
+        .on_conflict_do_nothing()
+    )
+    comment = (
+        f"Карточка-дубль: клиент «{client.full_name}» уже ведётся в кабинете партнёра "
+        f"(дело {client.case_number or '—'}). Карточка переведена в стадию «Дубль»."
+    )
+    try:
+        await remote.call(
+            "crm.timeline.comment.add",
+            {
+                "fields": {
+                    "ENTITY_ID": receipt.remote_entity_id,
+                    "ENTITY_TYPE": "deal",
+                    "COMMENT": comment,
+                }
+            },
+        )
+        if deal_category_id == CLIENT_DEAL_CATEGORY_ID:
+            await remote.call(
+                CLIENT_DEAL_UPDATE_METHOD,
+                {
+                    "id": receipt.remote_entity_id,
+                    "fields": {"STAGE_ID": settings.BITRIX_DUPLICATE_DEAL_STAGE_ID},
+                },
+            )
+    except Bitrix24Error:
+        logger.warning("duplicate_deal_marking_failed", deal_id=receipt.remote_entity_id)
+
+    await _supersede_failed_receipts(db, receipt, processed_at=now)
+    receipt.status = "completed"
+    receipt.error_code = None
+    receipt.processed_at = now
+    receipt.attempts += 1
+    audit_log(
+        action="duplicate_deal_linked_from_bitrix",
+        target_id=str(client.id),
+        target_type="client",
+        details={"bitrix_deal_id": receipt.remote_entity_id},
+    )
+    return True
+
+
 def _mark_inbound_failure(receipt: BitrixInboundEvent, code: str) -> bool:
     receipt.status = "failed"
     receipt.error_code = code[:100]
@@ -500,14 +640,14 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
 
     installation = await db.get(BitrixInstallation, receipt.member_id)
     if installation is None:
-        return _mark_inbound_failure(receipt, "INSTALLATION_NOT_FOUND")
+        return await _mark_current_state_failure(db, receipt, "INSTALLATION_NOT_FOUND")
     deal_loaded = False
     try:
         token = await _installation_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, token) as remote:
             deal = await remote.call("crm.deal.get", {"ID": receipt.remote_entity_id})
             if not isinstance(deal, dict):
-                return _mark_inbound_failure(receipt, "INVALID_DEAL_RESPONSE")
+                return await _mark_current_state_failure(db, receipt, "INVALID_DEAL_RESPONSE")
             deal_loaded = True
             try:
                 deal_category_id = int(deal.get("CATEGORY_ID"))
@@ -517,15 +657,15 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 return await _ignore_current_state(db, receipt)
             if existing_client is None and str(deal.get("ORIGINATOR_ID") or "").lower() == SELF_ORIGINATOR_ID:
                 return await _ignore_current_state(db, receipt)
+            # A parked duplicate keeps its link to the client but must not touch it.
+            if str(deal.get("STAGE_ID") or "") == settings.BITRIX_DUPLICATE_DEAL_STAGE_ID:
+                return await _ignore_current_state(db, receipt)
 
             partner_remote_id = deal.get(f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}")
             if not partner_remote_id:
-                # An unlinked Bitrix deal is not a cabinet client yet.  Whether it was
-                # created directly in this funnel or moved here, wait silently until a
-                # partner is selected; that update will trigger the import.  Removing
-                # the link from an already imported client remains actionable.
-                if existing_client is None:
-                    return await _ignore_current_state(db, receipt)
+                # A deal without a partner cannot become a cabinet client. Keep one
+                # actionable item per deal instead of waiting silently, so manually
+                # created cards are visible to the team.
                 return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_LINKED")
             partner_mapping = await db.scalar(
                 select(BitrixEntityMap).where(
@@ -556,9 +696,25 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                     partner=partner,
                 )
 
+            # Manually created cards often duplicate a client that is already in
+            # the cabinet. Link instead of creating a second client.
+            duplicate = await _find_duplicate_client(db, deal)
+            if duplicate is not None:
+                if duplicate.partner_id != partner.id:
+                    return await _mark_current_state_failure(db, receipt, "DUPLICATE_CASE_NUMBER")
+                return await _complete_duplicate_deal(
+                    db,
+                    remote=remote,
+                    receipt=receipt,
+                    client=duplicate,
+                    deal_category_id=deal_category_id,
+                )
+
             contact_id = str(deal.get("CONTACT_ID") or "").strip()
             if not contact_id or contact_id == "0":
-                return _mark_inbound_failure(receipt, "CONTACT_NOT_LINKED")
+                contact_id = await _ensure_deal_contact(remote, deal, receipt) or ""
+                if not contact_id:
+                    return await _mark_current_state_failure(db, receipt, "CONTACT_NOT_LINKED")
             existing_contact = await db.scalar(
                 select(BitrixEntityMap.id).where(
                     BitrixEntityMap.member_id == receipt.member_id,
@@ -567,10 +723,10 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
                 )
             )
             if existing_contact is not None:
-                return _mark_inbound_failure(receipt, "CONTACT_ALREADY_LINKED")
+                return await _mark_current_state_failure(db, receipt, "CONTACT_ALREADY_LINKED")
             contact = await remote.call("crm.contact.get", {"ID": contact_id})
             if not isinstance(contact, dict):
-                return _mark_inbound_failure(receipt, "INVALID_CONTACT_RESPONSE")
+                return await _mark_current_state_failure(db, receipt, "INVALID_CONTACT_RESPONSE")
     except Bitrix24Error as exc:
         if (
             not deal_loaded
@@ -579,17 +735,17 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
             and exc.description.strip().casefold() == "not found"
         ):
             return await _ignore_current_state(db, receipt)
-        return _mark_inbound_failure(receipt, exc.code)
+        return await _mark_current_state_failure(db, receipt, exc.code)
 
     full_name = _remote_full_name(contact)
     client_type = _valid_enum_value(deal.get(CLIENT_DEAL_FIELDS["client_type"]), ClientType)
     client_status = _valid_enum_value(deal.get(CLIENT_DEAL_FIELDS["client_status"]), ClientStatus)
     if not full_name:
-        return _mark_inbound_failure(receipt, "CLIENT_NAME_REQUIRED")
+        return await _mark_current_state_failure(db, receipt, "CLIENT_NAME_REQUIRED")
     if client_type is None:
-        return _mark_inbound_failure(receipt, "CLIENT_TYPE_REQUIRED")
+        return await _mark_current_state_failure(db, receipt, "CLIENT_TYPE_REQUIRED")
     if client_status is None:
-        return _mark_inbound_failure(receipt, "CLIENT_STATUS_REQUIRED")
+        return await _mark_current_state_failure(db, receipt, "CLIENT_STATUS_REQUIRED")
 
     now = datetime.now(UTC)
     client = Client(
