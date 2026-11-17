@@ -663,9 +663,14 @@ async def process_client_deal_add_event(db: AsyncSession, receipt: BitrixInbound
 
             partner_remote_id = deal.get(f"PARENT_ID_{settings.BITRIX_SMART_PROCESS_ENTITY_TYPE_ID}")
             if not partner_remote_id:
-                # A deal without a partner cannot become a cabinet client. Keep one
-                # actionable item per deal instead of waiting silently, so manually
-                # created cards are visible to the team.
+                # A deal without a partner cannot become a cabinet client. In the
+                # arbitration pipeline such cards are created manually and deserve a
+                # visible actionable item; the support pipeline legitimately holds
+                # pre-court clients and waits silently until a partner is selected.
+                if deal_category_id == CLIENT_DEAL_CATEGORY_ID:
+                    return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_LINKED")
+                if existing_client is None:
+                    return await _ignore_current_state(db, receipt)
                 return await _mark_current_state_failure(db, receipt, "PARTNER_NOT_LINKED")
             partner_mapping = await db.scalar(
                 select(BitrixEntityMap).where(

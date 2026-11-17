@@ -848,3 +848,36 @@ async def test_deal_without_contact_creates_contact_and_imports_client(db_sessio
     assert imported.case_number == "А40-777/2026"
     assert "crm.contact.add" in called_methods
     assert "crm.deal.update" in called_methods
+
+
+@pytest.mark.asyncio
+async def test_support_deal_without_partner_waits_silently(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-4",
+        event_key=uuid4().hex,
+        event_name="ONCRMDEALADD",
+        payload_hash=uuid4().hex,
+        remote_entity_type="client_deal",
+        remote_entity_id="960",
+    )
+    db_session.add(receipt)
+    await db_session.flush()
+
+    remote = AsyncMock()
+    remote.call.return_value = {
+        "ID": "960",
+        "CATEGORY_ID": str(CLIENT_SUPPORT_DEAL_CATEGORY_ID),
+        "CONTACT_ID": "0",
+    }
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.clients._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.clients.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_client_deal_add_event(db_session, receipt)
+
+    assert completed is True
+    assert receipt.status == "ignored"
+    assert receipt.error_code is None
