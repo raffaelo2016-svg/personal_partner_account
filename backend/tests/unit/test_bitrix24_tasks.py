@@ -15,6 +15,7 @@ from app.integrations.bitrix24.tasks import (
     TASK_ADD_EVENT,
     TASK_AUDITORS_SETTING,
     TASK_ENTITY_TYPE,
+    TASK_PARTNER_TAG,
     TASK_RESPONSIBLE_SETTING_PREFIX,
     _responsible_role,
     build_task_create_payload,
@@ -452,6 +453,7 @@ async def test_remote_added_task_is_imported_for_known_client(db_session: AsyncS
             "deadline": "2026-08-12T18:00:00+03:00",
             "xmlId": "",
             "ufCrmTask": ["D_456"],
+            "tags": [{"title": TASK_PARTNER_TAG}],
         }
     }
     context = AsyncMock()
@@ -560,3 +562,43 @@ async def test_unmapped_update_does_not_import_old_task(db_session: AsyncSession
     assert completed is True
     assert imported is None
     assert receipt.status == "ignored"
+
+
+@pytest.mark.asyncio
+async def test_event_for_task_deleted_in_cabinet_is_ignored_not_failed(db_session: AsyncSession):
+    await _saved_entities(db_session)
+    mapping = BitrixEntityMap(
+        member_id="member-stage-5",
+        local_entity_type=TASK_ENTITY_TYPE,
+        local_entity_id=uuid4(),
+        bitrix_entity_type="task",
+        bitrix_entity_id="905",
+    )
+    receipt = BitrixInboundEvent(
+        member_id="member-stage-5",
+        event_key=uuid4().hex,
+        event_name="ONTASKUPDATE",
+        payload_hash=uuid4().hex,
+        remote_entity_type=TASK_ENTITY_TYPE,
+        remote_entity_id="905",
+    )
+    db_session.add_all([mapping, receipt])
+    await db_session.flush()
+
+    remote = AsyncMock()
+    context = AsyncMock()
+    context.__aenter__.return_value = remote
+    with (
+        patch("app.integrations.bitrix24.tasks._installation_token", new=AsyncMock(return_value="token")),
+        patch("app.integrations.bitrix24.tasks.Bitrix24Client", return_value=context),
+    ):
+        completed = await process_task_status_event(db_session, receipt)
+
+    assert completed is True
+    assert receipt.status == "ignored"
+    assert receipt.error_code == "LOCAL_TASK_DELETED"
+    assert receipt.processed_at is not None
+    remote.call.assert_not_awaited()
+    kept = await db_session.scalar(select(BitrixEntityMap).where(BitrixEntityMap.bitrix_entity_id == "905"))
+    assert kept is not None
+    assert kept.last_verified_at is not None

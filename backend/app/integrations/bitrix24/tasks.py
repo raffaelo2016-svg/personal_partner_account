@@ -34,6 +34,7 @@ TASK_RESPONSIBLE_SETTING_PREFIX = "bitrix_task_responsible_"
 TASK_CREATOR_SETTING = "bitrix_task_creator_id"
 TASK_AUDITORS_SETTING = "bitrix_task_auditor_ids"
 TASK_PARTNER_TAG = "ЛКП"
+LOCAL_TASK_DELETED = "LOCAL_TASK_DELETED"
 MOSCOW = ZoneInfo("Europe/Moscow")
 
 _PRIORITY_TO_BITRIX = {"low": "0", "medium": "1", "high": "2"}
@@ -480,6 +481,15 @@ def _mark_task_event_failure(receipt: BitrixInboundEvent, code: str) -> bool:
     return False
 
 
+def _mark_task_event_ignored(receipt: BitrixInboundEvent, code: str) -> bool:
+    """Close an event that has nothing left to apply; it must not reach the attention journal."""
+    receipt.status = "ignored"
+    receipt.error_code = code[:100]
+    receipt.processed_at = datetime.now(UTC)
+    receipt.attempts += 1
+    return True
+
+
 async def _responsible_role(db: AsyncSession, remote_task: dict[str, Any], fallback: str) -> str:
     value = _remote_field(remote_task, "responsibleId", "RESPONSIBLE_ID")
     try:
@@ -640,11 +650,6 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
         receipt.status = "ignored"
         receipt.processed_at = datetime.now(UTC)
         return True
-    installation = await db.scalar(
-        select(BitrixInstallation).where(BitrixInstallation.member_id == receipt.member_id).with_for_update()
-    )
-    if installation is None:
-        return _mark_task_event_failure(receipt, "INSTALLATION_NOT_FOUND")
     mapping = await db.scalar(
         select(BitrixEntityMap).where(
             BitrixEntityMap.member_id == receipt.member_id,
@@ -654,7 +659,17 @@ async def process_task_status_event(db: AsyncSession, receipt: BitrixInboundEven
     )
     task = await db.get(Task, mapping.local_entity_id) if mapping is not None else None
     if mapping is not None and task is None:
-        return _mark_task_event_failure(receipt, "LOCAL_REFERENCE_NOT_FOUND")
+        # Задачу удалили в кабинете, а в Битрикс24 она осталась. Связь сохраняем
+        # как памятку: иначе следующее событие импортирует задачу заново, а
+        # жаловаться в журнале сбоев тут не на что.
+        mapping.last_verified_at = datetime.now(UTC)
+        return _mark_task_event_ignored(receipt, LOCAL_TASK_DELETED)
+
+    installation = await db.scalar(
+        select(BitrixInstallation).where(BitrixInstallation.member_id == receipt.member_id).with_for_update()
+    )
+    if installation is None:
+        return _mark_task_event_failure(receipt, "INSTALLATION_NOT_FOUND")
 
     try:
         token = await _installation_token(db, installation)
@@ -769,6 +784,9 @@ async def reconcile_remote_tasks(db: AsyncSession, *, limit: int = 25) -> dict[s
         for mapping in mappings:
             task = await db.get(Task, mapping.local_entity_id)
             if task is None:
+                # Задача удалена в кабинете: помечаем связь проверенной, чтобы не
+                # запрашивать по ней Битрикс24 каждые пять минут.
+                mapping.last_verified_at = datetime.now(UTC)
                 failed += 1
                 continue
             try:
