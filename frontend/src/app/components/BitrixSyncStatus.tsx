@@ -19,6 +19,12 @@ const ERROR_MESSAGES: Record<string, string> = {
   AMBIGUOUS_TASK_PARTNER: 'В задаче выбраны карточки разных партнёров',
   CRM_REFERENCE_REQUIRED: 'Выберите карточку партнёра или клиента в задаче Битрикс24',
   INVALID_TASK_DEADLINE: 'Проверьте срок задачи в Битрикс24',
+  TASK_TITLE_REQUIRED: 'В задаче Битрикс24 не заполнено название',
+  UNSUPPORTED_TASK_STATUS: 'Статус задачи в Битрикс24 не поддерживается кабинетом',
+  INVALID_REMOTE_TASK: 'Не удалось прочитать карточку задачи из Битрикс24',
+  LOCAL_TASK_DELETED: 'Задача удалена из кабинета, в Битрикс24 осталась — событие пропущено',
+  LOCAL_REFERENCE_NOT_FOUND: 'Задача удалена из кабинета, в Битрикс24 осталась',
+  UNKNOWN_ERROR: 'Битрикс24 не сообщил причину — откройте задачу и проверьте её',
   LOCAL_FILE_UNAVAILABLE: 'Файл временно недоступен',
   TIMEOUT: 'Битрикс24 не ответил вовремя',
   TRANSPORT_ERROR: 'Нет связи с Битрикс24',
@@ -57,7 +63,9 @@ export default function BitrixSyncStatus({ status, errorCode, onRetry, isRetryin
   const config = STATUS_CONFIG[normalized];
   const Icon = config.icon;
   const canRetry = Boolean(onRetry && (normalized === 'failed' || normalized === 'conflict' || errorCode));
-  const errorMessage = errorCode ? (ERROR_MESSAGES[errorCode] ?? 'Не удалось завершить обмен') : null;
+  const errorMessage = errorCode
+    ? (ERROR_MESSAGES[errorCode] ?? `Не удалось завершить обмен. Код: ${errorCode}`)
+    : null;
 
   return (
     <div className={compact ? 'space-y-1.5' : 'space-y-2'}>
