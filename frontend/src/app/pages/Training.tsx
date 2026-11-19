@@ -236,7 +236,7 @@ export default function Training() {
     (activeTab === 'important' && importantLoading) ||
     (activeTab === 'instructions' && instructionsLoading);
 
-  const displayVideos = videos.length > 0 ? [...videos, ...PLACEHOLDER_VIDEOS] : PLACEHOLDER_VIDEOS;
+  const displayVideos = videos.length > 0 ? videos : PLACEHOLDER_VIDEOS;
   const displayFaqItems = faqItems.length > 0 ? faqItems : PLACEHOLDER_FAQ;
   const displayImportantItems = importantItems.length > 0 ? importantItems : PLACEHOLDER_IMPORTANT;
   const displayInstructions = instructions.length > 0 ? instructions : PLACEHOLDER_INSTRUCTIONS;
@@ -280,48 +280,62 @@ export default function Training() {
 
         {activeTab === 'videos' && !videosLoading && (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayVideos.map((video) => (
-              <div key={video.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group">
-                <div className="relative h-48 bg-gray-100 overflow-hidden">
-                  {video.thumbnail_url ? (
-                    <img
-                      src={video.thumbnail_url}
-                      alt={video.title}
-                      loading="lazy"
-                      decoding="async"
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+            {displayVideos.map((video) => {
+              const playable = Boolean(video.video_url) && video.video_url !== '#';
+              return (
+                <div
+                  key={video.id}
+                  className="relative bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group"
+                >
+                  {playable && (
+                    <a
+                      href={video.video_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      aria-label={`Открыть видео: ${video.title}`}
+                      className="absolute inset-0 z-10 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
                     />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-indigo-50">
-                      <Play className="w-12 h-12 text-indigo-300" />
-                    </div>
                   )}
-                  <a
-                    href={video.video_url}
-                    target={video.video_url === '#' ? undefined : '_blank'}
-                    rel={video.video_url === '#' ? undefined : 'noopener noreferrer'}
-                    aria-label={`Открыть видео: ${video.title}`}
-                    className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      if (video.video_url === '#') e.preventDefault();
-                    }}
-                  >
-                    <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center">
-                      <Play className="w-8 h-8 text-indigo-600 ml-1" />
+                  <div className="relative h-48 bg-gray-100 overflow-hidden">
+                    {video.thumbnail_url ? (
+                      <img
+                        src={video.thumbnail_url}
+                        alt={video.title}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center bg-indigo-50">
+                        <Play className="w-12 h-12 text-indigo-300" />
+                      </div>
+                    )}
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent pointer-events-none" />
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-16 h-16 bg-white/95 rounded-full flex items-center justify-center shadow-lg transition-transform duration-300 group-hover:scale-110">
+                        <Play className="w-8 h-8 text-indigo-600 ml-1" />
+                      </div>
                     </div>
-                  </a>
-                  <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/70 backdrop-blur-sm text-white text-xs rounded-lg font-medium">
-                    {formatDuration(video.duration)}
+                    {playable && video.duration ? (
+                      <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/70 backdrop-blur-sm text-white text-xs rounded-lg font-medium">
+                        {formatDuration(video.duration)}
+                      </div>
+                    ) : null}
+                    {!playable && (
+                      <div className="absolute top-3 left-3 px-2 py-1 bg-white/90 backdrop-blur-sm text-gray-700 text-xs rounded-lg font-medium">
+                        Скоро
+                      </div>
+                    )}
+                  </div>
+                  <div className="p-5">
+                    <h3 className="font-semibold text-gray-900 mb-2">{video.title}</h3>
+                    {video.description && (
+                      <p className="text-sm text-gray-600">{video.description}</p>
+                    )}
                   </div>
                 </div>
-                <div className="p-5">
-                  <h3 className="font-semibold text-gray-900 mb-2">{video.title}</h3>
-                  {video.description && (
-                    <p className="text-sm text-gray-600">{video.description}</p>
-                  )}
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
