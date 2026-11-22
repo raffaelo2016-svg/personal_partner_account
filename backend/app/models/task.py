@@ -13,6 +13,7 @@ from app.models.types import UTCDateTime
 if TYPE_CHECKING:
     from app.models.client import Client
     from app.models.partner import Partner
+    from app.models.task_workspace import TaskEvent, TaskFile, TaskMessage
     from app.models.user import User
 
 
@@ -38,6 +39,10 @@ class Task(Base, TimestampMixin):
     due_date: Mapped[date | None] = mapped_column(index=True, default=None)
     due_at: Mapped[datetime | None] = mapped_column(UTCDateTime, index=True, default=None)
     completed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    review_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None, index=True)
+    review_requested_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), default=None
+    )
 
     bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
     bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
@@ -49,7 +54,13 @@ class Task(Base, TimestampMixin):
 
     partner: Mapped[Partner | None] = relationship("Partner")
     client: Mapped[Client | None] = relationship("Client")
-    creator: Mapped[User] = relationship("User")
+    creator: Mapped[User] = relationship("User", foreign_keys=[created_by])
+    reviewer: Mapped[User | None] = relationship("User", foreign_keys=[review_requested_by])
+    files: Mapped[list[TaskFile]] = relationship("TaskFile", back_populates="task", cascade="all, delete-orphan")
+    messages: Mapped[list[TaskMessage]] = relationship(
+        "TaskMessage", back_populates="task", cascade="all, delete-orphan"
+    )
+    events: Mapped[list[TaskEvent]] = relationship("TaskEvent", back_populates="task", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         return f"<Task {self.title} status={self.status}>"

@@ -22,6 +22,8 @@ import {
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAdminClient, useRetryAdminClientBitrix, useUpdateAdminClient } from '@/app/hooks/useClients';
+import { useClientTaskFiles } from '../hooks/useTasks';
+import { taskFileUrl } from '../api/tasks';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles, uploadAllSettled } from '@/app/utils/files';
@@ -119,6 +121,7 @@ export default function AdminDebtorDetails() {
   });
   const clientFees = feesData?.items ?? [];
 
+  const { data: clientTaskFiles = [] } = useClientTaskFiles(id);
   const { data: clientFiles = [], isLoading: isFilesLoading } = useQuery({
     queryKey: ['adminClientFiles', id],
     queryFn: () => fetchClientFiles(id!),
@@ -787,6 +790,50 @@ export default function AdminDebtorDetails() {
               </div>
             )}
           </div>
+
+          {clientTaskFiles.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <div className="mb-4">
+                <h3 className="font-semibold text-gray-900 flex items-center gap-2">
+                  <FileText className="w-5 h-5" />
+                  Документы из задач
+                  <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                    {clientTaskFiles.length}
+                  </span>
+                </h3>
+                <p className="mt-1 text-xs text-gray-500">
+                  Файлы загружены в задачах и автоматически видны здесь — это один и тот же документ.
+                </p>
+              </div>
+              <div className="space-y-2">
+                {clientTaskFiles.map((file) => {
+                  const Icon = getFileIcon(file.mime_type);
+                  return (
+                    <div key={file.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Icon className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{file.original_name}</p>
+                        <p className="text-xs text-gray-500">
+                          {formatFileSize(file.size)} · {formatDateShort(file.created_at, tz)}
+                        </p>
+                        {file.task_title && (
+                          <Link
+                            to={`/admin/tasks/${file.task_id}`}
+                            className="mt-1 inline-block text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            Задача: {file.task_title}
+                          </Link>
+                        )}
+                      </div>
+                      <a href={taskFileUrl(file)} className="p-1.5 text-gray-400 hover:text-blue-600" title="Скачать">
+                        <Download className="w-4 h-4" />
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </div>

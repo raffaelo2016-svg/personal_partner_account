@@ -23,7 +23,75 @@ export interface TaskData {
   bitrix_task_id?: string | null;
   bitrix_sync_requested_at?: string | null;
   bitrix_synced_at?: string | null;
+  review_requested_at?: string | null;
+  review_requested_by?: string | null;
+  files_count?: number;
+  messages_count?: number;
+  unread_count?: number;
 }
+
+export interface TaskClientBrief {
+  id: string;
+  full_name: string;
+  case_number: string | null;
+  status: string;
+  phone: string | null;
+  arbitrage_court: string | null;
+}
+
+export interface TaskFileData {
+  id: string;
+  task_id: string;
+  client_id: string | null;
+  original_name: string;
+  size: number;
+  mime_type: string;
+  created_at: string;
+  uploader_id: string;
+  uploader_name: string;
+  can_delete: boolean;
+  download_url: string;
+  task_title?: string | null;
+}
+
+export interface TaskMessageData {
+  id: string;
+  task_id: string;
+  author_id: string;
+  author_name: string;
+  author_role: string;
+  text: string;
+  created_at: string;
+  is_mine: boolean;
+}
+
+export interface TaskEventData {
+  id: string;
+  type: string;
+  actor_name: string | null;
+  payload: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface TaskPermissions {
+  is_admin: boolean;
+  can_edit: boolean;
+  can_upload: boolean;
+  can_request_review: boolean;
+  can_approve: boolean;
+  can_return: boolean;
+  can_delete_task: boolean;
+}
+
+export interface TaskDetailData extends TaskData {
+  client: TaskClientBrief | null;
+  files: TaskFileData[];
+  messages: TaskMessageData[];
+  events: TaskEventData[];
+  permissions: TaskPermissions;
+}
+
+export type TaskReviewAction = 'request' | 'approve' | 'return';
 
 export interface TaskFilters {
   status?: string;
@@ -60,6 +128,7 @@ export interface TaskStats {
   total: number;
   pending: number;
   in_progress: number;
+  review?: number;
   completed: number;
   overdue: number;
   completion_percent: number;
@@ -94,6 +163,64 @@ export async function deleteTask(id: string): Promise<void> {
 
 export async function retryTaskBitrix(id: string): Promise<TaskData> {
   const res = await apiClient.post<TaskData>(`/tasks/${id}/bitrix/retry`);
+  return res.data;
+}
+
+export function taskFileUrl(file: TaskFileData): string {
+  const base = apiClient.defaults.baseURL || '';
+  if (/^https?:\/\//.test(base)) {
+    return new URL(file.download_url, base).toString();
+  }
+  return file.download_url;
+}
+
+export async function fetchTask(id: string): Promise<TaskDetailData> {
+  const res = await apiClient.get<TaskDetailData>(`/tasks/${id}`);
+  return res.data;
+}
+
+export async function fetchTaskFiles(id: string): Promise<TaskFileData[]> {
+  const res = await apiClient.get<TaskFileData[]>(`/tasks/${id}/files`);
+  return res.data;
+}
+
+export async function uploadTaskFile(
+  taskId: string,
+  file: File,
+  onProgress?: (percent: number) => void,
+): Promise<TaskFileData> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await apiClient.post<TaskFileData>(`/tasks/${taskId}/files`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    onUploadProgress: (event) => {
+      if (onProgress && event.total) onProgress(Math.round((event.loaded / event.total) * 100));
+    },
+  });
+  return res.data;
+}
+
+export async function deleteTaskFile(taskId: string, fileId: string): Promise<void> {
+  await apiClient.delete(`/tasks/${taskId}/files/${fileId}`);
+}
+
+export async function fetchTaskMessages(id: string): Promise<TaskMessageData[]> {
+  const res = await apiClient.get<TaskMessageData[]>(`/tasks/${id}/messages`);
+  return res.data;
+}
+
+export async function sendTaskMessage(id: string, text: string): Promise<TaskMessageData> {
+  const res = await apiClient.post<TaskMessageData>(`/tasks/${id}/messages`, { text });
+  return res.data;
+}
+
+export async function reviewTask(id: string, action: TaskReviewAction): Promise<TaskDetailData> {
+  const res = await apiClient.post<TaskDetailData>(`/tasks/${id}/review`, { action });
+  return res.data;
+}
+
+export async function fetchClientTaskFiles(clientId: string): Promise<TaskFileData[]> {
+  const res = await apiClient.get<TaskFileData[]>(`/tasks/client-files/${clientId}`);
   return res.data;
 }
 

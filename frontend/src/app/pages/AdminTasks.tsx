@@ -1,8 +1,8 @@
 import { useState, useMemo, useCallback } from 'react';
-import { useSearchParams } from 'react-router';
+import { Link, useSearchParams } from 'react-router';
 import {
   CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle,
-  Filter, Search, X, Loader2, Trash2, Edit2,
+  Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
@@ -14,9 +14,11 @@ import CustomSelect from '../components/ui/CustomSelect';
 import { formatTaskDeadline, isTaskOverdue, taskDeadlineFields, taskDeadlinePayload, taskDeadlineTimestamp, taskDisplayStatus } from '../utils/taskDeadline';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import TaskBoard from '../components/TaskBoard';
 
 export default function AdminTasks() {
   const [showCreateModal, setShowCreateModal] = useState(false);
+  const [viewMode, setViewMode] = useState<'board' | 'list'>('list');
   const [searchParams, setSearchParams] = useSearchParams();
 
   const directionRaw = searchParams.get('direction') ?? 'from_partners';
@@ -217,6 +219,7 @@ export default function AdminTasks() {
   const getStatusInfo = (status: string) => {
     const statusMap = {
       pending: { label: 'Ожидает', color: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: Clock },
+      review: { label: 'На проверке', color: 'bg-purple-50 text-purple-700 border-purple-200', icon: Clock },
       in_progress: { label: 'В работе', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle },
       completed: { label: 'Выполнено', color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle },
       overdue: { label: 'Просрочено', color: 'bg-red-50 text-red-700 border-red-200', icon: AlertCircle },
@@ -249,15 +252,39 @@ export default function AdminTasks() {
           <h1 className="text-3xl font-semibold text-gray-900 mb-2">Задачи</h1>
           <p className="text-gray-600">Управление задачами партнёров</p>
         </div>
-        {direction === 'my' && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-sm hover:shadow"
-          >
-            <Plus className="w-5 h-5" />
-            Создать задачу
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-xl border border-gray-200 bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('board')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                viewMode === 'board' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Доска
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                viewMode === 'list' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <List className="h-4 w-4" />
+              Список
+            </button>
+          </div>
+          {direction === 'my' && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white rounded-xl hover:bg-indigo-700 transition-all shadow-sm hover:shadow"
+            >
+              <Plus className="w-5 h-5" />
+              Создать задачу
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Direction Toggle */}
@@ -347,6 +374,7 @@ export default function AdminTasks() {
               { value: 'all', label: 'Все статусы' },
               { value: 'pending', label: 'Ожидает' },
               { value: 'in_progress', label: 'В работе' },
+              { value: 'review', label: 'На проверке' },
               { value: 'completed', label: 'Выполнено' },
             ]}
           />
@@ -399,7 +427,9 @@ export default function AdminTasks() {
       </div>
 
       {/* Tasks List */}
-      {isLoading ? (
+      {viewMode === 'board' ? (
+        <TaskBoard tasks={allItems} basePath="/admin/tasks" showPartner />
+      ) : isLoading ? (
         <div className="flex justify-center py-12">
           <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
         </div>
@@ -428,7 +458,12 @@ export default function AdminTasks() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start justify-between mb-2">
                       <div className="flex-1">
-                        <h3 className="font-semibold text-gray-900 mb-1">{task.title}</h3>
+                        <Link
+                          to={`/admin/tasks/${task.id}`}
+                          className="mb-1 block font-semibold text-gray-900 hover:text-pink-600"
+                        >
+                          {task.title}
+                        </Link>
                         <p className="text-sm text-gray-600 mb-3">{task.description}</p>
                       </div>
                       <div className="flex items-center gap-2">
@@ -438,6 +473,7 @@ export default function AdminTasks() {
                           options={[
                             { value: 'pending', label: 'Ожидает' },
                             ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
+                            ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
                             { value: 'in_progress', label: 'В работе' },
                             { value: 'completed', label: 'Выполнено' },
                           ]}

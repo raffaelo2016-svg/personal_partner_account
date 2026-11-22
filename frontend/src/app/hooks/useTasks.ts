@@ -8,8 +8,16 @@ import {
   fetchTasks,
   fetchTaskStats,
   fetchUrgentTasks,
+  fetchTask,
+  fetchTaskMessages,
+  fetchClientTaskFiles,
+  uploadTaskFile,
+  deleteTaskFile,
+  sendTaskMessage,
+  reviewTask,
   updateTask,
   retryTaskBitrix,
+  type TaskReviewAction,
 } from '../api/tasks';
 
 export function useTasks(filters: TaskFilters = {}) {
@@ -51,6 +59,7 @@ export function useUpdateTask() {
     mutationFn: ({ id, data }: { id: string; data: TaskUpdatePayload }) => updateTask(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['task'] });
       queryClient.invalidateQueries({ queryKey: ['taskStats'] });
       queryClient.invalidateQueries({ queryKey: ['urgentTasks'] });
     },
@@ -97,5 +106,83 @@ export function useUrgentTasks() {
     queryFn: fetchUrgentTasks,
     refetchInterval: 30_000,
     refetchIntervalInBackground: false,
+  });
+}
+
+export function useTask(id: string | undefined) {
+  return useQuery({
+    queryKey: ['task', id],
+    queryFn: () => fetchTask(id!),
+    enabled: !!id,
+    refetchInterval: 20_000,
+  });
+}
+
+export function useTaskMessages(id: string | undefined) {
+  return useQuery({
+    queryKey: ['taskMessages', id],
+    queryFn: () => fetchTaskMessages(id!),
+    enabled: !!id,
+    refetchInterval: 3_000,
+    refetchIntervalInBackground: false,
+  });
+}
+
+export function useClientTaskFiles(clientId: string | undefined) {
+  return useQuery({
+    queryKey: ['clientTaskFiles', clientId],
+    queryFn: () => fetchClientTaskFiles(clientId!),
+    enabled: !!clientId,
+  });
+}
+
+export function useUploadTaskFile(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ file, onProgress }: { file: File; onProgress?: (percent: number) => void }) =>
+      uploadTaskFile(taskId!, file, onProgress),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['taskFiles', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['clientTaskFiles'] });
+    },
+  });
+}
+
+export function useDeleteTaskFile(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (fileId: string) => deleteTaskFile(taskId!, fileId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['taskFiles', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['clientTaskFiles'] });
+    },
+  });
+}
+
+export function useSendTaskMessage(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (text: string) => sendTaskMessage(taskId!, text),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskMessages', taskId] });
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+    },
+  });
+}
+
+export function useTaskReview(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (action: TaskReviewAction) => reviewTask(taskId!, action),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['task', taskId], data);
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['taskStats'] });
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+    },
   });
 }

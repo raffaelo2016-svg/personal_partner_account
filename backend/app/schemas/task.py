@@ -1,5 +1,5 @@
 from datetime import UTC, date, datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import AwareDatetime, BaseModel, Field, field_validator, model_validator
 
@@ -44,6 +44,59 @@ class TaskUpdate(TaskDeadline):
         return self
 
 
+class TaskClientBrief(BaseModel):
+    id: str
+    full_name: str
+    case_number: str | None = None
+    status: str
+    phone: str | None = None
+    arbitrage_court: str | None = None
+
+
+class TaskFileRead(BaseModel):
+    id: str
+    task_id: str
+    client_id: str | None = None
+    original_name: str
+    size: int
+    mime_type: str
+    created_at: datetime
+    uploader_id: str
+    uploader_name: str
+    can_delete: bool
+    download_url: str
+    task_title: str | None = None
+
+
+class TaskMessageRead(BaseModel):
+    id: str
+    task_id: str
+    author_id: str
+    author_name: str
+    author_role: str
+    text: str
+    created_at: datetime
+    is_mine: bool
+
+
+class TaskEventRead(BaseModel):
+    id: str
+    type: str
+    actor_name: str | None = None
+    payload: dict[str, Any] = {}
+    created_at: datetime
+
+
+class TaskPermissions(BaseModel):
+    is_admin: bool
+    can_edit: bool
+    can_upload: bool
+    can_request_review: bool
+    can_approve: bool
+    can_return: bool
+    can_delete_task: bool
+
+
 class TaskRead(BaseModel):
     id: str
     partner_id: str | None = None
@@ -58,6 +111,11 @@ class TaskRead(BaseModel):
     due_date: date | None = None
     due_at: datetime | None = None
     completed_at: datetime | None = None
+    review_requested_at: datetime | None = None
+    review_requested_by: str | None = None
+    files_count: int = 0
+    messages_count: int = 0
+    unread_count: int = 0
     created_at: datetime
     updated_at: datetime
     client_name: str | None = None
@@ -72,10 +130,27 @@ class TaskRead(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class TaskDetailRead(TaskRead):
+    client: TaskClientBrief | None = None
+    files: list[TaskFileRead] = []
+    messages: list[TaskMessageRead] = []
+    events: list[TaskEventRead] = []
+    permissions: TaskPermissions
+
+
+class TaskMessageCreate(BaseModel):
+    text: str = Field(min_length=1, max_length=4000)
+
+
+class TaskReviewRequest(BaseModel):
+    action: Literal["request", "approve", "return"]
+
+
 class TaskStats(BaseModel):
     total: int
     pending: int
     in_progress: int
+    review: int = 0
     completed: int
     overdue: int
     completion_percent: float

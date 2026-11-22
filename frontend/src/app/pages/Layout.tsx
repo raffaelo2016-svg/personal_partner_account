@@ -58,7 +58,7 @@ export default function Layout() {
     { name: 'Клиенты', href: '/dashboard/clients', icon: Users, color: 'text-purple-600', bgColor: 'bg-purple-50' },
     { name: 'Реквизиты СРО', href: '/dashboard/sro', icon: FileText, color: 'text-blue-600', bgColor: 'bg-blue-50' },
     { name: 'Добавить клиента', href: '/dashboard/clients/new', icon: UserPlus, color: 'text-green-600', bgColor: 'bg-green-50' },
-    { name: 'Список задач', href: '/dashboard/tasks', icon: CheckSquare, color: 'text-pink-600', bgColor: 'bg-pink-50' },
+    { name: 'Задачи', href: '/dashboard/tasks', icon: CheckSquare, color: 'text-pink-600', bgColor: 'bg-pink-50' },
     { name: 'Финансы', href: '/dashboard/finance/court-fees', icon: Wallet, color: 'text-emerald-600', bgColor: 'bg-emerald-50' },
     { name: 'Чат', href: '/dashboard/chat', icon: MessageSquare, color: 'text-teal-600', bgColor: 'bg-teal-50', badge: chatUnreadCount },
     { name: 'Новости', href: '/dashboard/news', icon: Newspaper, color: 'text-blue-600', bgColor: 'bg-blue-50', badge: newsUnreadCount },
