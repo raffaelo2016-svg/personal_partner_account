@@ -23,7 +23,9 @@ import { toast } from 'sonner';
 import {
   completeTrainingLesson,
   fetchTrainingProgress,
+  fetchTrainingVideos,
   resetTrainingLesson,
+  type TrainingVideoData,
 } from '../api/training';
 import {
   TRAINING_FAQ,
@@ -36,6 +38,7 @@ import {
   type TrainingLesson,
 } from '../data/trainingCourse';
 import TrainingLessonModal from '../components/TrainingLessonModal';
+import TrainingWebinarModal from '../components/TrainingWebinarModal';
 
 const LESSON_ICONS: Record<LessonIcon, typeof Home> = {
   intro: Home,
@@ -53,6 +56,75 @@ const NOTE_STYLES: Record<string, { wrap: string; icon: string }> = {
   default: { wrap: 'border-amber-200 bg-amber-50', icon: 'text-amber-600' },
 };
 
+/**
+ * Обложки вебинаров лежат в public/training как тяжёлые PNG. Рядом положили
+ * облегчённые JPG — их и грузим, а если файла нет, возвращаемся к оригиналу.
+ */
+function optimizedCover(url: string | null): string | null {
+  if (!url) return null;
+  return url.replace(/\.png$/i, '.jpg');
+}
+
+function WebinarCard({ video, onPlay }: { video: TrainingVideoData; onPlay: () => void }) {
+  const [cover, setCover] = useState<string | null>(optimizedCover(video.thumbnail_url));
+
+  return (
+    <article className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md">
+      <button
+        type="button"
+        onClick={onPlay}
+        aria-label={`Смотреть вебинар: ${video.title}`}
+        className="relative aspect-video overflow-hidden bg-slate-200"
+      >
+        {cover ? (
+          <img
+            src={cover}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            onError={() => {
+              if (cover !== video.thumbnail_url) setCover(video.thumbnail_url);
+            }}
+            className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+          />
+        ) : (
+          <span className="flex h-full w-full items-center justify-center bg-gradient-to-br from-slate-700 to-slate-900">
+            <Play className="h-10 w-10 text-white/80" aria-hidden="true" />
+          </span>
+        )}
+        <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+        <span className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
+          <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-lg">
+            <Play className="ml-0.5 h-6 w-6 fill-slate-900 text-slate-900" aria-hidden="true" />
+          </span>
+        </span>
+        {video.duration ? (
+          <span className="absolute bottom-3 right-3 rounded-lg bg-black/70 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
+            {formatLessonDuration(video.duration)}
+          </span>
+        ) : null}
+      </button>
+
+      <div className="flex flex-1 flex-col p-5">
+        <h3 className="font-semibold text-gray-900">{video.title}</h3>
+        {video.description && (
+          <p className="mt-1 line-clamp-2 flex-1 text-sm leading-6 text-gray-600">
+            {video.description}
+          </p>
+        )}
+        <button
+          type="button"
+          onClick={onPlay}
+          className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-medium text-blue-600 hover:underline"
+        >
+          Смотреть запись
+          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+        </button>
+      </div>
+    </article>
+  );
+}
+
 const TABS = [
   { id: 'faq' as const, label: 'Частые вопросы', icon: HelpCircle },
   { id: 'notes' as const, label: 'Важно', icon: AlertCircle },
@@ -62,6 +134,7 @@ const TABS = [
 export default function Training() {
   const queryClient = useQueryClient();
   const [activeLesson, setActiveLesson] = useState<TrainingLesson | null>(null);
+  const [activeWebinar, setActiveWebinar] = useState<TrainingVideoData | null>(null);
   const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['id']>('faq');
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
   const [faqQuery, setFaqQuery] = useState('');
@@ -71,6 +144,18 @@ export default function Training() {
     queryFn: fetchTrainingProgress,
     staleTime: 30_000,
   });
+
+  // Записи вебинаров приходят из базы и живут на Яндекс Клауде.
+  const { data: videos = [] } = useQuery({
+    queryKey: ['training', 'videos'],
+    queryFn: fetchTrainingVideos,
+    staleTime: 10 * 60_000,
+  });
+
+  const webinars = useMemo(
+    () => videos.filter((video) => video.video_url && video.video_url !== '#'),
+    [videos],
+  );
 
   const applyProgress = (keys: string[]) => {
     queryClient.setQueryData(['training', 'progress'], keys);
@@ -252,6 +337,23 @@ export default function Training() {
         </div>
       </section>
 
+      {webinars.length > 0 && (
+        <section>
+          <div className="mb-4">
+            <h2 className="text-lg font-semibold text-gray-900">Записи вебинаров</h2>
+            <p className="text-sm text-gray-600">
+              Подробные разборы от команды ЮРИТЕХ — на 2–6 минут, по конкретным процедурам.
+            </p>
+          </div>
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            {webinars.map((video) => (
+              <WebinarCard key={video.id} video={video} onPlay={() => setActiveWebinar(video)} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section className="rounded-2xl border border-gray-200 bg-white">
         <div className="flex flex-col gap-3 border-b border-gray-200 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
           <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
@@ -398,6 +500,10 @@ export default function Training() {
           </Link>
         </div>
       </section>
+
+      {activeWebinar && (
+        <TrainingWebinarModal video={activeWebinar} onClose={() => setActiveWebinar(null)} />
+      )}
 
       {activeLesson && (
         <TrainingLessonModal

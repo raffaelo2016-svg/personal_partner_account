@@ -19,6 +19,8 @@ function cspMetaPlugin(apiUrl: string): PluginOption {
   // c клиента на smartcaptcha.yandexcloud.net. Без разрешения домена в CSP
   // браузер блокирует всё это.
   const captcha = 'https://smartcaptcha.yandexcloud.net https://*.captcha.yandex.ru'
+  // Записи вебинаров в «Обучении» — плеер Яндекс Клауда в iframe.
+  const video = 'https://runtime.video.cloud.yandex.net'
   const connectSrc = ["'self'", httpOrigin, wsOrigin, captcha].filter(Boolean).join(' ')
   const csp = [
     "default-src 'self'",
@@ -27,7 +29,7 @@ function cspMetaPlugin(apiUrl: string): PluginOption {
     "img-src 'self' data: blob:",
     "font-src 'self' data:",
     `connect-src ${connectSrc}`,
-    `frame-src ${captcha}`,
+    `frame-src ${captcha} ${video}`,
     "frame-ancestors 'none'",
     "base-uri 'self'",
     "form-action 'self'",
