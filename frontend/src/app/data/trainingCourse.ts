@@ -27,6 +27,8 @@ export interface TrainingLesson {
   /** Длительность ролика в секундах. */
   duration: number;
   videoUrl: string;
+  /** Обложка карточки: тёмный постер с названием урока. */
+  cover: string;
   icon: LessonIcon;
   accent: {
     /** Фон кружка с иконкой. */
@@ -35,10 +37,6 @@ export interface TrainingLesson {
     text: string;
     /** Градиент обложки. */
     gradient: string;
-    /** Светлая заливка плитки урока. */
-    tile: string;
-    /** Приглушённый цвет для крупного номера. */
-    faint: string;
     /** Базовый цвет акцента для инлайн-стилей. */
     hex: string;
   };
@@ -56,13 +54,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'Дашборд, меню и где что лежит',
     duration: 43,
     videoUrl: '/training/01-vvedenie.mp4',
+    cover: '/training/lessons/01.jpg',
     icon: 'intro',
     accent: {
       soft: 'bg-blue-50',
       text: 'text-blue-600',
       gradient: 'from-blue-600 to-indigo-700',
-      tile: 'from-blue-50 to-blue-100',
-      faint: 'text-blue-200',
       hex: '#2563eb',
     },
     conspect: [
@@ -90,13 +87,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'От поиска в списке до готовой карточки',
     duration: 47,
     videoUrl: '/training/02-novyy-klient.mp4',
+    cover: '/training/lessons/02.jpg',
     icon: 'client',
     accent: {
       soft: 'bg-violet-50',
       text: 'text-violet-600',
       gradient: 'from-violet-600 to-purple-700',
-      tile: 'from-violet-50 to-violet-100',
-      faint: 'text-violet-200',
       hex: '#7c3aed',
     },
     conspect: [
@@ -124,13 +120,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'Что загружать и в каком формате',
     duration: 48,
     videoUrl: '/training/03-dokumenty.mp4',
+    cover: '/training/lessons/03.jpg',
     icon: 'documents',
     accent: {
       soft: 'bg-emerald-50',
       text: 'text-emerald-600',
       gradient: 'from-emerald-600 to-teal-700',
-      tile: 'from-emerald-50 to-emerald-100',
-      faint: 'text-emerald-200',
       hex: '#059669',
     },
     conspect: [
@@ -158,13 +153,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'Чтобы ничего не потерялось по срокам',
     duration: 44,
     videoUrl: '/training/04-zadachi.mp4',
+    cover: '/training/lessons/04.jpg',
     icon: 'tasks',
     accent: {
       soft: 'bg-pink-50',
       text: 'text-pink-600',
       gradient: 'from-pink-600 to-rose-700',
-      tile: 'from-pink-50 to-pink-100',
-      faint: 'text-pink-200',
       hex: '#db2777',
     },
     conspect: [
@@ -193,13 +187,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'Судебные расходы по каждому клиенту',
     duration: 46,
     videoUrl: '/training/05-finansy.mp4',
+    cover: '/training/lessons/05.jpg',
     icon: 'finance',
     accent: {
       soft: 'bg-amber-50',
       text: 'text-amber-600',
       gradient: 'from-amber-500 to-orange-600',
-      tile: 'from-amber-50 to-amber-100',
-      faint: 'text-amber-200',
       hex: '#d97706',
     },
     conspect: [
@@ -228,13 +221,12 @@ export const TRAINING_LESSONS: TrainingLesson[] = [
     subtitle: 'Администратор и техподдержка',
     duration: 41,
     videoUrl: '/training/06-chat.mp4',
+    cover: '/training/lessons/06.jpg',
     icon: 'chat',
     accent: {
       soft: 'bg-teal-50',
       text: 'text-teal-600',
       gradient: 'from-teal-600 to-cyan-700',
-      tile: 'from-teal-50 to-teal-100',
-      faint: 'text-teal-200',
       hex: '#0d9488',
     },
     conspect: [

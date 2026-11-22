@@ -32,6 +32,15 @@ describe('курс обучения', () => {
     }
   });
 
+  it('у каждого урока своя обложка-постер', () => {
+    const covers = TRAINING_LESSONS.map((lesson) => lesson.cover);
+    for (const cover of covers) {
+      expect(cover.startsWith('/training/lessons/')).toBe(true);
+      expect(cover.endsWith('.jpg')).toBe(true);
+    }
+    expect(new Set(covers).size).toBe(covers.length);
+  });
+
   it('у каждого урока есть конспект и шаги', () => {
     for (const lesson of TRAINING_LESSONS) {
       expect(lesson.conspect.length).toBeGreaterThan(2);

@@ -5,19 +5,12 @@ import {
   AlertCircle,
   ArrowRight,
   BookOpen,
-  CheckCircle2,
   ChevronDown,
   Clock,
-  FolderOpen,
   HelpCircle,
-  Home,
   Info,
-  ListChecks,
-  MessageSquare,
   Play,
   Search,
-  UserPlus,
-  Wallet,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
@@ -34,20 +27,10 @@ import {
   TRAINING_NOTES,
   TRAINING_TOTAL_DURATION,
   formatLessonDuration,
-  type LessonIcon,
   type TrainingLesson,
 } from '../data/trainingCourse';
 import TrainingLessonModal from '../components/TrainingLessonModal';
 import TrainingWebinarModal from '../components/TrainingWebinarModal';
-
-const LESSON_ICONS: Record<LessonIcon, typeof Home> = {
-  intro: Home,
-  client: UserPlus,
-  documents: FolderOpen,
-  tasks: ListChecks,
-  finance: Wallet,
-  chat: MessageSquare,
-};
 
 const NOTE_STYLES: Record<string, { wrap: string; icon: string }> = {
   alert: { wrap: 'border-red-200 bg-red-50', icon: 'text-red-600' },
@@ -93,6 +76,9 @@ function WebinarCard({ video, onPlay }: { video: TrainingVideoData; onPlay: () =
           </span>
         )}
         <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+        <span className="absolute left-4 top-3 rounded-lg bg-white/15 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+          Вебинар
+        </span>
         <span className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100">
           <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-lg">
             <Play className="ml-0.5 h-6 w-6 fill-slate-900 text-slate-900" aria-hidden="true" />
@@ -274,9 +260,8 @@ export default function Training() {
           </p>
         </div>
 
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           {TRAINING_LESSONS.map((lesson) => {
-            const Icon = LESSON_ICONS[lesson.icon];
             const isDone = completedSet.has(lesson.key);
             return (
               <article
@@ -286,50 +271,43 @@ export default function Training() {
                 <button
                   type="button"
                   onClick={() => openLesson(lesson)}
-                  aria-label={`Смотреть урок ${lesson.number}: ${lesson.title}`}
-                  className={`relative flex h-36 items-center justify-center bg-gradient-to-br ${lesson.accent.tile}`}
+                  aria-label={`Смотреть урок: ${lesson.title}`}
+                  className="relative aspect-video overflow-hidden bg-slate-200"
                 >
-                  <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.03] transition group-hover:scale-105">
-                    <Icon className={`h-7 w-7 ${lesson.accent.text}`} aria-hidden="true" />
+                  <img
+                    src={lesson.cover}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]"
+                  />
+                  <span className="absolute inset-0 bg-gradient-to-t from-black/55 via-black/5 to-transparent" />
+                  <span className="absolute left-4 top-3 rounded-lg bg-white/15 px-2 py-1 text-xs font-semibold text-white backdrop-blur-sm">
+                    Урок {lesson.number}
                   </span>
-                  <span
-                    className={`absolute left-4 top-2 text-5xl font-bold tabular-nums ${lesson.accent.faint}`}
-                    aria-hidden="true"
-                  >
-                    {String(lesson.number).padStart(2, '0')}
-                  </span>
-                  <span className="absolute bottom-3 right-3 rounded-lg bg-white/90 px-2 py-0.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-sm">
+                  <span className="absolute bottom-3 right-3 rounded-lg bg-black/70 px-2 py-0.5 text-xs font-medium text-white backdrop-blur-sm">
                     {formatLessonDuration(lesson.duration)}
                   </span>
-                  <span className="absolute inset-0 flex items-center justify-center bg-gray-900/0 opacity-0 transition group-hover:bg-gray-900/10 group-hover:opacity-100 group-focus-visible:bg-gray-900/10 group-focus-visible:opacity-100">
+                  <span className="absolute inset-0 flex items-center justify-center opacity-0 transition group-hover:opacity-100 group-focus-visible:opacity-100">
                     <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-lg">
-                      <Play className={`ml-0.5 h-6 w-6 fill-current ${lesson.accent.text}`} aria-hidden="true" />
+                      <Play className="ml-0.5 h-6 w-6 fill-slate-900 text-slate-900" aria-hidden="true" />
                     </span>
                   </span>
                 </button>
 
                 <div className="flex flex-1 flex-col p-5">
-                  <div className="flex items-start justify-between gap-3">
-                    <h3 className="font-semibold text-gray-900">{lesson.title}</h3>
-                    {isDone && (
-                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
-                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
-                        Просмотрено
-                      </span>
-                    )}
-                  </div>
-                  <p className="mt-1 flex-1 text-sm text-gray-600">{lesson.subtitle}</p>
-                  <div className="mt-4 flex items-center justify-between">
-                    <button
-                      type="button"
-                      onClick={() => openLesson(lesson)}
-                      className={`inline-flex items-center gap-1.5 text-sm font-medium ${lesson.accent.text} hover:underline`}
-                    >
-                      {isDone ? 'Пересмотреть' : 'Смотреть урок'}
-                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
-                    </button>
-                    <span className="text-xs text-gray-400">Урок {lesson.number}</span>
-                  </div>
+                  <h3 className="font-semibold text-gray-900">{lesson.title}</h3>
+                  <p className="mt-1 line-clamp-2 flex-1 text-sm leading-6 text-gray-600">
+                    {lesson.subtitle}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => openLesson(lesson)}
+                    className="mt-3 inline-flex items-center gap-1.5 self-start text-sm font-medium text-blue-600 hover:underline"
+                  >
+                    {isDone ? 'Пересмотреть' : 'Смотреть урок'}
+                    <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                  </button>
                 </div>
               </article>
             );
