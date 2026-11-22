@@ -78,9 +78,7 @@ class TestTrainingProgress:
         resp = await client.put("/api/v1/training/progress/1bad-key", headers=auth(partner_token))
         assert resp.status_code == 422
 
-    async def test_progress_is_per_partner(
-        self, client: AsyncClient, partner_token, partner_token2
-    ):
+    async def test_progress_is_per_partner(self, client: AsyncClient, partner_token, partner_token2):
         await client.put("/api/v1/training/progress/intro", headers=auth(partner_token))
         other = await client.get("/api/v1/training/progress", headers=auth(partner_token2))
         assert other.json()["completed"] == []
