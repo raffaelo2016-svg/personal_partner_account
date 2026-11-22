@@ -75,13 +75,24 @@ async def _seed():
             assigned_to="uritech",
             created_by=partner_user.id,
         )
-        session.add(task)
+        partner_task = Task(
+            partner_id=partner.id,
+            client_id=client.id,
+            title="Task assigned to partner",
+            description="Admin asks the partner to prepare documents",
+            status="in_progress",
+            priority="medium",
+            assigned_to="partner",
+            created_by=admin_user.id,
+        )
+        session.add_all([task, partner_task])
         await session.commit()
         return {
             "partner_token": create_access_token({"sub": str(partner_user.id)}),
             "admin_token": create_access_token({"sub": str(admin_user.id)}),
             "other_token": create_access_token({"sub": str(other_user.id)}),
             "task_id": str(task.id),
+            "partner_task_id": str(partner_task.id),
             "client_id": str(client.id),
         }
 
@@ -97,8 +108,14 @@ async def test_task_detail_and_visibility(client: AsyncClient, setup_db):
     body = response.json()
     assert body["title"] == "Workspace task"
     assert body["client"]["full_name"] == "Workspace Client"
-    assert body["permissions"]["can_request_review"] is True
+    assert body["permissions"]["can_request_review"] is False
     assert body["files"] == []
+
+    partner_task_view = await client.get(
+        f"/api/v1/tasks/{data['partner_task_id']}", headers=_headers(data["partner_token"])
+    )
+    assert partner_task_view.status_code == 200
+    assert partner_task_view.json()["permissions"]["can_request_review"] is True
 
     admin_view = await client.get(f"/api/v1/tasks/{data['task_id']}", headers=_headers(data["admin_token"]))
     assert admin_view.status_code == 200
@@ -110,8 +127,15 @@ async def test_task_detail_and_visibility(client: AsyncClient, setup_db):
 
 async def test_review_flow_and_admin_approval(client: AsyncClient, setup_db):
     data = await _seed()
-    requested = await client.post(
+    wrong_direction = await client.post(
         f"/api/v1/tasks/{data['task_id']}/review",
+        json={"action": "request"},
+        headers=_headers(data["partner_token"]),
+    )
+    assert wrong_direction.status_code == 400
+
+    requested = await client.post(
+        f"/api/v1/tasks/{data['partner_task_id']}/review",
         json={"action": "request"},
         headers=_headers(data["partner_token"]),
     )
@@ -120,14 +144,14 @@ async def test_review_flow_and_admin_approval(client: AsyncClient, setup_db):
     assert requested.json()["status"] == "in_progress"
 
     admin_request = await client.post(
-        f"/api/v1/tasks/{data['task_id']}/review",
+        f"/api/v1/tasks/{data['partner_task_id']}/review",
         json={"action": "request"},
         headers=_headers(data["admin_token"]),
     )
     assert admin_request.status_code == 403
 
     approved = await client.post(
-        f"/api/v1/tasks/{data['task_id']}/review",
+        f"/api/v1/tasks/{data['partner_task_id']}/review",
         json={"action": "approve"},
         headers=_headers(data["admin_token"]),
     )
@@ -135,6 +159,29 @@ async def test_review_flow_and_admin_approval(client: AsyncClient, setup_db):
     assert approved.json()["status"] == "completed"
     assert approved.json()["review_requested_at"] is None
     assert approved.json()["completed_at"] is not None
+
+
+async def test_admin_executes_partner_request_without_review(client: AsyncClient, setup_db):
+    data = await _seed()
+    started = await client.put(
+        f"/api/v1/tasks/{data['task_id']}",
+        json={"status": "in_progress"},
+        headers=_headers(data["admin_token"]),
+    )
+    assert started.status_code == 200
+    assert started.json()["review_requested_at"] is None
+
+    completed = await client.put(
+        f"/api/v1/tasks/{data['task_id']}",
+        json={"status": "completed"},
+        headers=_headers(data["admin_token"]),
+    )
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json()["review_requested_at"] is None
+
+    partner_view = await client.get(f"/api/v1/tasks/{data['task_id']}", headers=_headers(data["partner_token"]))
+    assert partner_view.json()["permissions"]["can_request_review"] is False
 
 
 async def test_task_files_are_shared_with_client_and_permissions(client: AsyncClient, setup_db):

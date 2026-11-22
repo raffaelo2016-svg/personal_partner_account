@@ -397,7 +397,10 @@ async def get_task_detail(
         messages_count=messages_count,
         unread_count=unread_count,
     )
-    can_request_review = not is_admin and task.status != "completed" and task.review_requested_at is None
+    partner_is_executor = task.assigned_to == "partner"
+    can_request_review = (
+        not is_admin and partner_is_executor and task.status == "in_progress" and task.review_requested_at is None
+    )
     return TaskDetailRead(
         **base.model_dump(),
         client=_client_brief(task.client),
@@ -409,8 +412,8 @@ async def get_task_detail(
             can_edit=is_admin or task.assigned_to != "partner",
             can_upload=True,
             can_request_review=can_request_review,
-            can_approve=is_admin and task.review_requested_at is not None,
-            can_return=is_admin and task.review_requested_at is not None,
+            can_approve=is_admin and partner_is_executor and task.review_requested_at is not None,
+            can_return=is_admin and partner_is_executor and task.review_requested_at is not None,
             can_delete_task=is_admin,
         ),
     )
@@ -625,15 +628,18 @@ async def review_task(
     is_admin = partner_id is None
     now = datetime.now(UTC)
 
+    if task.assigned_to != "partner":
+        raise BadRequest("Review is available only for tasks assigned to a partner")
+
     if action == "request":
         if is_admin:
             raise Forbidden("Only the partner can send a task to review")
         if task.status == "completed":
             raise BadRequest("Completed task cannot be sent to review")
+        if task.status != "in_progress":
+            raise BadRequest("Take the task into work before sending it to review")
         if task.review_requested_at is not None:
             raise BadRequest("Task is already on review")
-        if task.status == "pending":
-            task.status = "in_progress"
         task.review_requested_at = now
         task.review_requested_by = _as_uuid(user_id)
         await add_task_event(session, task.id, user_id, "review_requested", {})

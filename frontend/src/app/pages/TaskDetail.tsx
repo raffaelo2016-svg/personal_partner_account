@@ -183,12 +183,21 @@ export default function TaskDetail() {
     }
   }, [chatWidth]);
 
-  const canStart = !!task && !task.permissions.is_admin && task.status === 'pending' && !task.review_requested_at;
+  const canStart =
+    !!task &&
+    task.status === 'pending' &&
+    !task.review_requested_at &&
+    ((!task.permissions.is_admin && task.assigned_to === 'partner') ||
+      (task.permissions.is_admin && task.assigned_to === 'uritech'));
   const canRequestReview = !!task?.permissions.can_request_review;
   const canApprove = !!task?.permissions.can_approve;
   const canReturn = !!task?.permissions.can_return;
   const canCompleteDirectly =
-    !!task && task.permissions.is_admin && !task.review_requested_at && task.status !== 'completed';
+    !!task &&
+    task.permissions.is_admin &&
+    task.assigned_to === 'uritech' &&
+    task.status === 'in_progress' &&
+    !task.review_requested_at;
   const canReopen = !!task && task.permissions.is_admin && task.status === 'completed';
 
   const statusChip = useMemo(() => (task ? stateLabel(task) : ''), [task]);
