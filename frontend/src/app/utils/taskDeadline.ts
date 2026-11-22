@@ -2,6 +2,7 @@ export interface TaskDeadline {
   due_date?: string | null;
   due_at?: string | null;
   status?: string;
+  review_requested_at?: string | null;
 }
 
 const MOSCOW_TIME_ZONE = 'Europe/Moscow';
@@ -22,6 +23,7 @@ export function isTaskOverdue(task: TaskDeadline, now = Date.now()): boolean {
 // Old stored overdue statuses can remain after a deadline was moved or removed.
 export function taskDisplayStatus(task: TaskDeadline, now = Date.now()): string {
   if (task.status === 'completed') return 'completed';
+  if (task.review_requested_at) return 'review';
   if (isTaskOverdue(task, now)) return 'overdue';
   return task.status === 'overdue' ? 'pending' : (task.status ?? 'pending');
 }

@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from urllib.parse import quote
+
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,14 +9,34 @@ from app.database import get_db
 from app.models.partner import Partner
 from app.models.user import User
 from app.schemas.pagination import PaginatedResponse, PaginationParams
-from app.schemas.task import TaskCreate, TaskRead, TaskStats, TaskUpdate
+from app.schemas.task import (
+    TaskCreate,
+    TaskDetailRead,
+    TaskFileRead,
+    TaskMessageCreate,
+    TaskMessageRead,
+    TaskRead,
+    TaskReviewRequest,
+    TaskStats,
+    TaskUpdate,
+)
 from app.services.task_service import (
+    TASK_FILE_MAX_SIZE_BYTES,
     create_task,
     delete_task,
+    delete_task_file,
+    download_task_file,
+    get_task_detail,
     get_task_stats,
     get_urgent_tasks,
+    list_client_task_files,
+    list_task_files,
+    list_task_messages,
     list_tasks,
     retry_task_bitrix_sync,
+    review_task,
+    send_task_message,
+    store_task_file,
     update_task,
 )
 
@@ -59,6 +81,7 @@ async def list_tasks_endpoint(
         priority=priority,
         assigned_to=assigned_to,
         search=search,
+        user_id=str(current_user.id),
         offset=pagination.offset,
         limit=pagination.page_size,
     )
@@ -105,6 +128,170 @@ async def create_task_endpoint(
     return result
 
 
+@router.get("/client-files/{client_id}", response_model=list[TaskFileRead])
+async def client_task_files_endpoint(
+    client_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    return await list_client_task_files(
+        db,
+        client_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+
+
+@router.get("/{task_id}", response_model=TaskDetailRead)
+async def get_task_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    return await get_task_detail(
+        db,
+        task_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+
+
+@router.get("/{task_id}/files", response_model=list[TaskFileRead])
+async def task_files_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    return await list_task_files(
+        db,
+        task_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+
+
+@router.post("/{task_id}/files", response_model=TaskFileRead, status_code=201)
+async def upload_task_file_endpoint(
+    task_id: str,
+    file: UploadFile = File(...),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    data = await file.read(TASK_FILE_MAX_SIZE_BYTES + 1)
+    result = await store_task_file(
+        db,
+        task_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+        original_name=file.filename or "document",
+        mime_type=file.content_type,
+        data=data,
+    )
+    await db.commit()
+    return result
+
+
+@router.get("/{task_id}/files/{file_id}/download")
+async def download_task_file_endpoint(
+    task_id: str,
+    file_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    data, filename, mime_type = await download_task_file(
+        db,
+        task_id,
+        file_id,
+        partner_id=partner_id,
+    )
+    return Response(
+        content=data,
+        media_type=mime_type,
+        headers={
+            "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@router.delete("/{task_id}/files/{file_id}", status_code=204)
+async def delete_task_file_endpoint(
+    task_id: str,
+    file_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    await delete_task_file(
+        db,
+        task_id,
+        file_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+    await db.commit()
+
+
+@router.get("/{task_id}/messages", response_model=list[TaskMessageRead])
+async def task_messages_endpoint(
+    task_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await list_task_messages(
+        db,
+        task_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{task_id}/messages", response_model=TaskMessageRead, status_code=201)
+async def send_task_message_endpoint(
+    task_id: str,
+    body: TaskMessageCreate,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await send_task_message(
+        db,
+        task_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+        text=body.text,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{task_id}/review", response_model=TaskDetailRead)
+async def review_task_endpoint(
+    task_id: str,
+    body: TaskReviewRequest,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await review_task(
+        db,
+        task_id,
+        body.action,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+    await db.commit()
+    return result
+
+
 @router.post("/{task_id}/bitrix/retry", response_model=TaskRead)
 async def retry_task_bitrix_endpoint(
     task_id: str,
@@ -125,7 +312,7 @@ async def update_task_endpoint(
     current_user: User = Depends(get_current_user),  # noqa: B008
 ):
     partner_id = await _resolve_partner_id(db, current_user)
-    result = await update_task(db, task_id, body, partner_id=partner_id)
+    result = await update_task(db, task_id, body, partner_id=partner_id, user_id=str(current_user.id))
     await db.commit()
     return result
 

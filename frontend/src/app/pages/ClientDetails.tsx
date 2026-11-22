@@ -1,4 +1,4 @@
-import { Link, useParams } from 'react-router';
+import { Link, useLocation, useParams } from 'react-router';
 import { 
   ArrowLeft, 
   Edit, 
@@ -30,7 +30,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ClientProgressBar from '../components/ClientProgressBar';
 import { useState, useRef } from 'react';
 import { useClient } from '../hooks/useClients';
-import { useRetryTaskBitrix, useTasks } from '../hooks/useTasks';
+import { useClientTaskFiles, useRetryTaskBitrix, useTasks } from '../hooks/useTasks';
+import { taskFileUrl } from '../api/tasks';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import { captureError } from '@/app/sentry';
@@ -84,7 +85,9 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 
 export default function ClientDetails() {
   const tz = useTimezone();
+  const location = useLocation();
   const { id } = useParams();
+  const isAdminPath = location.pathname.startsWith('/admin');
   const { data: apiClient, isLoading } = useClient(id ?? '');
   const queryClient = useQueryClient();
   const { data: clientFiles = [], isLoading: isFilesLoading } = useQuery({
@@ -93,6 +96,7 @@ export default function ClientDetails() {
     enabled: !!id,
   });
   const { data: tasksData } = useTasks({ client_id: id, page_size: 5 });
+  const { data: clientTaskFiles = [] } = useClientTaskFiles(id);
   const clientTasks = tasksData?.items ?? [];
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isUploading, setIsUploading] = useState(false);
@@ -614,6 +618,52 @@ export default function ClientDetails() {
             )}
           </div>
           
+          {clientTaskFiles.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6">
+              <h2 className="text-lg font-semibold text-gray-900 mb-1 flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Документы из задач
+                <span className="ml-1 px-2 py-0.5 text-xs font-medium bg-gray-100 text-gray-600 rounded-full">
+                  {clientTaskFiles.length}
+                </span>
+              </h2>
+              <p className="mb-4 text-xs text-gray-500">
+                Эти файлы загружены в задачах. Здесь они видны сразу, без копирования.
+              </p>
+              <div className="space-y-2">
+                {clientTaskFiles.map((file) => {
+                  const Icon = getFileIcon(file.mime_type);
+                  return (
+                    <div key={file.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
+                      <Icon className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-gray-900 truncate">{file.original_name}</p>
+                        <p className="text-xs text-gray-500">
+                          {formatFileSize(file.size)} · {formatDateTime(file.created_at)}
+                        </p>
+                        {file.task_title && (
+                          <Link
+                            to={`${isAdminPath ? '/admin' : '/dashboard'}/tasks/${file.task_id}`}
+                            className="mt-1 inline-block text-xs font-medium text-blue-600 hover:text-blue-700"
+                          >
+                            Задача: {file.task_title}
+                          </Link>
+                        )}
+                      </div>
+                      <a
+                        href={taskFileUrl(file)}
+                        className="p-1.5 text-gray-400 hover:text-blue-600"
+                        title="Скачать"
+                      >
+                        <Download className="w-4 h-4" />
+                      </a>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
           {/* Task History */}
           <div className="bg-white rounded-xl border border-gray-200 p-6">
             <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">

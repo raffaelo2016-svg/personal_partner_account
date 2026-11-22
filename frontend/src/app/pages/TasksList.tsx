@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
-import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2 } from 'lucide-react';
+import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List } from 'lucide-react';
 import { Link } from 'react-router';
 import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
 import { useClients } from '../hooks/useClients';
@@ -9,6 +9,7 @@ import CustomSelect from '../components/ui/CustomSelect';
 import { formatTaskDeadline, isTaskOverdue, taskDeadlineFields, taskDeadlinePayload, taskDeadlineTimestamp, taskDisplayStatus } from '../utils/taskDeadline';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import BitrixSyncStatus from '../components/BitrixSyncStatus';
+import TaskBoard from '../components/TaskBoard';
 
 export default function TasksList() {
   const [showCreateModal, setShowCreateModal] = useState(false);
@@ -17,6 +18,7 @@ export default function TasksList() {
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [onlyOverdue, setOnlyOverdue] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [viewMode, setViewMode] = useState<'board' | 'list'>('board');
 
   const assignedToFilter = direction === 'my' ? 'uritech' : 'partner';
 
@@ -173,9 +175,12 @@ export default function TasksList() {
       return (taskDeadlineTimestamp(a) ?? Infinity) - (taskDeadlineTimestamp(b) ?? Infinity);
     });
 
+  const boardTasks = allItems.filter((task) => !onlyOverdue || isTaskOverdue(task));
+
   const getStatusInfo = (status: string) => {
     const statusMap = {
       pending: { label: 'Ожидает', color: 'bg-yellow-50 text-yellow-700 border-yellow-200', icon: Clock },
+      review: { label: 'На проверке', color: 'bg-purple-50 text-purple-700 border-purple-200', icon: Clock },
       in_progress: { label: 'В работе', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle },
       completed: { label: 'Выполнено', color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle },
       overdue: { label: 'Просрочено', color: 'bg-red-50 text-red-700 border-red-200', icon: AlertCircle },
@@ -205,18 +210,42 @@ export default function TasksList() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-semibold text-gray-900 mb-2">Список задач</h1>
-          <p className="text-gray-600">Управление задачами</p>
+          <h1 className="text-3xl font-semibold text-gray-900 mb-2">Задачи</h1>
+          <p className="text-gray-600">Доска и список задач</p>
         </div>
-        {direction === 'my' && (
-          <button
-            onClick={() => setShowCreateModal(true)}
-            className="flex items-center gap-2 px-5 py-2.5 bg-pink-600 text-white rounded-xl hover:bg-pink-700 transition-all shadow-sm hover:shadow"
-          >
-            <Plus className="w-5 h-5" />
-            Создать задачу
-          </button>
-        )}
+        <div className="flex items-center gap-3">
+          <div className="flex rounded-xl border border-gray-200 bg-white p-1">
+            <button
+              type="button"
+              onClick={() => setViewMode('board')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                viewMode === 'board' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <LayoutGrid className="h-4 w-4" />
+              Доска
+            </button>
+            <button
+              type="button"
+              onClick={() => setViewMode('list')}
+              className={`flex items-center gap-1.5 rounded-lg px-3 py-2 text-sm font-medium transition ${
+                viewMode === 'list' ? 'bg-gray-900 text-white' : 'text-gray-600 hover:bg-gray-50'
+              }`}
+            >
+              <List className="h-4 w-4" />
+              Список
+            </button>
+          </div>
+          {direction === 'my' && (
+            <button
+              onClick={() => setShowCreateModal(true)}
+              className="flex items-center gap-2 px-5 py-2.5 bg-pink-600 text-white rounded-xl hover:bg-pink-700 transition-all shadow-sm hover:shadow"
+            >
+              <Plus className="w-5 h-5" />
+              Создать задачу
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Direction Toggle */}
@@ -306,6 +335,7 @@ export default function TasksList() {
               { value: 'all', label: 'Все статусы' },
               { value: 'pending', label: 'Ожидает' },
               { value: 'in_progress', label: 'В работе' },
+              { value: 'review', label: 'На проверке' },
               { value: 'completed', label: 'Выполнено' },
             ]}
           />
@@ -358,6 +388,10 @@ export default function TasksList() {
       </div>
 
       {/* Tasks List */}
+      {viewMode === 'board' ? (
+        <TaskBoard tasks={boardTasks} basePath="/dashboard/tasks" />
+      ) : (
+      <>
       <div className="space-y-3">
         {filteredTasks.map((task) => {
           const statusInfo = getStatusInfo(task.displayStatus);
@@ -382,7 +416,12 @@ export default function TasksList() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex-1">
-                      <h3 className="font-semibold text-gray-900 mb-1">{task.title}</h3>
+                      <Link
+                        to={`/dashboard/tasks/${task.id}`}
+                        className="mb-1 block font-semibold text-gray-900 hover:text-pink-600"
+                      >
+                        {task.title}
+                      </Link>
                       <p className="text-sm text-gray-600 mb-3">{task.description}</p>
                     </div>
                     <div className="flex items-center gap-2">
@@ -393,6 +432,7 @@ export default function TasksList() {
                           options={[
                             { value: 'pending', label: 'Ожидает' },
                             ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
+                            ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
                             { value: 'in_progress', label: 'В работе' },
                             { value: 'completed', label: 'Выполнено' },
                           ]}
@@ -483,6 +523,8 @@ export default function TasksList() {
           <CheckSquare className="w-16 h-16 text-gray-300 mx-auto mb-4" />
           <p className="text-gray-500">Задачи не найдены</p>
         </div>
+      )}
+      </>
       )}
 
       {/* Create Task Modal */}
