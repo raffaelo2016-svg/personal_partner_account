@@ -64,6 +64,13 @@
 поля проверки в `tasks`, таблицы `task_files`, `task_messages`, `task_events`,
 `task_read_states`.
 
+`alembic/versions/e4c8b2d7a901_tasks_missing_projection_columns.py`:
+repair-миграция. На чистой базе в старой цепочке не хватало `tasks.partner_id`,
+`due_at`, `bitrix_imported`, `bitrix_published`, хотя ORM их уже использует.
+`IF NOT EXISTS` делает миграцию безопасной для продакшена, где эти поля уже есть.
+На тестовой Postgres обе миграции применились, после чего загрузка в S3,
+скачивание, карточка клиента и проверка задачи прошли.
+
 ## Что осталось за рамками итерации
 
 - Общий чат не показывает треды задач — по продуктовому решению.

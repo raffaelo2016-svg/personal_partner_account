@@ -6,6 +6,8 @@ from zoneinfo import ZoneInfo
 import structlog
 from fastapi.encoders import jsonable_encoder
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -209,20 +211,42 @@ async def _task_counts(session: AsyncSession, task_id, user_id: str | None) -> t
 
 async def _mark_task_read(session: AsyncSession, task_id, user_id: str) -> None:
     read_user_id = _as_uuid(user_id)
-    state = (
-        await session.execute(
-            select(TaskReadState).where(
-                TaskReadState.task_id == task_id,
-                TaskReadState.user_id == read_user_id,
-            )
-        )
-    ).scalar_one_or_none()
     now = datetime.now(UTC)
-    if state is None:
-        session.add(TaskReadState(user_id=read_user_id, task_id=task_id, last_read_at=now))
+    values = {
+        "id": uuid.uuid4(),
+        "task_id": task_id,
+        "user_id": read_user_id,
+        "last_read_at": now,
+    }
+    dialect_name = session.get_bind().dialect.name
+    if dialect_name == "postgresql":
+        statement = pg_insert(TaskReadState).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[TaskReadState.user_id, TaskReadState.task_id],
+            set_={"last_read_at": statement.excluded.last_read_at},
+        )
+        await session.execute(statement)
+    elif dialect_name == "sqlite":
+        statement = sqlite_insert(TaskReadState).values(**values)
+        statement = statement.on_conflict_do_update(
+            index_elements=[TaskReadState.user_id, TaskReadState.task_id],
+            set_={"last_read_at": statement.excluded.last_read_at},
+        )
+        await session.execute(statement)
     else:
-        state.last_read_at = now
-    await session.flush()
+        state = (
+            await session.execute(
+                select(TaskReadState).where(
+                    TaskReadState.task_id == task_id,
+                    TaskReadState.user_id == read_user_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if state is None:
+            session.add(TaskReadState(**values))
+        else:
+            state.last_read_at = now
+        await session.flush()
 
 
 async def add_task_event(
