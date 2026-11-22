@@ -1,428 +1,415 @@
-import { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
-import { Play, Book, AlertCircle, HelpCircle, FileText, ChevronDown, ChevronRight, Loader2 } from 'lucide-react';
+import { useMemo, useState } from 'react';
+import { Link } from 'react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import {
-  fetchTrainingVideos,
-  fetchFAQ,
-  fetchInstructions,
-  fetchImportantNotes,
-  type FAQData,
-  type ImportantNoteData,
-  type InstructionData,
-  type TrainingVideoData,
+  AlertCircle,
+  ArrowRight,
+  BookOpen,
+  CheckCircle2,
+  ChevronDown,
+  Clock,
+  FolderOpen,
+  HelpCircle,
+  Home,
+  Info,
+  ListChecks,
+  MessageSquare,
+  Play,
+  Search,
+  UserPlus,
+  Wallet,
+} from 'lucide-react';
+import { toast } from 'sonner';
+import {
+  completeTrainingLesson,
+  fetchTrainingProgress,
+  resetTrainingLesson,
 } from '../api/training';
+import {
+  TRAINING_FAQ,
+  TRAINING_INSTRUCTIONS,
+  TRAINING_LESSONS,
+  TRAINING_NOTES,
+  TRAINING_TOTAL_DURATION,
+  formatLessonDuration,
+  type LessonIcon,
+  type TrainingLesson,
+} from '../data/trainingCourse';
+import TrainingLessonModal from '../components/TrainingLessonModal';
 
-function formatDuration(seconds: number | null): string {
-  if (!seconds) return '0:00';
-  const m = Math.floor(seconds / 60);
-  const s = seconds % 60;
-  return `${m}:${s.toString().padStart(2, '0')}`;
-}
-
-const ICON_COLORS: Record<string, { bg: string; border: string; text: string }> = {
-  alert: { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-600' },
-  warning: { bg: 'bg-orange-50', border: 'border-orange-200', text: 'text-orange-600' },
-  info: { bg: 'bg-purple-50', border: 'border-purple-200', text: 'text-purple-600' },
-  default: { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-600' },
+const LESSON_ICONS: Record<LessonIcon, typeof Home> = {
+  intro: Home,
+  client: UserPlus,
+  documents: FolderOpen,
+  tasks: ListChecks,
+  finance: Wallet,
+  chat: MessageSquare,
 };
 
-const PLACEHOLDER_CREATED_AT = '2026-01-01T00:00:00.000Z';
+const NOTE_STYLES: Record<string, { wrap: string; icon: string }> = {
+  alert: { wrap: 'border-red-200 bg-red-50', icon: 'text-red-600' },
+  warning: { wrap: 'border-orange-200 bg-orange-50', icon: 'text-orange-600' },
+  info: { wrap: 'border-blue-200 bg-blue-50', icon: 'text-blue-600' },
+  default: { wrap: 'border-amber-200 bg-amber-50', icon: 'text-amber-600' },
+};
 
-const PLACEHOLDER_VIDEOS: TrainingVideoData[] = [
-  {
-    id: 'placeholder-video-intro',
-    title: 'Введение в платформу ЮРИТЕХ Partner',
-    description: 'Основные возможности и интерфейс платформы',
-    duration: 525,
-    video_url: '#',
-    thumbnail_url: '/training/video-intro.svg',
-    order: 1,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-video-client',
-    title: 'Добавление нового клиента',
-    description: 'Пошаговая инструкция по созданию карточки клиента',
-    duration: 750,
-    video_url: '#',
-    thumbnail_url: '/training/video-client.svg',
-    order: 2,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-video-docs',
-    title: 'Работа с документами',
-    description: 'Загрузка, управление и формирование документов',
-    duration: 920,
-    video_url: '#',
-    thumbnail_url: '/training/video-documents.svg',
-    order: 3,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-video-tasks',
-    title: 'Система задач и уведомлений',
-    description: 'Создание задач, отслеживание дедлайнов и напоминаний',
-    duration: 615,
-    video_url: '#',
-    thumbnail_url: '/training/video-tasks.svg',
-    order: 4,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-video-finance',
-    title: 'Финансы и оплаты',
-    description: 'Управление судебными расходами и платежами',
-    duration: 580,
-    video_url: '#',
-    thumbnail_url: '/training/video-finance.svg',
-    order: 5,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-video-chat',
-    title: 'Чат и коммуникация с ЮРИТЕХ',
-    description: 'Эффективное общение через встроенный чат',
-    duration: 390,
-    video_url: '#',
-    thumbnail_url: '/training/video-chat.svg',
-    order: 6,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-];
-
-const PLACEHOLDER_FAQ: FAQData[] = [
-  {
-    id: 'placeholder-faq-approval',
-    question: 'Когда партнёр получает доступ к кабинету?',
-    answer: 'После отправки заявки администратор проверяет данные партнёра. После одобрения можно войти через страницу входа и работать в кабинете.',
-    order: 1,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-faq-client',
-    question: 'Как добавить нового клиента?',
-    answer: 'Откройте раздел "Клиенты" или пункт "Добавить клиента", заполните карточку клиента и сохраните данные. После этого клиент появится в общем списке.',
-    order: 2,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-faq-files',
-    question: 'Где загружать документы по клиенту?',
-    answer: 'Документы загружаются в карточке клиента. Система сохранит файлы и покажет их в истории работы по делу.',
-    order: 3,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-faq-payments',
-    question: 'Как отслеживать судебные расходы?',
-    answer: 'Раздел "Финансы" показывает начисления, сроки оплаты, историю платежей и задолженность по клиентам.',
-    order: 4,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-];
-
-const PLACEHOLDER_IMPORTANT: ImportantNoteData[] = [
-  {
-    id: 'placeholder-important-data',
-    title: 'Проверяйте данные клиента перед подачей',
-    description: 'Ошибки в ФИО, телефоне, паспортных данных или реквизитах могут замедлить подготовку документов и движение дела.',
-    icon: 'warning',
-    order: 1,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-important-payment',
-    title: 'Следите за сроками оплаты',
-    description: 'Судебные расходы отображаются в разделе финансов. Просрочка может ограничить доступ к отдельным возможностям платформы.',
-    icon: 'alert',
-    order: 2,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-important-chat',
-    title: 'Используйте чат для рабочих вопросов',
-    description: 'Если по клиенту нужна помощь или уточнение, пишите в чат. Так история коммуникации останется в кабинете.',
-    icon: 'info',
-    order: 3,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-important-tasks',
-    title: 'Не пропускайте задачи',
-    description: 'Задачи помогают не терять дедлайны по документам, оплатам и коммуникации с клиентами.',
-    icon: 'default',
-    order: 4,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-];
-
-const PLACEHOLDER_INSTRUCTIONS: InstructionData[] = [
-  {
-    id: 'placeholder-instruction-start',
-    title: 'Первый вход и настройка кабинета',
-    steps: {
-      items: [
-        'Войдите в кабинет через страницу входа.',
-        'Откройте настройки и проверьте контактные данные.',
-        'Убедитесь, что уведомления включены и email указан корректно.',
-      ],
-    },
-    order: 1,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-instruction-client',
-    title: 'Создание карточки клиента',
-    steps: {
-      items: [
-        'Перейдите в раздел "Добавить клиента".',
-        'Заполните основные данные и тип процедуры.',
-        'Сохраните карточку и загрузите необходимые документы.',
-      ],
-    },
-    order: 2,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
-  {
-    id: 'placeholder-instruction-finance',
-    title: 'Работа с начислениями',
-    steps: {
-      items: [
-        'Откройте раздел "Финансы".',
-        'Проверьте сумму, срок оплаты и статус начисления.',
-        'После оплаты контролируйте обновление статуса в истории.',
-      ],
-    },
-    order: 3,
-    created_at: PLACEHOLDER_CREATED_AT,
-  },
+const TABS = [
+  { id: 'faq' as const, label: 'Частые вопросы', icon: HelpCircle },
+  { id: 'notes' as const, label: 'Важно', icon: AlertCircle },
+  { id: 'instructions' as const, label: 'Инструкции', icon: BookOpen },
 ];
 
 export default function Training() {
-  const [activeTab, setActiveTab] = useState<'videos' | 'faq' | 'important' | 'instructions'>('videos');
+  const queryClient = useQueryClient();
+  const [activeLesson, setActiveLesson] = useState<TrainingLesson | null>(null);
+  const [activeTab, setActiveTab] = useState<(typeof TABS)[number]['id']>('faq');
   const [expandedFaq, setExpandedFaq] = useState<string | null>(null);
+  const [faqQuery, setFaqQuery] = useState('');
 
-  const { data: videos = [], isLoading: videosLoading } = useQuery({
-    queryKey: ['training', 'videos'],
-    queryFn: fetchTrainingVideos,
+  const { data: completed = [] } = useQuery({
+    queryKey: ['training', 'progress'],
+    queryFn: fetchTrainingProgress,
+    staleTime: 30_000,
   });
 
-  const { data: faqItems = [], isLoading: faqLoading } = useQuery({
-    queryKey: ['training', 'faq'],
-    queryFn: fetchFAQ,
+  const applyProgress = (keys: string[]) => {
+    queryClient.setQueryData(['training', 'progress'], keys);
+  };
+
+  const completeMutation = useMutation({
+    mutationFn: (lessonKey: string) => completeTrainingLesson(lessonKey),
+    onSuccess: applyProgress,
+    onError: () => toast.error('Не удалось сохранить прогресс. Попробуйте ещё раз.'),
   });
 
-  const { data: importantItems = [], isLoading: importantLoading } = useQuery({
-    queryKey: ['training', 'important'],
-    queryFn: fetchImportantNotes,
+  const resetMutation = useMutation({
+    mutationFn: (lessonKey: string) => resetTrainingLesson(lessonKey),
+    onSuccess: applyProgress,
+    onError: () => toast.error('Не удалось сохранить прогресс. Попробуйте ещё раз.'),
   });
 
-  const { data: instructions = [], isLoading: instructionsLoading } = useQuery({
-    queryKey: ['training', 'instructions'],
-    queryFn: fetchInstructions,
-  });
+  const completedSet = useMemo(() => new Set(completed), [completed]);
+  const doneCount = TRAINING_LESSONS.filter((lesson) => completedSet.has(lesson.key)).length;
+  const total = TRAINING_LESSONS.length;
+  const percent = Math.round((doneCount / total) * 100);
+  const nextLesson =
+    TRAINING_LESSONS.find((lesson) => !completedSet.has(lesson.key)) ?? TRAINING_LESSONS[0];
+  const courseFinished = doneCount === total;
 
-  const tabs = [
-    { id: 'videos', label: 'Видеоинструкции', icon: Play },
-    { id: 'faq', label: 'Частые вопросы', icon: HelpCircle },
-    { id: 'important', label: 'Важно', icon: AlertCircle },
-    { id: 'instructions', label: 'Инструкции', icon: FileText },
-  ];
+  const filteredFaq = useMemo(() => {
+    const query = faqQuery.trim().toLowerCase();
+    if (!query) return TRAINING_FAQ;
+    return TRAINING_FAQ.filter(
+      (item) =>
+        item.question.toLowerCase().includes(query) ||
+        item.answer.toLowerCase().includes(query),
+    );
+  }, [faqQuery]);
 
-  const isLoading =
-    (activeTab === 'videos' && videosLoading) ||
-    (activeTab === 'faq' && faqLoading) ||
-    (activeTab === 'important' && importantLoading) ||
-    (activeTab === 'instructions' && instructionsLoading);
+  const openLesson = (lesson: TrainingLesson) => setActiveLesson(lesson);
 
-  const displayVideos = videos.length > 0 ? videos : PLACEHOLDER_VIDEOS;
-  const displayFaqItems = faqItems.length > 0 ? faqItems : PLACEHOLDER_FAQ;
-  const displayImportantItems = importantItems.length > 0 ? importantItems : PLACEHOLDER_IMPORTANT;
-  const displayInstructions = instructions.length > 0 ? instructions : PLACEHOLDER_INSTRUCTIONS;
+  const handleComplete = (lesson: TrainingLesson) => {
+    if (!completedSet.has(lesson.key) && !completeMutation.isPending) {
+      completeMutation.mutate(lesson.key);
+    }
+  };
+
+  const handleReset = (lesson: TrainingLesson) => {
+    if (resetMutation.isPending) return;
+    resetMutation.mutate(lesson.key);
+  };
+
+  const modalIndex = activeLesson
+    ? TRAINING_LESSONS.findIndex((lesson) => lesson.key === activeLesson.key)
+    : -1;
+  const nextAfterActive =
+    modalIndex >= 0 && modalIndex < TRAINING_LESSONS.length - 1
+      ? TRAINING_LESSONS[modalIndex + 1]
+      : null;
 
   return (
-    <div className="p-8 space-y-6">
-      <div>
-        <h1 className="text-3xl font-semibold text-gray-900 mb-2">Обучение</h1>
-        <p className="text-gray-600">Все необходимое для эффективной работы с платформой</p>
-      </div>
+    <div className="space-y-6 p-4 sm:p-6 lg:p-8">
+      <header>
+        <h1 className="text-2xl font-semibold text-gray-900 sm:text-3xl">Обучение</h1>
+        <p className="mt-1 text-gray-600">
+          Шесть коротких уроков о том, как работать в кабинете. Всё вместе —{' '}
+          {formatLessonDuration(TRAINING_TOTAL_DURATION)}.
+        </p>
+      </header>
 
-      <div className="bg-white rounded-2xl border border-gray-200 p-2">
-        <div className="flex gap-2">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
+      <section className="overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white shadow-lg">
+        <div className="flex flex-col gap-6 p-6 sm:p-8 lg:flex-row lg:items-center lg:justify-between">
+          <div className="max-w-xl">
+            <p className="text-sm font-medium text-white/70">
+              {courseFinished ? 'Курс пройден' : 'Ваш прогресс'}
+            </p>
+            <p className="mt-1 text-2xl font-semibold sm:text-3xl">
+              {doneCount} из {total} уроков
+            </p>
+            <div
+              className="mt-4 h-2 w-full overflow-hidden rounded-full bg-white/20"
+              role="progressbar"
+              aria-valuenow={percent}
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-label="Прогресс обучения"
+            >
+              <div
+                className="h-full rounded-full bg-white transition-all duration-500"
+                style={{ width: `${percent}%` }}
+              />
+            </div>
+            <p className="mt-2 text-sm text-white/80">
+              {courseFinished
+                ? 'Все уроки позади. Конспекты и инструкции остаются под рукой.'
+                : `Следующий урок: «${nextLesson.title}» · ${formatLessonDuration(nextLesson.duration)}`}
+            </p>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => openLesson(nextLesson)}
+            className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-blue-700 shadow-sm transition hover:bg-blue-50"
+          >
+            <Play className="h-4 w-4 fill-current" aria-hidden="true" />
+            {doneCount === 0 ? 'Начать обучение' : courseFinished ? 'Повторить первый урок' : 'Продолжить обучение'}
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900">Уроки курса</h2>
+            <p className="text-sm text-gray-600">По порядку — каждый занимает меньше минуты.</p>
+          </div>
+          <p className="text-sm text-gray-500">
+            <Clock className="mr-1 inline h-4 w-4 align-[-2px]" aria-hidden="true" />
+            всего {formatLessonDuration(TRAINING_TOTAL_DURATION)}
+          </p>
+        </div>
+
+        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+          {TRAINING_LESSONS.map((lesson) => {
+            const Icon = LESSON_ICONS[lesson.icon];
+            const isDone = completedSet.has(lesson.key);
             return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={`flex-1 flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-medium transition-all ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-lg'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
+              <article
+                key={lesson.key}
+                className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
               >
-                <Icon className="w-5 h-5" />
-                {tab.label}
-              </button>
+                <button
+                  type="button"
+                  onClick={() => openLesson(lesson)}
+                  aria-label={`Смотреть урок ${lesson.number}: ${lesson.title}`}
+                  className={`relative flex h-36 items-center justify-center bg-gradient-to-br ${lesson.accent.tile}`}
+                >
+                  <span className="flex h-16 w-16 items-center justify-center rounded-2xl bg-white shadow-sm ring-1 ring-black/[0.03] transition group-hover:scale-105">
+                    <Icon className={`h-7 w-7 ${lesson.accent.text}`} aria-hidden="true" />
+                  </span>
+                  <span
+                    className={`absolute left-4 top-2 text-5xl font-bold tabular-nums ${lesson.accent.faint}`}
+                    aria-hidden="true"
+                  >
+                    {String(lesson.number).padStart(2, '0')}
+                  </span>
+                  <span className="absolute bottom-3 right-3 rounded-lg bg-white/90 px-2 py-0.5 text-xs font-medium text-gray-700 shadow-sm backdrop-blur-sm">
+                    {formatLessonDuration(lesson.duration)}
+                  </span>
+                  <span className="absolute inset-0 flex items-center justify-center bg-gray-900/0 opacity-0 transition group-hover:bg-gray-900/10 group-hover:opacity-100 group-focus-visible:bg-gray-900/10 group-focus-visible:opacity-100">
+                    <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white shadow-lg">
+                      <Play className={`ml-0.5 h-6 w-6 fill-current ${lesson.accent.text}`} aria-hidden="true" />
+                    </span>
+                  </span>
+                </button>
+
+                <div className="flex flex-1 flex-col p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="font-semibold text-gray-900">{lesson.title}</h3>
+                    {isDone && (
+                      <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-700">
+                        <CheckCircle2 className="h-3.5 w-3.5" aria-hidden="true" />
+                        Просмотрено
+                      </span>
+                    )}
+                  </div>
+                  <p className="mt-1 flex-1 text-sm text-gray-600">{lesson.subtitle}</p>
+                  <div className="mt-4 flex items-center justify-between">
+                    <button
+                      type="button"
+                      onClick={() => openLesson(lesson)}
+                      className={`inline-flex items-center gap-1.5 text-sm font-medium ${lesson.accent.text} hover:underline`}
+                    >
+                      {isDone ? 'Пересмотреть' : 'Смотреть урок'}
+                      <ArrowRight className="h-4 w-4" aria-hidden="true" />
+                    </button>
+                    <span className="text-xs text-gray-400">Урок {lesson.number}</span>
+                  </div>
+                </div>
+              </article>
             );
           })}
         </div>
-      </div>
+      </section>
 
-      <div>
-        {isLoading && (
-          <div className="flex items-center justify-center py-20">
-            <Loader2 className="w-8 h-8 animate-spin text-indigo-600" />
-          </div>
-        )}
-
-        {activeTab === 'videos' && !videosLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {displayVideos.map((video) => {
-              const playable = Boolean(video.video_url) && video.video_url !== '#';
+      <section className="rounded-2xl border border-gray-200 bg-white">
+        <div className="flex flex-col gap-3 border-b border-gray-200 p-3 sm:flex-row sm:items-center sm:justify-between sm:p-4">
+          <div className="grid grid-cols-3 gap-2 sm:flex sm:flex-wrap">
+            {TABS.map((tab) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
               return (
-                <div
-                  key={video.id}
-                  className="relative bg-white rounded-2xl border border-gray-200 overflow-hidden hover:shadow-lg transition-all group"
+                <button
+                  key={tab.id}
+                  type="button"
+                  onClick={() => setActiveTab(tab.id)}
+                  aria-pressed={isActive}
+                  className={`flex flex-col items-center justify-center gap-1 rounded-xl px-2 py-2.5 text-center text-xs font-medium leading-tight transition sm:flex-row sm:gap-2 sm:px-4 sm:py-2 sm:text-sm ${
+                    isActive
+                      ? 'bg-gray-900 text-white'
+                      : 'text-gray-600 hover:bg-gray-100'
+                  }`}
                 >
-                  {playable && (
-                    <a
-                      href={video.video_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      aria-label={`Открыть видео: ${video.title}`}
-                      className="absolute inset-0 z-10 rounded-2xl focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500"
-                    />
-                  )}
-                  <div className="relative h-48 bg-gray-100 overflow-hidden">
-                    {video.thumbnail_url ? (
-                      <img
-                        src={video.thumbnail_url}
-                        alt={video.title}
-                        loading="lazy"
-                        decoding="async"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center bg-indigo-50">
-                        <Play className="w-12 h-12 text-indigo-300" />
-                      </div>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/10 to-transparent pointer-events-none" />
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <div className="w-16 h-16 bg-white/95 rounded-full flex items-center justify-center shadow-lg transition-transform duration-300 group-hover:scale-110">
-                        <Play className="w-8 h-8 text-indigo-600 ml-1" />
-                      </div>
-                    </div>
-                    {playable && video.duration ? (
-                      <div className="absolute bottom-3 right-3 px-2 py-1 bg-black/70 backdrop-blur-sm text-white text-xs rounded-lg font-medium">
-                        {formatDuration(video.duration)}
-                      </div>
-                    ) : null}
-                    {!playable && (
-                      <div className="absolute top-3 left-3 px-2 py-1 bg-white/90 backdrop-blur-sm text-gray-700 text-xs rounded-lg font-medium">
-                        Скоро
-                      </div>
-                    )}
-                  </div>
-                  <div className="p-5">
-                    <h3 className="font-semibold text-gray-900 mb-2">{video.title}</h3>
-                    {video.description && (
-                      <p className="text-sm text-gray-600">{video.description}</p>
-                    )}
-                  </div>
-                </div>
+                  <Icon className="h-4 w-4" aria-hidden="true" />
+                  {tab.label}
+                </button>
               );
             })}
           </div>
-        )}
 
-        {activeTab === 'faq' && !faqLoading && (
-          <div className="space-y-3">
-            {displayFaqItems.map((item) => {
-              const isExpanded = expandedFaq === item.id;
-              return (
-                <div key={item.id} className="bg-white rounded-2xl border border-gray-200 overflow-hidden">
-                  <button
-                    onClick={() => setExpandedFaq(isExpanded ? null : item.id)}
-                    className="w-full px-6 py-5 flex items-center justify-between hover:bg-gray-50 transition-colors"
-                  >
-                    <div className="flex items-start gap-4 flex-1 text-left">
-                      <div className="w-10 h-10 bg-indigo-50 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <HelpCircle className="w-5 h-5 text-indigo-600" />
-                      </div>
+          {activeTab === 'faq' && (
+            <label className="relative sm:w-72">
+              <span className="sr-only">Поиск по частым вопросам</span>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden="true" />
+              <input
+                type="search"
+                value={faqQuery}
+                onChange={(event) => setFaqQuery(event.target.value)}
+                placeholder="Поиск по вопросам"
+                className="w-full rounded-xl border border-gray-300 py-2 pl-9 pr-3 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-100"
+              />
+            </label>
+          )}
+        </div>
+
+        <div className="p-4 sm:p-6">
+          {activeTab === 'faq' && (
+            <div className="space-y-2">
+              {filteredFaq.length === 0 && (
+                <p className="py-8 text-center text-sm text-gray-500">
+                  По запросу «{faqQuery}» ничего не нашлось. Напишите в чат — подскажем.
+                </p>
+              )}
+              {filteredFaq.map((item) => {
+                const isExpanded = expandedFaq === item.id;
+                return (
+                  <div key={item.id} className="overflow-hidden rounded-xl border border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedFaq(isExpanded ? null : item.id)}
+                      aria-expanded={isExpanded}
+                      className="flex w-full items-center justify-between gap-4 px-4 py-3.5 text-left transition hover:bg-gray-50"
+                    >
                       <span className="font-medium text-gray-900">{item.question}</span>
-                    </div>
-                    {isExpanded ? (
-                      <ChevronDown className="w-5 h-5 text-gray-400 flex-shrink-0" />
-                    ) : (
-                      <ChevronRight className="w-5 h-5 text-gray-400 flex-shrink-0" />
+                      <ChevronDown
+                        className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                        aria-hidden="true"
+                      />
+                    </button>
+                    {isExpanded && (
+                      <p className="border-t border-gray-100 px-4 py-3.5 text-[15px] leading-6 text-gray-700">
+                        {item.answer}
+                      </p>
                     )}
-                  </button>
-                  {isExpanded && (
-                    <div className="px-6 pb-5 pl-20">
-                      <p className="text-gray-700 leading-relaxed">{item.answer}</p>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {activeTab === 'important' && !importantLoading && (
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {displayImportantItems.map((item) => {
-              const colors = ICON_COLORS[item.icon || 'default'] || ICON_COLORS.default;
-              return (
-                <div key={item.id} className={`rounded-2xl border-2 p-6 ${colors.bg} ${colors.border}`}>
-                  <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 bg-white rounded-xl flex items-center justify-center flex-shrink-0 shadow-sm">
-                      <AlertCircle className={`w-6 h-6 ${colors.text}`} />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 mb-2">{item.title}</h3>
-                      <p className="text-sm text-gray-700 leading-relaxed">{item.description}</p>
-                    </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
+                );
+              })}
+            </div>
+          )}
 
-        {activeTab === 'instructions' && !instructionsLoading && (
-          <div className="space-y-6">
-            {displayInstructions.map((instruction) => {
-              const steps: string[] = Array.isArray(instruction.steps)
-                ? instruction.steps
-                : (instruction.steps as { items?: string[] }).items || [];
-              return (
-                <div key={instruction.id} className="bg-white rounded-2xl border border-gray-200 p-6">
-                  <div className="flex items-center gap-3 mb-4">
-                    <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center">
-                      <Book className="w-5 h-5 text-indigo-600" />
-                    </div>
-                    <h3 className="text-xl font-semibold text-gray-900">{instruction.title}</h3>
-                  </div>
-                  <div className="space-y-3 ml-13">
-                    {steps.map((step, stepIndex) => (
-                      <div key={stepIndex} className="flex items-start gap-4">
-                        <div className="w-7 h-7 bg-indigo-100 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5">
-                          <span className="text-sm font-semibold text-indigo-600">{stepIndex + 1}</span>
-                        </div>
-                        <p className="text-gray-700 pt-1">{step}</p>
+          {activeTab === 'notes' && (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {TRAINING_NOTES.map((note) => {
+                const styles = NOTE_STYLES[note.icon] ?? NOTE_STYLES.default;
+                const Icon = note.icon === 'info' ? Info : AlertCircle;
+                return (
+                  <div key={note.id} className={`rounded-xl border p-4 ${styles.wrap}`}>
+                    <div className="flex gap-3">
+                      <Icon className={`mt-0.5 h-5 w-5 shrink-0 ${styles.icon}`} aria-hidden="true" />
+                      <div>
+                        <h3 className="font-semibold text-gray-900">{note.title}</h3>
+                        <p className="mt-1 text-sm leading-6 text-gray-700">{note.description}</p>
                       </div>
-                    ))}
+                    </div>
                   </div>
+                );
+              })}
+            </div>
+          )}
+
+          {activeTab === 'instructions' && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {TRAINING_INSTRUCTIONS.map((instruction) => (
+                <div key={instruction.id} className="rounded-xl border border-gray-200 p-5">
+                  <h3 className="font-semibold text-gray-900">{instruction.title}</h3>
+                  <p className="mt-1 text-sm text-gray-600">{instruction.summary}</p>
+                  <ol className="mt-4 space-y-2.5">
+                    {instruction.steps.map((step, index) => (
+                      <li key={step} className="flex gap-3 text-sm leading-6 text-gray-700">
+                        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-50 text-xs font-semibold text-blue-600">
+                          {index + 1}
+                        </span>
+                        <span>{step}</span>
+                      </li>
+                    ))}
+                  </ol>
                 </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2">
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <h2 className="font-semibold text-gray-900">Нужна помощь по кабинету?</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Напишите в техподдержку — ответим прямо в кабинете.
+          </p>
+          <Link
+            to="/dashboard/chat"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline"
+          >
+            Открыть чат
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        </div>
+        <div className="rounded-2xl border border-gray-200 bg-white p-5">
+          <h2 className="font-semibold text-gray-900">Реквизиты для суда</h2>
+          <p className="mt-1 text-sm text-gray-600">
+            Копируются одним нажатием — вставляйте прямо в заявление.
+          </p>
+          <Link
+            to="/dashboard/sro"
+            className="mt-3 inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:underline"
+          >
+            Открыть реквизиты СРО
+            <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          </Link>
+        </div>
+      </section>
+
+      {activeLesson && (
+        <TrainingLessonModal
+          lesson={activeLesson}
+          completed={completedSet.has(activeLesson.key)}
+          nextLesson={nextAfterActive}
+          onClose={() => setActiveLesson(null)}
+          onComplete={() => handleComplete(activeLesson)}
+          onReset={() => handleReset(activeLesson)}
+          onNext={() => nextAfterActive && setActiveLesson(nextAfterActive)}
+        />
+      )}
     </div>
   );
 }

@@ -55,3 +55,23 @@ export async function fetchImportantNotes(): Promise<ImportantNoteData[]> {
   const { data } = await apiClient.get('/training/important');
   return data;
 }
+
+/** Ключи уроков, которые партнёр уже посмотрел. */
+export async function fetchTrainingProgress(): Promise<string[]> {
+  const { data } = await apiClient.get<{ completed: string[] }>('/training/progress');
+  return data.completed;
+}
+
+export async function completeTrainingLesson(lessonKey: string): Promise<string[]> {
+  const { data } = await apiClient.put<{ completed: string[] }>(
+    `/training/progress/${encodeURIComponent(lessonKey)}`,
+  );
+  return data.completed;
+}
+
+export async function resetTrainingLesson(lessonKey: string): Promise<string[]> {
+  const { data } = await apiClient.delete<{ completed: string[] }>(
+    `/training/progress/${encodeURIComponent(lessonKey)}`,
+  );
+  return data.completed;
+}

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import uuid
+from datetime import datetime
 
-from sqlalchemy import JSON, Integer, String, Text
+from sqlalchemy import JSON, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.models.base import Base, TimestampMixin
+from app.models.types import UTCDateTime
 
 
 class TrainingVideo(Base, TimestampMixin):
@@ -58,3 +60,21 @@ class ImportantNote(Base, TimestampMixin):
 
     def __repr__(self) -> str:
         return f"<ImportantNote {self.title}>"
+
+
+class TrainingLessonProgress(Base):
+    """Отметка «урок просмотрен» для конкретного партнёра.
+
+    Ключ урока — стабильная строка из содержания курса на фронтенде
+    (например, ``intro`` или ``finance``), а не UUID видео: так прогресс
+    не ломается, если видео перезапишут или переставят.
+    """
+
+    __tablename__ = "training_lesson_progress"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    lesson_key: Mapped[str] = mapped_column(String(64), primary_key=True)
+    completed_at: Mapped[datetime] = mapped_column(UTCDateTime, server_default=func.now())
+
+    def __repr__(self) -> str:
+        return f"<TrainingLessonProgress {self.user_id}:{self.lesson_key}>"

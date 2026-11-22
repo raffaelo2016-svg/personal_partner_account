@@ -46,3 +46,9 @@ class ImportantNoteRead(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class TrainingProgressRead(BaseModel):
+    """Просмотренные уроки текущего партнёра."""
+
+    completed: list[str]
