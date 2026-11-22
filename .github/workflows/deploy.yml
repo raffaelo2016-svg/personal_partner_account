@@ -37,11 +37,39 @@ jobs:
               core.setOutput('deploy', 'false');
               return;
             }
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              ...context.repo, workflow_id: 'ci.yml', head_sha: sha,
-              branch: 'main', event: 'push', status: 'completed', per_page: 100,
-            });
-            if (!data.workflow_runs.some(run => run.head_sha === sha && run.conclusion === 'success')) {
+            // Проверяем, что для этой ревизии прошёл CI. Для деплоя по push
+            // смотрим именно тот прогон CI, который его запустил: раньше здесь
+            // был поиск по списку завершённых run'ов, и он гонялся с индексом
+            // GitHub API — деплой стартовал через пару секунд после CI и не
+            // находил свой же run. Для ручного запуска берём последний успешный.
+            const triggeredRunId = context.payload.workflow_run?.id;
+            let ciSucceeded = false;
+
+            if (triggeredRunId) {
+              let run;
+              for (let attempt = 0; attempt < 10; attempt += 1) {
+                const { data } = await github.rest.actions.getWorkflowRun({
+                  ...context.repo, run_id: triggeredRunId,
+                });
+                run = data;
+                if (run.status === 'completed') break;
+                await new Promise((resolve) => setTimeout(resolve, 3000));
+              }
+              ciSucceeded = !!run && run.head_sha === sha && run.conclusion === 'success';
+              if (!ciSucceeded) {
+                core.info(`CI run ${triggeredRunId}: sha=${run?.head_sha} conclusion=${run?.conclusion}`);
+              }
+            } else {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                ...context.repo, workflow_id: 'ci.yml', head_sha: sha,
+                branch: 'main', event: 'push', status: 'completed', per_page: 100,
+              });
+              ciSucceeded = data.workflow_runs.some(
+                (run) => run.head_sha === sha && run.conclusion === 'success',
+              );
+            }
+
+            if (!ciSucceeded) {
               throw new Error('Deployment requires successful CI for this exact main revision.');
             }
             core.setOutput('sha', sha);
