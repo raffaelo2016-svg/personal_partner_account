@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from 'react';
 import { Link, useParams } from 'react-router';
 import {
   AlertCircle,
@@ -38,6 +38,13 @@ import { formatFileSize } from '../utils/files';
 
 const TASK_FILE_MAX_BYTES = 50 * 1024 * 1024;
 const TASK_FILE_EXTENSIONS = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.jpg', '.jpeg', '.png', '.heic'];
+const CHAT_MIN_WIDTH = 320;
+const CHAT_MAX_WIDTH = 720;
+const CHAT_WIDTH_STORAGE_KEY = 'task-workspace-chat-width';
+
+function clampChatWidth(value: number) {
+  return Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, Math.round(value)));
+}
 
 const STATUS_LABELS: Record<string, string> = {
   pending: 'Ожидает',
@@ -149,6 +156,12 @@ export default function TaskDetail() {
   const [text, setText] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
   const [showUpload, setShowUpload] = useState(false);
+  const [chatWidth, setChatWidth] = useState(() => {
+    if (typeof window === 'undefined') return 380;
+    const stored = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampChatWidth(stored) : 380;
+  });
+  const splitRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -162,6 +175,14 @@ export default function TaskDetail() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
   }, [messages.length]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(CHAT_WIDTH_STORAGE_KEY, String(chatWidth));
+    } catch {
+      // localStorage can be unavailable in private mode; resizing still works.
+    }
+  }, [chatWidth]);
+
   const canStart = !!task && !task.permissions.is_admin && task.status === 'pending' && !task.review_requested_at;
   const canRequestReview = !!task?.permissions.can_request_review;
   const canApprove = !!task?.permissions.can_approve;
@@ -171,6 +192,39 @@ export default function TaskDetail() {
   const canReopen = !!task && task.permissions.is_admin && task.status === 'completed';
 
   const statusChip = useMemo(() => (task ? stateLabel(task) : ''), [task]);
+
+  const startResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = chatWidth;
+    const containerWidth = splitRef.current?.getBoundingClientRect().width ?? window.innerWidth;
+    const maxWidth = Math.max(CHAT_MIN_WIDTH, Math.min(CHAT_MAX_WIDTH, containerWidth - 360));
+
+    const onMove = (moveEvent: PointerEvent) => {
+      const next = clampChatWidth(startWidth + startX - moveEvent.clientX);
+      setChatWidth(Math.min(next, maxWidth));
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+    };
+
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', finish, { once: true });
+    window.addEventListener('pointercancel', finish, { once: true });
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  const resizeWithKeyboard = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+    event.preventDefault();
+    setChatWidth((current) => clampChatWidth(current + (event.key === 'ArrowLeft' ? 24 : -24)));
+  };
 
   const handleUpload = async (file: File) => {
     const ext = '.' + (file.name.split('.').pop() || '').toLowerCase();
@@ -376,8 +430,8 @@ export default function TaskDetail() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
-        <div className="min-w-0 space-y-5">
+      <div ref={splitRef} className="flex flex-col gap-5 lg:flex-row lg:items-stretch lg:gap-0">
+        <div className="min-w-0 flex-1 space-y-5">
           <section className="rounded-2xl border border-gray-200 bg-white p-5 lg:p-6">
             <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Описание</h2>
             <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">
@@ -535,7 +589,27 @@ export default function TaskDetail() {
           </section>
         </div>
 
-        <aside className="flex min-h-[560px] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white lg:sticky lg:top-4 lg:h-[calc(100vh-22rem)] lg:min-h-[520px]">
+        <div
+          role="separator"
+          aria-label="Изменить ширину обсуждения"
+          aria-orientation="vertical"
+          aria-valuemin={CHAT_MIN_WIDTH}
+          aria-valuemax={CHAT_MAX_WIDTH}
+          aria-valuenow={chatWidth}
+          tabIndex={0}
+          onPointerDown={startResize}
+          onKeyDown={resizeWithKeyboard}
+          onDoubleClick={() => setChatWidth(380)}
+          title="Потяните, чтобы изменить ширину. Двойной клик — сбросить"
+          className="group hidden w-4 shrink-0 cursor-col-resize touch-none items-center justify-center outline-none lg:flex"
+        >
+          <span className="h-20 w-1 rounded-full bg-gray-200 transition-colors group-hover:bg-pink-400 group-focus-visible:bg-pink-400" />
+        </div>
+
+        <aside
+          style={{ '--task-chat-width': `${chatWidth}px` } as CSSProperties}
+          className="flex w-full min-h-[560px] shrink-0 flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white lg:sticky lg:top-4 lg:h-[calc(100vh-22rem)] lg:min-h-[520px] lg:w-[var(--task-chat-width)]"
+        >
           <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3.5">
             <MessageSquare className="h-4 w-4 text-pink-500" />
             <div className="min-w-0 flex-1">
