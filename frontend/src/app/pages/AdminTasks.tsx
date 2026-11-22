@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
   CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle,
@@ -59,6 +59,11 @@ export default function AdminTasks() {
   };
 
   const { data: tasksPages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteTasks(filters);
+
+  useEffect(() => {
+    if (viewMode !== 'board' || !hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [viewMode, hasNextPage, isFetchingNextPage, fetchNextPage]);
   const { data: statsData } = useTaskStats({ assigned_to: assignedToFilter });
   const { data: partnersData } = usePartners({ page_size: 100 });
   const { data: clientsData } = useQuery({

@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List } from 'lucide-react';
 import { Link } from 'react-router';
 import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
@@ -30,6 +30,11 @@ export default function TasksList() {
   };
 
   const { data: tasksPages, isLoading, fetchNextPage, hasNextPage, isFetchingNextPage } = useInfiniteTasks(filters);
+
+  useEffect(() => {
+    if (viewMode !== 'board' || !hasNextPage || isFetchingNextPage) return;
+    void fetchNextPage();
+  }, [viewMode, hasNextPage, isFetchingNextPage, fetchNextPage]);
   const { data: statsData } = useTaskStats({ assigned_to: assignedToFilter });
   const { data: clientsData } = useClients({ page_size: 100 });
   const createTaskMutation = useCreateTask();
