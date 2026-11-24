@@ -57,22 +57,3 @@ export function formatFileSize(bytes: number): string {
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return Math.round((bytes / Math.pow(k, i)) * 100) / 100 + ' ' + sizes[i];
 }
-
-export interface UploadResult<T> {
-  succeeded: T[];
-  failed: { item: T; error: unknown }[];
-}
-
-export async function uploadAllSettled<T>(
-  items: T[],
-  uploader: (item: T) => Promise<unknown>,
-): Promise<UploadResult<T>> {
-  const results = await Promise.allSettled(items.map((item) => uploader(item)));
-  const succeeded: T[] = [];
-  const failed: { item: T; error: unknown }[] = [];
-  results.forEach((res, idx) => {
-    if (res.status === 'fulfilled') succeeded.push(items[idx]);
-    else failed.push({ item: items[idx], error: res.reason });
-  });
-  return { succeeded, failed };
-}

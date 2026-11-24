@@ -25,7 +25,9 @@ import { clientFormSchema } from '@/app/schemas/client';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import { syntheticChange } from '../utils/form';
-import { ALLOWED_FILE_EXTENSIONS, partitionFiles, formatFileSize, uploadAllSettled, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, partitionFiles, formatFileSize, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
+import { uploadQueue } from '../utils/uploadQueue';
+import { pluralFiles, selectedFilesLabel } from '../utils/plural';
 
 interface UploadedFile {
   file: File;
@@ -139,8 +141,10 @@ export default function ClientForm() {
 
     setIsUploading(true);
     try {
-      const result = await uploadAllSettled(allFiles, ({ file, docType }) =>
-        uploadFile(file, clientId, docType),
+      // Небольшая очередь с повтором: пачка файлов не должна валиться целиком
+      // из-за одного сбоя или ответа «слишком часто».
+      const result = await uploadQueue(allFiles, ({ file, docType }, onPercent) =>
+        uploadFile(file, clientId, docType, onPercent),
       );
       result.failed.forEach(({ item, error }) => {
         captureError(error, { context: 'client_file_upload', fileName: item.file.name });
@@ -210,8 +214,10 @@ export default function ClientForm() {
             const result = await uploadAllFiles(id);
             queryClient.invalidateQueries({ queryKey: ['clientFiles', id] });
             if (result && result.failed.length > 0) {
-              const names = result.failed.map((f) => f.item.file.name).join(', ');
-              toast.warning(`Клиент сохранён. Не загружены файлы: ${names}`);
+              const failedCount = result.failed.length;
+              toast.warning(
+                `Клиент сохранён. ${failedCount} ${pluralFiles(failedCount)} не загрузились — повторите в карточке клиента.`,
+              );
             } else {
               toast.success('Клиент обновлён');
             }
@@ -229,8 +235,10 @@ export default function ClientForm() {
           const result = await uploadAllFiles(data.id);
           queryClient.invalidateQueries({ queryKey: ['clientFiles', data.id] });
           if (result && result.failed.length > 0) {
-            const names = result.failed.map((f) => f.item.file.name).join(', ');
-            toast.warning(`Клиент создан. Не загружены файлы: ${names}`);
+            const failedCount = result.failed.length;
+            toast.warning(
+              `Клиент создан. ${failedCount} ${pluralFiles(failedCount)} не загрузились — повторите в карточке клиента.`,
+            );
           } else {
             toast.success('Клиент создан');
           }
@@ -808,7 +816,7 @@ export default function ClientForm() {
                   Загрузка документов
                 </h2>
                 <span className="text-sm text-gray-600">
-                  {Object.values(documentUploads).flat().length} файлов загружено
+                  {selectedFilesLabel(Object.values(documentUploads).flat().length)}
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
@@ -819,7 +827,7 @@ export default function ClientForm() {
                 {DOCUMENT_TYPES.map((doc) => (
                   <div key={doc.id} className="border border-gray-200 rounded-lg p-4">
                     <div className="flex items-start justify-between gap-4">
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 mb-2">
                           <label className="text-sm font-medium text-gray-900">
                             {doc.label}

@@ -28,14 +28,18 @@ import {
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ClientProgressBar from '../components/ClientProgressBar';
-import { useState, useRef } from 'react';
+import { useRef } from 'react';
 import { useClient } from '../hooks/useClients';
 import { useClientTaskFiles, useRetryTaskBitrix, useTasks } from '../hooks/useTasks';
 import { taskFileUrl } from '../api/tasks';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import { captureError } from '@/app/sentry';
-import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, partitionFiles, uploadAllSettled } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, partitionFiles } from '@/app/utils/files';
+import { isFileValidationError } from '@/app/utils/uploadQueue';
+import { useBulkUpload } from '@/app/hooks/useBulkUpload';
+import UploadProgressBanner from '../components/UploadProgressBanner';
+import UploadPendingList from '../components/UploadPendingList';
 import { formatDateShort, formatDateTime as fmtDateTime } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { formatTaskDeadline } from '@/app/utils/taskDeadline';
@@ -99,7 +103,14 @@ export default function ClientDetails() {
   const { data: clientTaskFiles = [] } = useClientTaskFiles(id);
   const clientTasks = tasksData?.items ?? [];
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploading, setIsUploading] = useState(false);
+  const upload = useBulkUpload<File>(
+    (file, onPercent) => uploadFile(file, id!, 'other', onPercent),
+    {
+      onFinished: () => {
+        queryClient.invalidateQueries({ queryKey: ['clientFiles', id] });
+      },
+    },
+  );
   const retryTaskMutation = useRetryTaskBitrix();
   const retryFileMutation = useMutation({
     mutationFn: retryFileBitrix,
@@ -122,30 +133,17 @@ export default function ClientDetails() {
     if (tooLarge.length > 0) {
       toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
     }
-    if (valid.length === 0) {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
-    setIsUploading(true);
-    try {
-      const result = await uploadAllSettled(valid, (f) => uploadFile(f, id, 'other'));
-      queryClient.invalidateQueries({ queryKey: ['clientFiles', id] });
-      if (result.failed.length === 0) {
-        toast.success(`Загружено файлов: ${result.succeeded.length}`);
-      } else {
-        result.failed.forEach(({ item, error }) => {
-          captureError(error, { context: 'client_details_upload', fileName: item.name });
-        });
-        const failedNames = result.failed.map((f) => f.item.name).join(', ');
-        if (result.succeeded.length > 0) {
-          toast.warning(`Загружено: ${result.succeeded.length}. Не удалось: ${failedNames}`);
-        } else {
-          toast.error(`Не удалось загрузить файлы: ${failedNames}`);
-        }
-      }
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (valid.length === 0) return;
+
+    const result = await upload.start(valid);
+    if (!result || result.failed.length === 0) return;
+
+    result.failed.forEach(({ item, error }) => {
+      captureError(error, { context: 'client_details_upload', fileName: item.name });
+    });
+    if (result.failed.some(({ error }) => isFileValidationError(error))) {
+      toast.error('Один из файлов не подошёл по формату или размеру');
     }
   };
   
@@ -537,18 +535,36 @@ export default function ClientDetails() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
+                disabled={upload.isUploading}
                 className="ml-auto text-xs font-medium text-blue-600 hover:text-blue-700 flex items-center gap-1"
               >
-                {isUploading ? (
+                {upload.isUploading ? (
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 ) : (
                   <Download className="w-3.5 h-3.5" />
                 )}
-                {isUploading ? 'Загрузка...' : 'Загрузить'}
+                {upload.isUploading ? 'Загрузка...' : 'Загрузить'}
               </button>
             </h2>
-            {isFilesLoading ? (
+            {upload.state.phase !== 'idle' ? (
+              <UploadProgressBanner
+                phase={upload.state.phase}
+                total={upload.state.total}
+                done={upload.state.done}
+                percent={upload.state.percent}
+                failedCount={upload.state.failed.length}
+                etaSeconds={upload.state.etaSeconds}
+                onRetry={upload.retry}
+                onDismiss={upload.dismiss}
+              />
+            ) : null}
+            {upload.state.phase === 'uploading' ? (
+              <UploadPendingList
+                files={upload.state.items}
+                statuses={upload.state.statuses}
+                percents={upload.state.percents}
+              />
+            ) : isFilesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
               </div>

@@ -50,6 +50,23 @@ async def _check_client_access(db: AsyncSession, client_id: str, user: User) -> 
 
 
 UPLOAD_MAX_SIZE_MB = MAX_FILE_SIZE_BYTES // (1024 * 1024)
+
+
+def _upload_rate_key(request: Request) -> str:
+    """Лимит считаем на пользователя, а не на адрес.
+
+    Партнёры нередко работают из одного офиса за одним внешним IP, поэтому
+    лимит по адресу делил бы квоту между всеми сотрудниками сразу. Токен
+    доступа уже есть в заголовке — по нему и различаем пользователей.
+    """
+    scheme, _, token = request.headers.get("authorization", "").partition(" ")
+    if scheme.lower() == "bearer" and token.strip():
+        digest = hashlib.sha256(token.strip().encode()).hexdigest()
+        return f"upload:user:{digest[:32]}"
+    client = request.client
+    return f"upload:ip:{client.host if client else 'unknown'}"
+
+
 _has_valid_signature = has_valid_signature
 
 
@@ -94,7 +111,7 @@ async def list_client_files(
 
 
 @router.post("/upload", response_model=FileUploadRead, status_code=201)
-@limiter.limit("10/minute")
+@limiter.limit("120/minute", key_func=_upload_rate_key)
 async def upload_endpoint(
     request: Request,
     file: UploadFile,

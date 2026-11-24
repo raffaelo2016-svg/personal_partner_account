@@ -26,7 +26,11 @@ import { useClientTaskFiles } from '../hooks/useTasks';
 import { taskFileUrl } from '../api/tasks';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles, uploadAllSettled } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles } from '@/app/utils/files';
+import { isFileValidationError } from '@/app/utils/uploadQueue';
+import { useBulkUpload } from '@/app/hooks/useBulkUpload';
+import UploadProgressBanner from '../components/UploadProgressBanner';
+import UploadPendingList from '../components/UploadPendingList';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import apiClient from '../api/client';
@@ -94,7 +98,14 @@ export default function AdminDebtorDetails() {
   const retryClientBitrix = useRetryAdminClientBitrix();
   const queryClient = useQueryClient();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isUploadingForPartner, setIsUploadingForPartner] = useState(false);
+  const upload = useBulkUpload<File>(
+    (file, onPercent) => uploadFile(file, id!, 'uritech_review', onPercent),
+    {
+      onFinished: () => {
+        queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
+      },
+    },
+  );
   const retryFileMutation = useMutation({
     mutationFn: retryFileBitrix,
     onSuccess: () => {
@@ -141,31 +152,17 @@ export default function AdminDebtorDetails() {
     if (tooLarge.length > 0) {
       toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
     }
-    if (valid.length === 0) {
-      if (fileInputRef.current) fileInputRef.current.value = '';
-      return;
-    }
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    if (valid.length === 0) return;
 
-    setIsUploadingForPartner(true);
-    try {
-      const result = await uploadAllSettled(valid, (file) => uploadFile(file, id, 'uritech_review'));
-      await queryClient.invalidateQueries({ queryKey: ['adminClientFiles', id] });
+    const result = await upload.start(valid);
+    if (!result || result.failed.length === 0) return;
 
-      if (result.failed.length === 0) {
-        toast.success(`Документы для партнёра загружены: ${result.succeeded.length}`);
-      } else {
-        result.failed.forEach(({ item, error }) => {
-          captureError(error, { context: 'admin_partner_document_upload', fileName: item.name });
-        });
-        const failedNames = result.failed.map(({ item }) => item.name).join(', ');
-        const message = result.succeeded.length > 0
-          ? `Загружено: ${result.succeeded.length}. Не удалось: ${failedNames}`
-          : `Не удалось загрузить: ${failedNames}`;
-        result.succeeded.length > 0 ? toast.warning(message) : toast.error(message);
-      }
-    } finally {
-      setIsUploadingForPartner(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    result.failed.forEach(({ item, error }) => {
+      captureError(error, { context: 'admin_partner_document_upload', fileName: item.name });
+    });
+    if (result.failed.some(({ error }) => isFileValidationError(error))) {
+      toast.error('Один из файлов не подошёл по формату или размеру');
     }
   };
 
@@ -715,18 +712,34 @@ export default function AdminDebtorDetails() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                disabled={isUploadingForPartner}
+                disabled={upload.isUploading}
                 className="inline-flex shrink-0 items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {isUploadingForPartner ? (
+                {upload.isUploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
                   <Upload className="h-4 w-4" />
                 )}
-                {isUploadingForPartner ? 'Загрузка…' : 'Загрузить для партнёра'}
+                {upload.isUploading ? 'Загрузка…' : 'Загрузить для партнёра'}
               </button>
             </div>
-            {isFilesLoading ? (
+            <UploadProgressBanner
+              phase={upload.state.phase}
+              total={upload.state.total}
+              done={upload.state.done}
+              percent={upload.state.percent}
+              failedCount={upload.state.failed.length}
+              etaSeconds={upload.state.etaSeconds}
+              onRetry={upload.retry}
+              onDismiss={upload.dismiss}
+            />
+            {upload.state.phase === 'uploading' ? (
+              <UploadPendingList
+                files={upload.state.items}
+                statuses={upload.state.statuses}
+                percents={upload.state.percents}
+              />
+            ) : isFilesLoading ? (
               <div className="flex justify-center py-8">
                 <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
               </div>

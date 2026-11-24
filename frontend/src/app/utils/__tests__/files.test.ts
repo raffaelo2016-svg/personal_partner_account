@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { partitionFiles, formatFileSize, uploadAllSettled, MAX_FILE_SIZE_BYTES, MAX_ZIP_FILE_SIZE_BYTES } from '../files';
+import { partitionFiles, formatFileSize, MAX_FILE_SIZE_BYTES, MAX_ZIP_FILE_SIZE_BYTES } from '../files';
 
 function makeFile(name: string, size: number, type = ''): File {
   const blob = new Blob([new Uint8Array(size)], { type });
@@ -113,43 +113,5 @@ describe('formatFileSize', () => {
 
   it('форматирует байты меньше килобайта', () => {
     expect(formatFileSize(512)).toBe('512 Bytes');
-  });
-});
-
-describe('uploadAllSettled', () => {
-  it('собирает успехи и провалы', async () => {
-    const items = ['a', 'b', 'c'];
-    const r = await uploadAllSettled(items, async (x) => {
-      if (x === 'b') throw new Error('boom');
-      return x;
-    });
-    expect(r.succeeded).toEqual(['a', 'c']);
-    expect(r.failed).toHaveLength(1);
-    expect(r.failed[0].item).toBe('b');
-    expect((r.failed[0].error as Error).message).toBe('boom');
-  });
-
-  it('возвращает пустые массивы для пустого входа', async () => {
-    const r = await uploadAllSettled([], async () => undefined);
-    expect(r.succeeded).toEqual([]);
-    expect(r.failed).toEqual([]);
-  });
-
-  it('сохраняет не-Error rejection как есть', async () => {
-    const r = await uploadAllSettled(['x'], async () => {
-      throw 'plain string';
-    });
-    expect(r.succeeded).toEqual([]);
-    expect(r.failed).toHaveLength(1);
-    expect(r.failed[0].error).toBe('plain string');
-  });
-
-  it('сохраняет порядок item в succeeded/failed', async () => {
-    const r = await uploadAllSettled(['a', 'b', 'c', 'd'], async (x) => {
-      if (x === 'a' || x === 'c') throw new Error('no');
-      return x;
-    });
-    expect(r.succeeded).toEqual(['b', 'd']);
-    expect(r.failed.map((f) => f.item)).toEqual(['a', 'c']);
   });
 });
