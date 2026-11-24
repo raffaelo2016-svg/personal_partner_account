@@ -142,13 +142,10 @@ test.describe('File uploads — валидация', () => {
       mimeType: 'application/pdf',
       buffer: makeBuffer(2048),
     });
-    await page.waitForTimeout(1500);
-    // Не должно быть success-toast
-    const success = await page
-      .getByText(/загружен|успешно/i)
-      .first()
-      .isVisible()
-      .catch(() => false);
-    expect(success).toBe(false);
+
+    // 500 — временная ошибка: кабинет повторяет сам, затем показывает
+    // плашку «часть не прошла» с кнопкой «Повторить». Успеха быть не должно.
+    await expect(page.getByRole('button', { name: 'Повторить' })).toBeVisible({ timeout: 20000 });
+    await expect(page.getByText(/Все .* загружены/i)).toHaveCount(0);
   });
 });
