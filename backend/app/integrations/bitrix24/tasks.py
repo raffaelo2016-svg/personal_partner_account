@@ -402,6 +402,17 @@ def _parse_due_date(value: Any) -> date | None:
     return due_at.astimezone(MOSCOW).date() if due_at else None
 
 
+def _chat_dialog_id(remote_task: dict[str, Any]) -> str | None:
+    """Диалог чата задачи: через него идёт обсуждение задачи с партнёром."""
+    value = _remote_field(remote_task, "chatId", "CHAT_ID")
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int):
+        return f"chat{value}" if value > 0 else None
+    text = str(value).strip()
+    return f"chat{text}" if text.isdigit() and int(text) > 0 else None
+
+
 def _has_partner_tag(remote_task: dict[str, Any]) -> bool:
     tags = _remote_field(remote_task, "tags", "TAGS") or []
     if isinstance(tags, dict):
@@ -555,6 +566,9 @@ async def _apply_remote_task_fields(db: AsyncSession, task: Task, remote_task: d
     task.bitrix_sync_status = "synced"
     task.bitrix_sync_error_code = None
     task.bitrix_synced_at = now
+    chat_dialog_id = _chat_dialog_id(remote_task)
+    if chat_dialog_id is not None:
+        task.bitrix_chat_dialog_id = chat_dialog_id
     return True
 
 
@@ -620,6 +634,7 @@ async def _import_remote_task(
         ),
         bitrix_sync_status="synced",
         bitrix_task_id=receipt.remote_entity_id,
+        bitrix_chat_dialog_id=_chat_dialog_id(remote_task),
         bitrix_synced_at=now,
     )
     db.add(task)

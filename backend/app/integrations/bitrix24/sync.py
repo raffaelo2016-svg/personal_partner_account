@@ -39,6 +39,11 @@ from app.integrations.bitrix24.preparation_notice import (
     execute_preparation_notice,
     schedule_preparation_notice,
 )
+from app.integrations.bitrix24.task_chat import (
+    TASK_MESSAGE_ENTITY_TYPE,
+    complete_task_message_projection,
+    execute_task_message,
+)
 from app.integrations.bitrix24.tasks import (
     TASK_ENTITY_TYPE,
     extract_task_event_reference,
@@ -53,6 +58,7 @@ from app.models.client import Client
 from app.models.file_upload import FileUpload
 from app.models.partner import Partner
 from app.models.task import Task
+from app.models.task_workspace import TaskMessage
 
 logger = structlog.get_logger()
 
@@ -317,6 +323,7 @@ async def process_outbox_operation(db: AsyncSession, operation: BitrixOutboxOper
     await _complete_task_projection(db, operation)
     await _complete_file_projection(db, operation)
     await _complete_chat_message_projection(db, operation)
+    await complete_task_message_projection(db, operation)
     await db.commit()
     logger.info(
         "bitrix_outbox_operation_completed",
@@ -340,6 +347,8 @@ async def _execute_operation(
         return await execute_file_creation(client, operation, folder_context=folder_context)
     if operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
         return await execute_chat_message(client, operation)
+    if operation.local_entity_type == TASK_MESSAGE_ENTITY_TYPE:
+        return await execute_task_message(client, operation, db=db)
     if operation.local_entity_type == PREPARATION_NOTICE_ENTITY_TYPE:
         return await execute_preparation_notice(client, operation)
     if operation.local_entity_type == CLIENT_DEAL_UPDATE_ENTITY_TYPE:
@@ -409,6 +418,8 @@ async def _update_projection_failure(
         entity = await db.get(FileUpload, operation.local_entity_id)
     elif operation.local_entity_type == CHAT_MESSAGE_ENTITY_TYPE:
         entity = await db.get(ChatMessage, operation.local_entity_id)
+    elif operation.local_entity_type == TASK_MESSAGE_ENTITY_TYPE:
+        entity = await db.get(TaskMessage, operation.local_entity_id)
     else:
         return
     if entity is not None:

@@ -51,6 +51,9 @@ class Task(Base, TimestampMixin):
     bitrix_published: Mapped[bool] = mapped_column(default=True)
     bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
     bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    # Диалог чата задачи в Битрикс24 (``chat<ID>``). Через него идёт обсуждение
+    # задачи: сообщения из кабинета уходят в чат, ответы из Битрикс24 — обратно.
+    bitrix_chat_dialog_id: Mapped[str | None] = mapped_column(String(50), default=None)
 
     partner: Mapped[Partner | None] = relationship("Partner")
     client: Mapped[Client | None] = relationship("Client")

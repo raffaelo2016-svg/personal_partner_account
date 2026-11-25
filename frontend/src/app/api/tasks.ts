@@ -57,7 +57,7 @@ export interface TaskFileData {
 export interface TaskMessageData {
   id: string;
   task_id: string;
-  author_id: string;
+  author_id: string | null;
   author_name: string;
   author_role: string;
   text: string;

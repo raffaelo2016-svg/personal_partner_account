@@ -47,16 +47,38 @@ class TaskFile(Base, TimestampMixin):
 
 
 class TaskMessage(Base, TimestampMixin):
-    """Сообщение обсуждения внутри задачи (отдельно от общего чата)."""
+    """Сообщение обсуждения внутри задачи.
+
+    Это общий канал связи партнёра и ЮРИТЕХ по задаче: сообщение из кабинета
+    уходит в чат задачи Битрикс24, а ответы из Битрикс24 приходят сюда.
+    Поэтому автор может быть внешним — тогда ``author_id`` пустой, а имя
+    хранится в ``external_author_name``.
+    """
 
     __tablename__ = "task_messages"
-    __table_args__ = (Index("ix_task_messages_task_created", "task_id", "created_at"),)
+    __table_args__ = (
+        Index("ix_task_messages_task_created", "task_id", "created_at"),
+        Index(
+            "uq_task_messages_bitrix_message_id",
+            "bitrix_message_id",
+            unique=True,
+            postgresql_where=text("bitrix_message_id IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
-    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), index=True)
+    author_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), index=True, default=None)
     text: Mapped[str] = mapped_column(Text)
     deleted_at: Mapped[datetime | None] = mapped_column(UTCDateTime, nullable=True, index=True)
+    origin: Mapped[str] = mapped_column(String(20), default="cabinet")
+    bitrix_sync_status: Mapped[str] = mapped_column(String(20), default="not_scheduled")
+    bitrix_sync_error_code: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_message_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    bitrix_author_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    external_author_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    bitrix_sync_requested_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    bitrix_synced_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     task: Mapped[Task] = relationship("Task", back_populates="messages")
     author: Mapped[User] = relationship("User")
@@ -86,3 +108,16 @@ class TaskReadState(Base):
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
     last_read_at: Mapped[datetime] = mapped_column(UTCDateTime)
+
+
+class TaskChatState(Base):
+    """Когда чат задачи последний раз сверяли с Битрикс24.
+
+    Отдельная таблица, чтобы фоновая сверка не трогала ``tasks.updated_at``
+    и не переставляла задачи на доске.
+    """
+
+    __tablename__ = "task_chat_states"
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), primary_key=True)
+    last_polled_at: Mapped[datetime] = mapped_column(UTCDateTime)

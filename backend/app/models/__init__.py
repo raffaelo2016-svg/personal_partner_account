@@ -16,7 +16,7 @@ from app.models.notification import Notification
 from app.models.partner import Partner
 from app.models.settings import LoginHistory, NotificationPreference, SystemSetting
 from app.models.task import Task
-from app.models.task_workspace import TaskEvent, TaskFile, TaskMessage, TaskReadState
+from app.models.task_workspace import TaskChatState, TaskEvent, TaskFile, TaskMessage, TaskReadState
 from app.models.training import FAQ, ImportantNote, Instruction, TrainingVideo
 from app.models.transaction import Transaction
 from app.models.user import User
@@ -53,6 +53,7 @@ __all__ = [
     "Partner",
     "SystemSetting",
     "Task",
+    "TaskChatState",
     "TaskEvent",
     "TaskFile",
     "TaskMessage",

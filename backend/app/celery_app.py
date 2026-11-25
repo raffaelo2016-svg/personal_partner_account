@@ -36,6 +36,10 @@ celery.conf.beat_schedule = {
         "task": "app.tasks.bitrix24_sync.reconcile_bitrix_chat_files",
         "schedule": 60.0,
     },
+    "poll-bitrix24-task-chat": {
+        "task": "app.tasks.bitrix24_sync.poll_bitrix_task_chat",
+        "schedule": 20.0,
+    },
     "reconcile-bitrix24-sync": {
         "task": "app.tasks.bitrix24_sync.reconcile_bitrix_sync",
         "schedule": crontab(minute="*/5"),

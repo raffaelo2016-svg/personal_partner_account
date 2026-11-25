@@ -17,6 +17,7 @@ from app.models.client import Client
 from app.models.partner import Partner
 from app.models.task import Task
 from app.models.task_workspace import TaskEvent, TaskFile, TaskMessage, TaskReadState
+from app.models.user import User
 from app.schemas.task import (
     TaskClientBrief,
     TaskCreate,
@@ -199,7 +200,7 @@ async def _task_counts(session: AsyncSession, task_id, user_id: str | None) -> t
         .select_from(TaskMessage)
         .where(
             TaskMessage.task_id == task_id,
-            TaskMessage.author_id != read_user_id,
+            or_(TaskMessage.author_id.is_(None), TaskMessage.author_id != read_user_id),
             TaskMessage.deleted_at.is_(None),
         )
     )
@@ -318,15 +319,18 @@ def _file_to_read(file: TaskFile, *, user_id: str, is_admin: bool, task_title: s
 
 def _message_to_read(message: TaskMessage, *, user_id: str) -> TaskMessageRead:
     author = message.author
+    author_name = message.external_author_name or (author.email if author is not None else "Участник")
+    author_role = "uritech" if message.origin == "bitrix" else (author.role if author is not None else "partner")
+    author_id = str(message.author_id) if message.author_id is not None else None
     return TaskMessageRead(
         id=str(message.id),
         task_id=str(message.task_id),
-        author_id=str(message.author_id),
-        author_name=(author.email if author is not None else "Участник"),
-        author_role=(author.role if author is not None else "partner"),
+        author_id=author_id,
+        author_name=author_name,
+        author_role=author_role,
         text=message.text,
         created_at=message.created_at,
-        is_mine=str(message.author_id) == user_id,
+        is_mine=author_id is not None and author_id == user_id,
     )
 
 
@@ -580,6 +584,37 @@ async def list_task_messages(
     return [_message_to_read(m, user_id=user_id) for m in messages]
 
 
+async def _queue_task_message_for_bitrix(session: AsyncSession, message: TaskMessage, task: Task) -> None:
+    """Отправляет сообщение задачи в чат задачи Битрикс24 (если задача связана)."""
+    from app.integrations.bitrix24.task_chat import (
+        decorate_task_message,
+        schedule_task_message,
+        task_message_author_label,
+    )
+
+    author = await session.get(User, message.author_id) if message.author_id else None
+    if author is None:
+        message.bitrix_sync_status = "not_scheduled"
+        message.bitrix_sync_error_code = "AUTHOR_NOT_FOUND"
+        return
+    try:
+        label = await task_message_author_label(session, author, task)
+        await schedule_task_message(
+            session,
+            message,
+            task,
+            text_for_bitrix=decorate_task_message(label, message.text),
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "task_message_bitrix_schedule_failed",
+            message_id=str(message.id),
+            error_type=type(exc).__name__,
+        )
+        message.bitrix_sync_status = "failed"
+        message.bitrix_sync_error_code = "SCHEDULE_FAILED"
+
+
 async def send_task_message(
     session: AsyncSession,
     task_id: str,
@@ -597,6 +632,7 @@ async def send_task_message(
     message = TaskMessage(task_id=task.id, author_id=_as_uuid(user_id), text=clean)
     session.add(message)
     await session.flush()
+    await _queue_task_message_for_bitrix(session, message, task)
     await _mark_task_read(session, task.id, user_id)
     await session.refresh(task, ["updated_at"])
     message = (

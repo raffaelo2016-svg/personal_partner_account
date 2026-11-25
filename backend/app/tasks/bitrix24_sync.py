@@ -18,6 +18,7 @@ from app.integrations.bitrix24.clients import retry_client_deal_events
 from app.integrations.bitrix24.documents import retry_document_events
 from app.integrations.bitrix24.partners import reconcile_remote_partner_profiles
 from app.integrations.bitrix24.sync import claim_outbox_batch, process_outbox_operation, release_stale_operations
+from app.integrations.bitrix24.task_chat import import_task_chat_messages
 from app.integrations.bitrix24.tasks import discover_remote_tasks, reconcile_remote_tasks, retry_task_status_events
 from app.models.bitrix_sync import BitrixEntityMap
 
@@ -105,6 +106,22 @@ def reconcile_bitrix_chat_files() -> dict[str, int]:
         logger.warning("bitrix_chat_file_reconcile_failed", error_type=type(exc).__name__)
         return {"partners": 0, "scanned": 0, "imported": 0, "failed": 1}
     logger.info("bitrix_chat_files_reconciled", **result)
+    return result
+
+
+async def _poll_task_chat_events() -> dict[str, int]:
+    async with async_session() as db:
+        return await import_task_chat_messages(db)
+
+
+@celery.task(name="app.tasks.bitrix24_sync.poll_bitrix_task_chat")
+def poll_bitrix_task_chat() -> dict[str, int]:
+    try:
+        result = _run_async(_poll_task_chat_events())
+    except Exception as exc:
+        logger.warning("bitrix_task_chat_poll_failed", error_type=type(exc).__name__)
+        return {"tasks": 0, "received": 0, "imported": 0, "resolved": 0, "queued": 0, "skipped": 0, "failed": 1}
+    logger.info("bitrix_task_chat_polled", **result)
     return result
 
 

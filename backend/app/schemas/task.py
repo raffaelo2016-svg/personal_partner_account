@@ -71,7 +71,7 @@ class TaskFileRead(BaseModel):
 class TaskMessageRead(BaseModel):
     id: str
     task_id: str
-    author_id: str
+    author_id: str | None = None
     author_name: str
     author_role: str
     text: str
