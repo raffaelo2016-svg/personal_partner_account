@@ -72,11 +72,18 @@ class RefreshResponse(BaseModel):
 class UserRead(BaseModel):
     id: str
     email: str
+    full_name: str | None = None
     login: str | None = None
     role: UserRole
     company_name: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ProfileUpdate(BaseModel):
+    """Своё ФИО: по нему человека подписывают в обсуждении задач."""
+
+    full_name: str | None = Field(default=None, max_length=255)
 
 
 class RegisterRequest(BaseModel):

@@ -109,6 +109,30 @@ class TestMe:
         resp = await client.get("/api/v1/auth/me")
         assert resp.status_code == 403
 
+    @patch("app.services.auth_service.redis_client", new_callable=AsyncMock)
+    async def test_me_full_name_is_editable(self, mock_redis, client: AsyncClient, seed_user):
+        mock_redis.setex = AsyncMock()
+        login_resp = await client.post(
+            "/api/v1/auth/login",
+            json={"email": "test@example.com", "password": "password123"},
+        )
+        headers = {"Authorization": f"Bearer {login_resp.json()['access_token']}"}
+
+        updated = await client.patch(
+            "/api/v1/auth/me",
+            json={"full_name": "  Евгений   Самсонюк "},
+            headers=headers,
+        )
+        assert updated.status_code == 200
+        assert updated.json()["full_name"] == "Евгений Самсонюк"
+
+        me = await client.get("/api/v1/auth/me", headers=headers)
+        assert me.json()["full_name"] == "Евгений Самсонюк"
+
+        cleared = await client.patch("/api/v1/auth/me", json={"full_name": "   "}, headers=headers)
+        assert cleared.status_code == 200
+        assert cleared.json()["full_name"] is None
+
 
 class TestRefresh:
     @patch("app.services.auth_service.redis_client", new_callable=AsyncMock)

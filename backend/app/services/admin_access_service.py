@@ -40,6 +40,12 @@ def normalize_login(value: str) -> str:
     return value.strip().lower()
 
 
+def _clean_full_name(value: str | None) -> str | None:
+    """ФИО одной строкой; пустое значение — это «не заполнено»."""
+    name = " ".join((value or "").split()).strip()
+    return name[:255] or None
+
+
 def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
@@ -344,6 +350,7 @@ async def accept_invite(
 
     user = User(
         email=invite.email,
+        full_name=_clean_full_name(full_name),
         login=login,
         hashed_password=hash_password(password),
         role=invite.role if invite.role in INVITE_ROLES else "admin",
@@ -362,7 +369,7 @@ async def accept_invite(
         await create_agent_profile(
             session,
             user,
-            full_name=(full_name or invite.email.split("@")[0]).strip(),
+            full_name=user.full_name or _clean_full_name(invite.email.split("@")[0]) or "",
             phone=(phone or "").strip(),
         )
 
@@ -407,6 +414,7 @@ async def update_admin(
     actor: User,
     role: str | None = None,
     is_active: bool | None = None,
+    full_name: str | None = None,
     ip: str | None = None,
     user_agent: str | None = None,
 ) -> User:
@@ -419,6 +427,17 @@ async def update_admin(
 
     if role is not None and role not in INVITE_ROLES:
         _fail("INVALID_ROLE", "Недопустимая роль")
+
+    # Своё ФИО сотрудник заполняет сам, остальное — только супер-администратор.
+    only_own_name = (
+        full_name is not None
+        and role is None
+        and is_active is None
+        and actor.role != "super_admin"
+        and str(target.id) == str(actor.id)
+    )
+    if actor.role != "super_admin" and not only_own_name:
+        _fail("FORBIDDEN", "Менять сотрудников может только супер-администратор", status.HTTP_403_FORBIDDEN)
 
     if str(target.id) == str(actor.id):
         if is_active is False:
@@ -435,6 +454,9 @@ async def update_admin(
         )
 
     changed = {}
+    if full_name is not None and _clean_full_name(full_name) != (target.full_name or None):
+        changed["full_name"] = {"from": target.full_name, "to": _clean_full_name(full_name)}
+        target.full_name = _clean_full_name(full_name)
     if role is not None and role != target.role:
         changed["role"] = {"from": target.role, "to": role}
         target.role = role
@@ -445,9 +467,14 @@ async def update_admin(
     await session.flush()
 
     if changed:
-        action = (
-            "user_blocked" if is_active is False else ("user_unblocked" if is_active is True else "user_role_changed")
-        )
+        if is_active is False:
+            action = "user_blocked"
+        elif is_active is True:
+            action = "user_unblocked"
+        elif "role" in changed:
+            action = "user_role_changed"
+        else:
+            action = "user_profile_changed"
         audit_log(
             action=action,
             user_id=str(actor.id),

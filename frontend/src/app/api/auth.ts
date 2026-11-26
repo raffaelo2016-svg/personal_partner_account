@@ -10,6 +10,7 @@ export interface LoginPayload {
 export interface AuthUserResponse {
   id: string;
   email: string;
+  full_name?: string | null;
   role: 'partner' | 'admin' | 'super_admin' | 'agent';
   login?: string | null;
   company_name?: string | null;
@@ -40,6 +41,11 @@ export async function logoutApi(): Promise<void> {
 
 export async function getMeApi(): Promise<AuthUserResponse> {
   const { data } = await apiClient.get<AuthUserResponse>('/auth/me');
+  return data;
+}
+
+export async function updateProfileApi(payload: { full_name: string }): Promise<AuthUserResponse> {
+  const { data } = await apiClient.patch<AuthUserResponse>('/auth/me', payload);
   return data;
 }
 

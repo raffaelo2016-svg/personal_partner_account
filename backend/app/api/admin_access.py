@@ -41,6 +41,7 @@ def _admin_read(user: User) -> AdminRead:
     return AdminRead(
         id=str(user.id),
         email=user.email,
+        full_name=user.full_name,
         login=user.login,
         role=user.role,
         is_active=user.is_active,
@@ -129,7 +130,7 @@ async def update_admin(
     body: AdminUpdate,
     request: Request,
     db: AsyncSession = Depends(get_db),  # noqa: B008
-    actor: User = Depends(require_role("super_admin")),  # noqa: B008
+    actor: User = Depends(require_role("admin")),  # noqa: B008
 ):
     import uuid as _uuid
 
@@ -145,6 +146,7 @@ async def update_admin(
         actor=actor,
         role=body.role,
         is_active=body.is_active,
+        full_name=body.full_name,
         ip=ip,
         user_agent=ua,
     )

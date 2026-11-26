@@ -19,6 +19,7 @@ from app.schemas.auth import (
     ForgotPasswordRequest,
     LoginRequest,
     PasswordResetResponse,
+    ProfileUpdate,
     RefreshResponse,
     RegisterRequest,
     RegisterResponse,
@@ -427,22 +428,55 @@ async def register(
     )
 
 
-@router.get("/me", response_model=UserRead)
-async def me(
-    current_user: User = Depends(get_current_user),  # noqa: B008
-    db: AsyncSession = Depends(get_db),  # noqa: B008
-):
+async def _me_read(user: User, db: AsyncSession) -> UserRead:
     company_name: str | None = None
-    if current_user.role == "partner":
+    if user.role == "partner":
         row = await db.execute(
-            select(Partner).where(Partner.user_id == current_user.id, Partner.deleted_at.is_(None)),
+            select(Partner).where(Partner.user_id == user.id, Partner.deleted_at.is_(None)),
         )
         partner = row.scalar_one_or_none()
         if partner:
             company_name = partner.company_name
     return UserRead(
-        id=str(current_user.id),
-        email=current_user.email,
-        role=current_user.role,
+        id=str(user.id),
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
         company_name=company_name,
     )
+
+
+@router.get("/me", response_model=UserRead)
+async def me(
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    return await _me_read(current_user, db)
+
+
+@router.patch("/me", response_model=UserRead)
+async def update_me(
+    request: Request,
+    body: ProfileUpdate,
+    current_user: User = Depends(get_current_user),  # noqa: B008
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+):
+    """Сотрудник сам заполняет ФИО — им подписываются сообщения в задачах."""
+    name = " ".join((body.full_name or "").split()).strip()[:255] or None
+    if name != current_user.full_name:
+        current_user.full_name = name
+        await db.commit()
+        ip = request.client.host if request.client else None
+        ua = request.headers.get("user-agent")
+        audit_log(
+            action="profile_updated",
+            user_id=str(current_user.id),
+            actor_label=current_user.email,
+            target_id=str(current_user.id),
+            target_type="user",
+            target_label=current_user.email,
+            details={"full_name": name},
+            ip_address=ip,
+            user_agent=ua[:512] if ua else None,
+        )
+    return await _me_read(current_user, db)

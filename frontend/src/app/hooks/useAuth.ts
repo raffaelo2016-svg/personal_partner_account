@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router';
 import {
   forgotPasswordApi,
   getMeApi,
+  updateProfileApi,
   loginApi,
   logoutApi,
   resetPasswordApi,
@@ -52,6 +53,17 @@ export function useMe() {
     queryFn: getMeApi,
     enabled: !!accessToken,
     staleTime: 5 * 60_000,
+  });
+}
+
+export function useUpdateProfile() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (fullName: string) => updateProfileApi({ full_name: fullName }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
+    },
   });
 }
 

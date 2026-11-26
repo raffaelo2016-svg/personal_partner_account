@@ -50,6 +50,7 @@ class RegisterByInviteRequest(BaseModel):
 class AdminRead(BaseModel):
     id: str
     email: str
+    full_name: str | None = None
     login: str | None
     role: str
     is_active: bool
@@ -61,6 +62,7 @@ class AdminRead(BaseModel):
 class AdminUpdate(BaseModel):
     role: str | None = Field(default=None, pattern=r"^(admin|super_admin)$")
     is_active: bool | None = None
+    full_name: str | None = Field(default=None, max_length=255)
 
 
 class AuditEntry(BaseModel):

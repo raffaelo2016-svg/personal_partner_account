@@ -6,6 +6,7 @@ export type InviteStatus = 'active' | 'used' | 'expired' | 'revoked';
 export interface AdminUser {
   id: string;
   email: string;
+  full_name: string | null;
   login: string | null;
   role: AdminRole;
   is_active: boolean;
@@ -87,7 +88,7 @@ export async function listAdmins(search?: string): Promise<AdminUser[]> {
 
 export async function updateAdmin(
   id: string,
-  payload: { role?: 'admin' | 'super_admin'; is_active?: boolean },
+  payload: { role?: 'admin' | 'super_admin'; is_active?: boolean; full_name?: string | null },
 ): Promise<AdminUser> {
   const { data } = await apiClient.patch(`/admin/users/${id}`, payload);
   return data;

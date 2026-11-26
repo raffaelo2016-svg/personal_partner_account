@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Settings as SettingsIcon, Bell, Lock, Loader2, Check, X } from 'lucide-react';
+import { Settings as SettingsIcon, Bell, Lock, Loader2, Check, X, User } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   fetchSystemSettings,
@@ -10,6 +10,7 @@ import {
   changeAdminPassword,
 } from '../api/adminSettings';
 import type { SystemSettingData } from '../api/adminSettings';
+import { useMe, useUpdateProfile } from '../hooks/useAuth';
 
 const SETTING_LABELS: Record<string, { label: string; description: string }> = {
   system_name: { label: 'Название системы', description: '' },
@@ -35,6 +36,21 @@ export default function AdminSettings() {
     queryKey: ['adminNotifPrefs'],
     queryFn: fetchNotificationPreferences,
   });
+
+  const { data: me } = useMe();
+  const updateProfile = useUpdateProfile();
+  const [fullName, setFullName] = useState('');
+
+  useEffect(() => {
+    setFullName(me?.full_name ?? '');
+  }, [me?.full_name]);
+
+  function saveProfile() {
+    updateProfile.mutate(fullName.trim(), {
+      onSuccess: () => toast.success('ФИО сохранено'),
+      onError: () => toast.error('Не удалось сохранить ФИО'),
+    });
+  }
 
 
   const updateSettingsMutation = useMutation({
@@ -97,6 +113,45 @@ export default function AdminSettings() {
       <div>
         <h1 className="text-3xl font-semibold text-gray-900">Настройки системы</h1>
         <p className="text-gray-600 mt-2">Управление конфигурацией и параметрами системы</p>
+      </div>
+
+      {/* Мой профиль */}
+      <div className="bg-white rounded-xl shadow-sm p-6">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-indigo-100 rounded-lg flex items-center justify-center">
+            <User className="w-5 h-5 text-indigo-600" />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900">Мой профиль</h2>
+        </div>
+        <div className="space-y-4">
+          <div className="py-3 border-b border-gray-200">
+            <p className="font-medium text-gray-900">Почта</p>
+            <p className="text-sm text-gray-600">{me?.email ?? '—'}</p>
+          </div>
+          <div className="py-3">
+            <p className="font-medium text-gray-900">ФИО</p>
+            <p className="text-sm text-gray-600 mb-2">
+              Так вас подписывают в обсуждении задач — вместо адреса почты
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                type="text"
+                value={fullName}
+                onChange={(e) => setFullName(e.target.value)}
+                placeholder="Имя и фамилия"
+                maxLength={255}
+                className="w-full max-w-sm border rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                onClick={saveProfile}
+                disabled={updateProfile.isPending || fullName.trim() === (me?.full_name ?? '')}
+                className="px-4 py-2 bg-slate-700 text-white rounded-lg hover:bg-slate-800 text-sm disabled:opacity-50"
+              >
+                {updateProfile.isPending ? 'Сохранение...' : 'Сохранить'}
+              </button>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* General Settings */}

@@ -1,5 +1,6 @@
 import hashlib
 import uuid
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from zoneinfo import ZoneInfo
 
@@ -31,6 +32,7 @@ from app.schemas.task import (
     TaskUpdate,
 )
 from app.services.audit import audit_log
+from app.services.display_names import MEMBER_LABEL, name_from, resolve_display_names
 from app.services.s3_service import delete_file_async, download_file_async, upload_file_async
 from app.validation.files import (
     ALLOWED_EXTENSIONS,
@@ -299,8 +301,31 @@ def _client_brief(client: Client | None) -> TaskClientBrief | None:
     )
 
 
-def _file_to_read(file: TaskFile, *, user_id: str, is_admin: bool, task_title: str | None = None) -> TaskFileRead:
-    uploader_name = file.uploader.email if file.uploader is not None else "Сотрудник"
+async def _author_names(
+    session: AsyncSession,
+    *,
+    messages: Sequence[TaskMessage] = (),
+    events: Sequence[TaskEvent] = (),
+    files: Sequence[TaskFile] = (),
+) -> dict[uuid.UUID, str]:
+    """Имена авторов одной пачкой: почта в подписях не показывается."""
+    return await resolve_display_names(
+        session,
+        [message.author_id for message in messages]
+        + [event.actor_id for event in events]
+        + [file.uploaded_by for file in files],
+    )
+
+
+def _file_to_read(
+    file: TaskFile,
+    *,
+    user_id: str,
+    is_admin: bool,
+    task_title: str | None = None,
+    names: Mapping[uuid.UUID, str] | None = None,
+) -> TaskFileRead:
+    uploader_name = name_from(names, file.uploaded_by) or MEMBER_LABEL
     return TaskFileRead(
         id=str(file.id),
         task_id=str(file.task_id),
@@ -317,9 +342,14 @@ def _file_to_read(file: TaskFile, *, user_id: str, is_admin: bool, task_title: s
     )
 
 
-def _message_to_read(message: TaskMessage, *, user_id: str) -> TaskMessageRead:
+def _message_to_read(
+    message: TaskMessage,
+    *,
+    user_id: str,
+    names: Mapping[uuid.UUID, str] | None = None,
+) -> TaskMessageRead:
     author = message.author
-    author_name = message.external_author_name or (author.email if author is not None else "Участник")
+    author_name = message.external_author_name or name_from(names, message.author_id) or MEMBER_LABEL
     author_role = "uritech" if message.origin == "bitrix" else (author.role if author is not None else "partner")
     author_id = str(message.author_id) if message.author_id is not None else None
     return TaskMessageRead(
@@ -334,11 +364,16 @@ def _message_to_read(message: TaskMessage, *, user_id: str) -> TaskMessageRead:
     )
 
 
-def _event_to_read(event: TaskEvent) -> TaskEventRead:
+def _event_to_read(
+    event: TaskEvent,
+    *,
+    names: Mapping[uuid.UUID, str] | None = None,
+) -> TaskEventRead:
+    actor_name = name_from(names, event.actor_id) if event.actor is not None else None
     return TaskEventRead(
         id=str(event.id),
         type=event.type,
-        actor_name=(event.actor.email if event.actor is not None else None),
+        actor_name=actor_name,
         payload=event.payload or {},
         created_at=event.created_at,
     )
@@ -405,12 +440,13 @@ async def get_task_detail(
     can_request_review = (
         not is_admin and partner_is_executor and task.status == "in_progress" and task.review_requested_at is None
     )
+    names = await _author_names(session, messages=messages, events=events, files=files)
     return TaskDetailRead(
         **base.model_dump(),
         client=_client_brief(task.client),
-        files=[_file_to_read(f, user_id=user_id, is_admin=is_admin, task_title=task.title) for f in files],
-        messages=[_message_to_read(m, user_id=user_id) for m in messages],
-        events=[_event_to_read(e) for e in events],
+        files=[_file_to_read(f, user_id=user_id, is_admin=is_admin, task_title=task.title, names=names) for f in files],
+        messages=[_message_to_read(m, user_id=user_id, names=names) for m in messages],
+        events=[_event_to_read(e, names=names) for e in events],
         permissions=TaskPermissions(
             is_admin=is_admin,
             can_edit=is_admin or task.assigned_to != "partner",
@@ -443,7 +479,11 @@ async def list_task_files(
         .scalars()
         .all()
     )
-    return [_file_to_read(f, user_id=user_id, is_admin=partner_id is None, task_title=task.title) for f in files]
+    names = await _author_names(session, files=files)
+    return [
+        _file_to_read(f, user_id=user_id, is_admin=partner_id is None, task_title=task.title, names=names)
+        for f in files
+    ]
 
 
 async def store_task_file(
@@ -489,7 +529,8 @@ async def store_task_file(
         await session.execute(select(TaskFile).options(selectinload(TaskFile.uploader)).where(TaskFile.id == file.id))
     ).scalar_one()
     audit_log(action="upload_task_file", user_id=user_id, target_id=str(task.id), target_type="task")
-    return _file_to_read(file, user_id=user_id, is_admin=partner_id is None, task_title=task.title)
+    names = await _author_names(session, files=[file])
+    return _file_to_read(file, user_id=user_id, is_admin=partner_id is None, task_title=task.title, names=names)
 
 
 async def delete_task_file(
@@ -556,7 +597,11 @@ async def list_client_task_files(
             .limit(200)
         )
     ).all()
-    return [_file_to_read(file, user_id=user_id, is_admin=partner_id is None, task_title=title) for file, title in rows]
+    names = await _author_names(session, files=[file for file, _ in rows])
+    return [
+        _file_to_read(file, user_id=user_id, is_admin=partner_id is None, task_title=title, names=names)
+        for file, title in rows
+    ]
 
 
 async def list_task_messages(
@@ -581,7 +626,8 @@ async def list_task_messages(
         .scalars()
         .all()
     )
-    return [_message_to_read(m, user_id=user_id) for m in messages]
+    names = await _author_names(session, messages=messages)
+    return [_message_to_read(m, user_id=user_id, names=names) for m in messages]
 
 
 async def _queue_task_message_for_bitrix(session: AsyncSession, message: TaskMessage, task: Task) -> None:
@@ -640,7 +686,8 @@ async def send_task_message(
             select(TaskMessage).options(selectinload(TaskMessage.author)).where(TaskMessage.id == message.id)
         )
     ).scalar_one()
-    return _message_to_read(message, user_id=user_id)
+    names = await _author_names(session, messages=[message])
+    return _message_to_read(message, user_id=user_id, names=names)
 
 
 async def review_task(

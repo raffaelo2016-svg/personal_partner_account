@@ -97,8 +97,9 @@ def build_task_message_payload(dialog_id: str, text: str) -> dict[str, Any]:
 async def task_message_author_label(db: AsyncSession, user: User, task: Task) -> str:
     """Подпись «кто написал» для сотрудников, которые работают только в Битрикс24."""
     if user.is_admin:
-        local_part = user.email.split("@")[0].strip()
-        return f"{local_part or 'ЮРИТЕХ'} (ЮРИТЕХ)"
+        full_name = " ".join((user.full_name or "").split()).strip()
+        fallback = user.email.split("@")[0].strip()
+        return f"{full_name or fallback or 'ЮРИТЕХ'} (ЮРИТЕХ)"
     partner = await db.get(Partner, task.partner_id) if task.partner_id else None
     name = (partner.director_name or partner.company_name).strip() if partner else ""
     return f"{name} (партнёр)" if name else "Партнёр"

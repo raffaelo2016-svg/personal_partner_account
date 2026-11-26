@@ -2,16 +2,19 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Navigate } from 'react-router';
 import {
   Ban,
+  Check,
   CheckCircle2,
   Clock,
   Copy,
   KeyRound,
   Loader2,
   Mail,
+  Pencil,
   Plus,
   RefreshCw,
   ShieldCheck,
   Trash2,
+  X,
 } from 'lucide-react';
 import {
   createInvite,
@@ -69,6 +72,7 @@ const ACTION_LABELS: Record<string, string> = {
   user_blocked: 'Блокировка',
   user_unblocked: 'Разблокировка',
   user_role_changed: 'Смена роли',
+  user_profile_changed: 'ФИО сотрудника',
   partner_registered: 'Регистрация партнёра',
 };
 
@@ -85,6 +89,7 @@ const ACCESS_ACTIONS = new Set([
   'user_blocked',
   'user_unblocked',
   'user_role_changed',
+  'user_profile_changed',
   'shared_account_disabled',
   'password_reset_requested',
   'password_reset_completed',
@@ -137,6 +142,8 @@ export default function AdminAdmins() {
     ttl: 72,
   });
   const [inviteBusy, setInviteBusy] = useState(false);
+  const [nameEditingId, setNameEditingId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
   const [createdInvite, setCreatedInvite] = useState<Invite | null>(null);
 
   const loadAdmins = useCallback(async () => {
@@ -219,6 +226,22 @@ export default function AdminAdmins() {
     try {
       await updateAdmin(admin.id, { role });
       setNotice('Роль обновлена');
+      await loadAdmins();
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    }
+  };
+
+  const startNameEdit = (admin: AdminUser) => {
+    setNameEditingId(admin.id);
+    setNameDraft(admin.full_name ?? '');
+  };
+
+  const handleSaveName = async (admin: AdminUser) => {
+    try {
+      await updateAdmin(admin.id, { full_name: nameDraft.trim() });
+      setNameEditingId(null);
+      setNotice('ФИО сохранено');
       await loadAdmins();
     } catch (err) {
       setError(getApiErrorMessage(err));
@@ -404,9 +427,59 @@ export default function AdminAdmins() {
               {admins.map((admin) => (
                 <tr key={admin.id} className="border-t border-gray-100">
                   <td className="px-4 py-3">
-                    <div className="font-medium text-gray-900">{admin.email}</div>
-                    {admin.is_legacy_shared && (
-                      <div className="text-xs text-amber-600">бывшая общая учётная запись</div>
+                    {nameEditingId === admin.id ? (
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="text"
+                          value={nameDraft}
+                          onChange={(e) => setNameDraft(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') void handleSaveName(admin);
+                            if (e.key === 'Escape') setNameEditingId(null);
+                          }}
+                          maxLength={255}
+                          placeholder="Имя и фамилия"
+                          autoFocus
+                          className="w-44 border border-gray-300 rounded-md px-2 py-1 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        />
+                        <button
+                          onClick={() => void handleSaveName(admin)}
+                          title="Сохранить"
+                          className="p-1 rounded text-emerald-600 hover:bg-emerald-50"
+                        >
+                          <Check className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => setNameEditingId(null)}
+                          title="Отмена"
+                          className="p-1 rounded text-gray-400 hover:bg-gray-100"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span
+                            className={
+                              admin.full_name?.trim() ? 'font-medium text-gray-900' : 'text-gray-400'
+                            }
+                          >
+                            {admin.full_name?.trim() || 'ФИО не заполнено'}
+                          </span>
+                          <button
+                            onClick={() => startNameEdit(admin)}
+                            title="Указать ФИО"
+                            className="p-1 rounded text-gray-300 hover:text-blue-600 hover:bg-blue-50"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        <div className="text-xs text-gray-500">{admin.email}</div>
+                        {admin.is_legacy_shared && (
+                          <div className="text-xs text-amber-600">бывшая общая учётная запись</div>
+                        )}
+                      </div>
                     )}
                   </td>
                   <td className="px-4 py-3 font-mono text-xs text-gray-600">{admin.login ?? '—'}</td>

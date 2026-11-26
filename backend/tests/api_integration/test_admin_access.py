@@ -330,3 +330,35 @@ async def test_invite_link_can_be_copied_from_list(client, db_session):
     used = next(i for i in listed_after.json() if i["email"] == "copy@test.ru")
     assert used["status"] == "used"
     assert not used["invite_url"]
+
+
+@pytest.mark.asyncio
+async def test_full_name_is_editable_and_visible(client, db_session):
+    await _make_super(db_session)
+    admin = await _make_admin(db_session, email="named@test.ru", login="named")
+    colleague = await _make_admin(db_session, email="colleague@test.ru", login="colleague")
+    admin_headers = await _login(client, "named")
+    root_headers = await _login(client, "root")
+
+    own = await client.patch(
+        f"/api/v1/admin/users/{admin.id}",
+        json={"full_name": "  Иван   Петров "},
+        headers=admin_headers,
+    )
+    assert own.status_code == 200
+    assert own.json()["full_name"] == "Иван Петров"
+
+    foreign = await client.patch(
+        f"/api/v1/admin/users/{colleague.id}",
+        json={"full_name": "Чужое Имя"},
+        headers=admin_headers,
+    )
+    assert foreign.status_code == 403
+
+    by_root = await client.patch(
+        f"/api/v1/admin/users/{colleague.id}",
+        json={"full_name": "Пётр Сотрудников"},
+        headers=root_headers,
+    )
+    assert by_root.status_code == 200
+    assert by_root.json()["full_name"] == "Пётр Сотрудников"

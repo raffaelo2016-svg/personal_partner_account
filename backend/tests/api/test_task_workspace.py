@@ -27,6 +27,7 @@ async def _seed():
         )
         admin_user = User(
             email="workspace-admin@test.com",
+            full_name="Админ Тестов",
             hashed_password=hash_password("password123"),
             role="admin",
             is_active=True,
@@ -259,3 +260,52 @@ async def test_task_chat_is_scoped_to_task(client: AsyncClient, setup_db):
         headers=_headers(data["other_token"]),
     )
     assert forbidden.status_code == 403
+
+
+async def test_discussion_shows_names_instead_of_emails(client: AsyncClient, setup_db):
+    data = await _seed()
+
+    partner_message = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages",
+        json={"text": "Есть вопрос по задаче"},
+        headers=_headers(data["partner_token"]),
+    )
+    assert partner_message.status_code == 201
+    assert partner_message.json()["author_name"] == "Director"
+
+    admin_message = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages",
+        json={"text": "Ответили"},
+        headers=_headers(data["admin_token"]),
+    )
+    assert admin_message.status_code == 201
+    assert admin_message.json()["author_name"] == "Админ Тестов"
+
+    messages = await client.get(
+        f"/api/v1/tasks/{data['task_id']}/messages",
+        headers=_headers(data["admin_token"]),
+    )
+    assert messages.status_code == 200
+    names = [item["author_name"] for item in messages.json()]
+    assert sorted(names) == sorted(["Director", "Админ Тестов"])
+    assert all("@" not in name for name in names)
+
+    await client.put(
+        f"/api/v1/tasks/{data['task_id']}",
+        json={"status": "in_progress"},
+        headers=_headers(data["admin_token"]),
+    )
+    detail = await client.get(f"/api/v1/tasks/{data['task_id']}", headers=_headers(data["admin_token"]))
+    actor_names = [event["actor_name"] for event in detail.json()["events"] if event["actor_name"]]
+    assert "Админ Тестов" in actor_names
+    assert all("@" not in name for name in actor_names)
+
+    pdf = b"%PDF-1.4\n1 0 obj\n<< /Type /Catalog >>\nendobj\ntrailer\n<< /Root 1 0 R >>\n%%EOF\n"
+    with patch("app.services.task_service.upload_file_async", AsyncMock(return_value="uploads/task.pdf")):
+        uploaded = await client.post(
+            f"/api/v1/tasks/{data['task_id']}/files",
+            files={"file": ("document.pdf", pdf, "application/pdf")},
+            headers=_headers(data["partner_token"]),
+        )
+    assert uploaded.status_code == 201
+    assert uploaded.json()["uploader_name"] == "Director"
