@@ -77,6 +77,8 @@ class TaskMessageRead(BaseModel):
     text: str
     created_at: datetime
     is_mine: bool
+    bitrix_sync_status: str = "not_scheduled"
+    bitrix_sync_error_code: str | None = None
 
 
 class TaskEventRead(BaseModel):

@@ -361,6 +361,8 @@ def _message_to_read(
         text=message.text,
         created_at=message.created_at,
         is_mine=author_id is not None and author_id == user_id,
+        bitrix_sync_status=message.bitrix_sync_status,
+        bitrix_sync_error_code=message.bitrix_sync_error_code,
     )
 
 
@@ -686,6 +688,29 @@ async def send_task_message(
             select(TaskMessage).options(selectinload(TaskMessage.author)).where(TaskMessage.id == message.id)
         )
     ).scalar_one()
+    names = await _author_names(session, messages=[message])
+    return _message_to_read(message, user_id=user_id, names=names)
+
+
+async def resend_task_message(
+    session: AsyncSession,
+    task_id: str,
+    message_id: str,
+    *,
+    user_id: str,
+    partner_id: str | None,
+) -> TaskMessageRead:
+    """Повторная отправка сообщения кабинета в чат задачи Битрикс24."""
+    from app.integrations.bitrix24.task_chat import retry_unsent_task_messages
+
+    task = await _load_task_for_user(session, task_id, partner_id=partner_id)
+    message = await session.get(TaskMessage, _as_uuid(message_id))
+    if message is None or message.task_id != task.id or message.deleted_at is not None:
+        raise NotFound("Message not found")
+    if partner_id is not None and str(message.author_id) != user_id:
+        raise Forbidden("Resend is allowed only for the author")
+    if message.bitrix_message_id is None:
+        await retry_unsent_task_messages(session, task)
     names = await _author_names(session, messages=[message])
     return _message_to_read(message, user_id=user_id, names=names)
 

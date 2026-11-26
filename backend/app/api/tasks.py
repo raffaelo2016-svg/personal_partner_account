@@ -33,6 +33,7 @@ from app.services.task_service import (
     list_task_files,
     list_task_messages,
     list_tasks,
+    resend_task_message,
     retry_task_bitrix_sync,
     review_task,
     send_task_message,
@@ -268,6 +269,25 @@ async def send_task_message_endpoint(
         user_id=str(current_user.id),
         partner_id=partner_id,
         text=body.text,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{task_id}/messages/{message_id}/resend", response_model=TaskMessageRead)
+async def resend_task_message_endpoint(
+    task_id: str,
+    message_id: str,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await resend_task_message(
+        db,
+        task_id,
+        message_id,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
     )
     await db.commit()
     return result

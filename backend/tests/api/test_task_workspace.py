@@ -1,3 +1,4 @@
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -309,3 +310,37 @@ async def test_discussion_shows_names_instead_of_emails(client: AsyncClient, set
         )
     assert uploaded.status_code == 201
     assert uploaded.json()["uploader_name"] == "Director"
+
+
+async def test_message_delivery_status_and_resend_permissions(client: AsyncClient, setup_db):
+    data = await _seed()
+
+    sent = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages",
+        json={"text": "Тест"},
+        headers=_headers(data["partner_token"]),
+    )
+    assert sent.status_code == 201
+    body = sent.json()
+    # Задача не связана с Битриксом — сообщение честно помечено как неотправленное.
+    assert body["bitrix_sync_status"] == "not_scheduled"
+    assert body["bitrix_sync_error_code"] == "TASK_NOT_SYNCED"
+
+    resend = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages/{body['id']}/resend",
+        headers=_headers(data["partner_token"]),
+    )
+    assert resend.status_code == 200
+    assert resend.json()["bitrix_sync_status"] == "not_scheduled"
+
+    foreign = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages/{body['id']}/resend",
+        headers=_headers(data["other_token"]),
+    )
+    assert foreign.status_code == 403
+
+    missing = await client.post(
+        f"/api/v1/tasks/{data['task_id']}/messages/{uuid.uuid4()}/resend",
+        headers=_headers(data["admin_token"]),
+    )
+    assert missing.status_code == 404

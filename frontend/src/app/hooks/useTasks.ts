@@ -14,6 +14,7 @@ import {
   uploadTaskFile,
   deleteTaskFile,
   sendTaskMessage,
+  resendTaskMessage,
   reviewTask,
   updateTask,
   retryTaskBitrix,
@@ -170,6 +171,16 @@ export function useSendTaskMessage(taskId: string | undefined) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['taskMessages', taskId] });
       queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+    },
+  });
+}
+
+export function useResendTaskMessage(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (messageId: string) => resendTaskMessage(taskId!, messageId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['taskMessages', taskId] });
     },
   });
 }

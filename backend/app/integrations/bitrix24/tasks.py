@@ -567,8 +567,12 @@ async def _apply_remote_task_fields(db: AsyncSession, task: Task, remote_task: d
     task.bitrix_sync_error_code = None
     task.bitrix_synced_at = now
     chat_dialog_id = _chat_dialog_id(remote_task)
-    if chat_dialog_id is not None:
+    if chat_dialog_id is not None and task.bitrix_chat_dialog_id != chat_dialog_id:
         task.bitrix_chat_dialog_id = chat_dialog_id
+        # Сообщения, записанные до появления связи с чатом, досылаем сразу.
+        from app.integrations.bitrix24.task_chat import retry_unsent_task_messages
+
+        await retry_unsent_task_messages(db, task)
     return True
 
 

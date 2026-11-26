@@ -63,6 +63,9 @@ export interface TaskMessageData {
   text: string;
   created_at: string;
   is_mine: boolean;
+  /** Доставка в чат задачи Битрикс24: synced, pending, failed, not_scheduled. */
+  bitrix_sync_status: string;
+  bitrix_sync_error_code: string | null;
 }
 
 export interface TaskEventData {
@@ -211,6 +214,16 @@ export async function fetchTaskMessages(id: string): Promise<TaskMessageData[]> 
 
 export async function sendTaskMessage(id: string, text: string): Promise<TaskMessageData> {
   const res = await apiClient.post<TaskMessageData>(`/tasks/${id}/messages`, { text });
+  return res.data;
+}
+
+export async function resendTaskMessage(
+  taskId: string,
+  messageId: string,
+): Promise<TaskMessageData> {
+  const res = await apiClient.post<TaskMessageData>(
+    `/tasks/${taskId}/messages/${messageId}/resend`,
+  );
   return res.data;
 }
 

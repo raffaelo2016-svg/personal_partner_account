@@ -251,6 +251,42 @@ async def retry_unsent_task_messages(db: AsyncSession, task: Task) -> int:
     return queued
 
 
+async def flush_unsent_task_messages(db: AsyncSession, *, limit: int = 50) -> int:
+    """Досылает сообщения кабинета, которые застряли до привязки чата задачи.
+
+    Раньше досыл запускался только в момент, когда чат находил опрос сообщений.
+    Если связь с чатом появлялась другим путём (сверка задач), сообщение
+    оставалось «не отправлено» навсегда. Теперь досыл вызывается регулярно.
+    """
+    task_ids = list(
+        (
+            await db.scalars(
+                select(TaskMessage.task_id)
+                .join(Task, Task.id == TaskMessage.task_id)
+                .where(
+                    TaskMessage.deleted_at.is_(None),
+                    TaskMessage.bitrix_message_id.is_(None),
+                    TaskMessage.bitrix_sync_status.in_(UNSENT_TASK_MESSAGE_STATUSES),
+                    or_(TaskMessage.origin == "cabinet", TaskMessage.origin.is_(None)),
+                    Task.bitrix_task_id.is_not(None),
+                    Task.bitrix_chat_dialog_id.is_not(None),
+                )
+                .distinct()
+                .limit(limit)
+            )
+        ).all()
+    )
+    queued = 0
+    for task_id in task_ids:
+        task = await db.get(Task, task_id)
+        if task is None:
+            continue
+        queued += await retry_unsent_task_messages(db, task)
+    if queued:
+        logger.info("bitrix_task_messages_flushed", queued=queued, tasks=len(task_ids))
+    return queued
+
+
 async def execute_task_message(
     client: Bitrix24Client,
     operation: BitrixOutboxOperation,
@@ -370,6 +406,7 @@ async def import_task_chat_messages(
         token = await _installation_token(db, installation)
         async with Bitrix24Client(installation.client_endpoint, token) as temporary:
             await _poll_task_chats(db, temporary, result, task_limit=task_limit, message_limit=message_limit)
+    result["queued"] += await flush_unsent_task_messages(db)
     await db.commit()
     return result
 

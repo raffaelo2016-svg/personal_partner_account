@@ -24,6 +24,7 @@ import {
 import { toast } from 'sonner';
 import {
   useDeleteTaskFile,
+  useResendTaskMessage,
   useSendTaskMessage,
   useTask,
   useTaskMessages,
@@ -121,7 +122,24 @@ function eventIcon(event: TaskEventData) {
   return History;
 }
 
-function MessageBubble({ message }: { message: TaskMessageData }) {
+function MessageBubble({
+  message,
+  chatLinked,
+  canResend,
+  onResend,
+  resending,
+}: {
+  message: TaskMessageData;
+  chatLinked: boolean;
+  canResend: boolean;
+  onResend: (messageId: string) => void;
+  resending: boolean;
+}) {
+  // Статус доставки показываем только у задач, связанных с Битрикс24.
+  const undelivered =
+    chatLinked && (message.bitrix_sync_status === 'failed' || message.bitrix_sync_status === 'not_scheduled');
+  const sending = chatLinked && message.bitrix_sync_status === 'pending';
+
   return (
     <div className={`flex ${message.is_mine ? 'justify-end' : 'justify-start'}`}>
       <div className={`max-w-[85%] ${message.is_mine ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
@@ -138,6 +156,24 @@ function MessageBubble({ message }: { message: TaskMessageData }) {
         >
           {message.text}
         </div>
+        {sending && !undelivered && (
+          <span className="px-1 text-[10px] text-gray-400">отправляется в Битрикс24…</span>
+        )}
+        {undelivered && (
+          <div className="flex items-center gap-2 px-1">
+            <span className="text-[10px] font-medium text-amber-600">не отправлено в Битрикс24</span>
+            {canResend && (
+              <button
+                type="button"
+                onClick={() => onResend(message.id)}
+                disabled={resending}
+                className="text-[10px] font-medium text-pink-600 hover:underline disabled:opacity-50"
+              >
+                {resending ? 'отправляю…' : 'Отправить снова'}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -152,6 +188,7 @@ export default function TaskDetail() {
   const uploadFile = useUploadTaskFile(id);
   const deleteFile = useDeleteTaskFile(id);
   const sendMessage = useSendTaskMessage(id);
+  const resendMessage = useResendTaskMessage(id);
 
   const [text, setText] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
@@ -640,7 +677,16 @@ export default function TaskDetail() {
                 </p>
               </div>
             ) : (
-              messages.map((message) => <MessageBubble key={message.id} message={message} />)
+              messages.map((message) => (
+                <MessageBubble
+                  key={message.id}
+                  message={message}
+                  chatLinked={Boolean(task?.bitrix_task_id)}
+                  canResend={message.is_mine || Boolean(task?.permissions?.is_admin)}
+                  resending={resendMessage.isPending && resendMessage.variables === message.id}
+                  onResend={(messageId) => resendMessage.mutate(messageId)}
+                />
+              ))
             )}
             <div ref={messagesEndRef} />
           </div>

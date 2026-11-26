@@ -16,6 +16,7 @@ from app.integrations.bitrix24.task_chat import (
     complete_task_message_projection,
     decorate_task_message,
     execute_task_message,
+    flush_unsent_task_messages,
     import_task_chat_messages,
     is_system_message,
     normalize_chat_dialog,
@@ -213,6 +214,50 @@ async def test_unsent_message_is_queued_once_dialog_is_known(db_session: AsyncSe
 
     assert await retry_unsent_task_messages(db_session, task) == 1
     assert message.bitrix_sync_status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_stuck_message_is_flushed_without_waiting_for_chat_poll(db_session: AsyncSession):
+    """Сообщение, написанное до привязки чата, досылается регулярной сверкой."""
+    await _installation(db_session)
+    partner_user, _, linked_task = await _partner_task(db_session)
+    unlinked_task = Task(
+        partner_id=linked_task.partner_id,
+        title="Задача без связи с чатом",
+        assigned_to="partner",
+        created_by=linked_task.created_by,
+        bitrix_task_id="31822",
+    )
+    db_session.add(unlinked_task)
+    await db_session.flush()
+
+    stuck = TaskMessage(
+        task_id=linked_task.id,
+        author_id=partner_user.id,
+        text="Тест",
+        bitrix_sync_status="not_scheduled",
+        bitrix_sync_error_code="TASK_CHAT_NOT_RESOLVED",
+    )
+    waiting = TaskMessage(
+        task_id=unlinked_task.id,
+        author_id=partner_user.id,
+        text="Ещё рано",
+        bitrix_sync_status="not_scheduled",
+        bitrix_sync_error_code="TASK_CHAT_NOT_RESOLVED",
+    )
+    db_session.add_all([stuck, waiting])
+    await db_session.flush()
+
+    queued = await flush_unsent_task_messages(db_session)
+
+    assert queued == 1
+    assert stuck.bitrix_sync_status == "pending"
+    assert waiting.bitrix_sync_status == "not_scheduled"
+    operation = await db_session.scalar(
+        select(BitrixOutboxOperation).where(BitrixOutboxOperation.local_entity_id == stuck.id)
+    )
+    assert operation is not None
+    assert operation.payload["DIALOG_ID"] == "chat55137"
 
 
 @pytest.mark.asyncio
