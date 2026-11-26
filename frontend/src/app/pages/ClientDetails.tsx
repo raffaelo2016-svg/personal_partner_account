@@ -25,6 +25,7 @@ import {
   ExternalLink,
   Image,
   File,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ClientProgressBar from '../components/ClientProgressBar';
@@ -35,7 +36,7 @@ import { taskFileUrl } from '../api/tasks';
 import { fetchClientFiles, retryFileBitrix, uploadFile, type UploadedFileResponse } from '../api/upload';
 import { toast } from 'sonner';
 import { captureError } from '@/app/sentry';
-import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, partitionFiles } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_FORMATS_LABEL, FILE_SIZE_LIMITS_LABEL, partitionFiles } from '@/app/utils/files';
 import { isFileValidationError } from '@/app/utils/uploadQueue';
 import { useBulkUpload } from '@/app/hooks/useBulkUpload';
 import UploadProgressBanner from '../components/UploadProgressBanner';
@@ -52,6 +53,12 @@ import DocumentDeleteButton from '../components/DocumentDeleteButton';
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return Image;
   if (mimeType === 'application/pdf') return FileText;
+  if (
+    mimeType === 'application/vnd.ms-excel' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ) {
+    return FileSpreadsheet;
+  }
   return File;
 }
 
@@ -128,7 +135,7 @@ export default function ClientDetails() {
     if (!files || files.length === 0 || !id) return;
     const { valid, invalidFormat, tooLarge } = partitionFiles(files);
     if (invalidFormat.length > 0) {
-      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: ${FILE_FORMATS_LABEL}`);
     }
     if (tooLarge.length > 0) {
       toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);

@@ -154,3 +154,70 @@ class TestFileUpload:
         assert resp.json()["file_id"] == file_id
         mock_schedule.assert_awaited_once()
         assert mock_schedule.await_args.kwargs == {"retry": True}
+
+
+class TestExcelUploads:
+    @patch("app.api.files.upload_file_async", new_callable=AsyncMock)
+    @patch("app.api.files.get_presigned_url_async", new_callable=AsyncMock)
+    async def test_upload_xlsx_success(self, mock_url, mock_upload, client: AsyncClient, setup_db):
+        mock_upload.return_value = "uploads/test-uuid.xlsx"
+        mock_url.return_value = "https://s3.example.com/uploads/test-uuid.xlsx"
+        xlsx_mime = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+        token, client_id = await _create_partner_and_client(client, setup_db)
+        content = b"PK\x03\x04" + b"excel payload"
+        resp = await client.post(
+            "/api/v1/upload",
+            params={"client_id": client_id, "document_type": "other"},
+            files={"file": ("registry.xlsx", BytesIO(content), xlsx_mime)},
+            headers=auth(token),
+        )
+        assert resp.status_code == 201, resp.text
+        data = resp.json()
+        assert data["filename"] == "registry.xlsx"
+        assert data["mime_type"] == xlsx_mime
+        assert data["size"] == len(content)
+
+    @patch("app.api.files.upload_file_async", new_callable=AsyncMock)
+    @patch("app.api.files.get_presigned_url_async", new_callable=AsyncMock)
+    async def test_upload_xlsx_with_windows_mime(self, mock_url, mock_upload, client: AsyncClient, setup_db):
+        """Windows нередко отдаёт .xlsx как application/vnd.ms-excel."""
+        mock_upload.return_value = "uploads/windows.xlsx"
+        mock_url.return_value = "https://s3.example.com/uploads/windows.xlsx"
+
+        token, client_id = await _create_partner_and_client(client, setup_db)
+        resp = await client.post(
+            "/api/v1/upload",
+            params={"client_id": client_id},
+            files={"file": ("registry.xlsx", BytesIO(b"PK\x03\x04data"), "application/vnd.ms-excel")},
+            headers=auth(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["mime_type"] == "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
+    @patch("app.api.files.upload_file_async", new_callable=AsyncMock)
+    @patch("app.api.files.get_presigned_url_async", new_callable=AsyncMock)
+    async def test_upload_xls_success(self, mock_url, mock_upload, client: AsyncClient, setup_db):
+        mock_upload.return_value = "uploads/old.xls"
+        mock_url.return_value = "https://s3.example.com/uploads/old.xls"
+
+        token, client_id = await _create_partner_and_client(client, setup_db)
+        content = b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1" + b"ole2 payload"
+        resp = await client.post(
+            "/api/v1/upload",
+            params={"client_id": client_id},
+            files={"file": ("old.xls", BytesIO(content), "application/vnd.ms-excel")},
+            headers=auth(token),
+        )
+        assert resp.status_code == 201, resp.text
+        assert resp.json()["mime_type"] == "application/vnd.ms-excel"
+
+    async def test_upload_xlsx_with_wrong_content(self, client: AsyncClient, setup_db):
+        token, client_id = await _create_partner_and_client(client, setup_db)
+        resp = await client.post(
+            "/api/v1/upload",
+            params={"client_id": client_id},
+            files={"file": ("fake.xlsx", BytesIO(b"not an excel file"), "application/vnd.ms-excel")},
+            headers=auth(token),
+        )
+        assert resp.status_code == 415

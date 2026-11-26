@@ -25,7 +25,7 @@ import { clientFormSchema } from '@/app/schemas/client';
 import CustomSelect from '../components/ui/CustomSelect';
 import DateInput from '../components/ui/DateInput';
 import { syntheticChange } from '../utils/form';
-import { ALLOWED_FILE_EXTENSIONS, partitionFiles, formatFileSize, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_FORMATS_LABEL, partitionFiles, formatFileSize, FILE_SIZE_LIMITS_LABEL } from '../utils/files';
 import { uploadQueue } from '../utils/uploadQueue';
 import { pluralFiles, selectedFilesLabel } from '../utils/plural';
 
@@ -278,7 +278,7 @@ export default function ClientForm() {
 
       const errors: string[] = [];
       if (invalidFormat.length > 0) {
-        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+        errors.push(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: ${FILE_FORMATS_LABEL}`);
       }
       if (tooLarge.length > 0) {
         errors.push(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}`);
@@ -312,7 +312,7 @@ export default function ClientForm() {
       const { valid, invalidFormat, tooLarge } = partitionFiles(files);
 
       if (invalidFormat.length > 0) {
-        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+        toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: ${FILE_FORMATS_LABEL}`);
       }
       if (tooLarge.length > 0) {
         toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
@@ -820,7 +820,7 @@ export default function ClientForm() {
                 </span>
               </div>
               <p className="text-sm text-gray-600 mb-6">
-                Загрузка необязательна. Поддерживаемые форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3. {FILE_SIZE_LIMITS_LABEL}.
+                Загрузка необязательна. Поддерживаемые форматы: {FILE_FORMATS_LABEL}. {FILE_SIZE_LIMITS_LABEL}.
               </p>
               
               <div className="space-y-3">

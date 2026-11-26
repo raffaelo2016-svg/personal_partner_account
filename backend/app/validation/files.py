@@ -2,7 +2,7 @@ from pathlib import PurePosixPath
 
 MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024
 MAX_ZIP_FILE_SIZE_BYTES = 100 * 1024 * 1024
-ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".zip", ".mp3"}
+ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".doc", ".docx", ".xls", ".xlsx", ".zip", ".mp3"}
 MIME_BY_EXTENSION = {
     ".zip": "application/zip",
     ".pdf": "application/pdf",
@@ -11,6 +11,8 @@ MIME_BY_EXTENSION = {
     ".png": "image/png",
     ".doc": "application/msword",
     ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".xls": "application/vnd.ms-excel",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     ".mp3": "audio/mpeg",
 }
 ALLOWED_MIME_TYPES = set(MIME_BY_EXTENSION.values()) | {"application/x-zip-compressed"}
@@ -23,6 +25,13 @@ MP3_MIME_TYPES = {
     "audio/x-mpeg",
     "application/octet-stream",
     "",
+}
+_EXCEL_MIME_TYPES = {
+    ".xls": {"application/vnd.ms-excel", "application/excel", "application/x-msexcel"},
+    ".xlsx": {
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "application/vnd.ms-excel",
+    },
 }
 
 
@@ -46,6 +55,15 @@ def normalize_mime_type(filename: str, content_type: str | None) -> str | None:
         return "audio/mpeg" if mime_type in MP3_MIME_TYPES else None
     if extension == ".zip" and mime_type in {"", "application/octet-stream", "application/x-zip-compressed"}:
         return "application/zip"
+    if extension in _EXCEL_MIME_TYPES:
+        # Windows часто отдаёт .xlsx как application/vnd.ms-excel, а часть
+        # клиентов — как application/octet-stream; содержимое всё равно
+        # проверяется по сигнатуре.
+        mime_type = mime_type.split(";", 1)[0].strip().lower()
+        allowed = _EXCEL_MIME_TYPES[extension]
+        if mime_type in allowed or mime_type in {"", "application/octet-stream"}:
+            return MIME_BY_EXTENSION[extension]
+        return None
     # Keep the existing MIME policy for all previously supported formats.
     return mime_type if mime_type in ALLOWED_MIME_TYPES and mime_type != "audio/mpeg" else None
 
@@ -116,6 +134,8 @@ def has_valid_signature(data: bytes, extension: str) -> bool:
         ".png": (b"\x89PNG\r\n\x1a\n",),
         ".doc": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
         ".docx": (b"PK\x03\x04",),
+        ".xls": (b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",),
+        ".xlsx": (b"PK\x03\x04",),
         ".zip": (b"PK\x03\x04", b"PK\x05\x06", b"PK\x07\x08"),
     }
     return any(data.startswith(signature) for signature in signatures.get(extension, ()))

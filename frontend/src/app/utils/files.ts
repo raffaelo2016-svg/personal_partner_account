@@ -7,12 +7,16 @@ export const ALLOWED_FILE_FORMATS = [
   'application/pdf',
   'application/msword',
   'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'audio/mpeg',
   'audio/mp3',
   'audio/x-mp3',
 ];
 
-export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.zip', '.mp3'];
+export const ALLOWED_FILE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.zip', '.mp3'];
+
+export const FILE_FORMATS_LABEL = 'JPEG, PNG, PDF, DOC, DOCX, XLS, XLSX, ZIP, MP3';
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 export const MAX_FILE_SIZE_LABEL = '10 МБ';

@@ -18,6 +18,7 @@ import {
   BarChart3,
   Trash2,
   Upload,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -26,7 +27,7 @@ import { useClientTaskFiles } from '../hooks/useTasks';
 import { taskFileUrl } from '../api/tasks';
 import { formatDate, formatDateShort } from '@/app/utils/formatDate';
 import { useTimezone } from '@/app/contexts/TimezoneContext';
-import { ALLOWED_FILE_EXTENSIONS, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles } from '@/app/utils/files';
+import { ALLOWED_FILE_EXTENSIONS, FILE_FORMATS_LABEL, FILE_SIZE_LIMITS_LABEL, formatFileSize, partitionFiles } from '@/app/utils/files';
 import { isFileValidationError } from '@/app/utils/uploadQueue';
 import { useBulkUpload } from '@/app/hooks/useBulkUpload';
 import UploadProgressBanner from '../components/UploadProgressBanner';
@@ -76,6 +77,12 @@ const DOC_TYPE_LABELS: Record<string, string> = {
 function getFileIcon(mimeType: string) {
   if (mimeType.startsWith('image/')) return ImageIcon;
   if (mimeType === 'application/pdf') return FileText;
+  if (
+    mimeType === 'application/vnd.ms-excel' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ) {
+    return FileSpreadsheet;
+  }
   return FileIcon;
 }
 
@@ -147,7 +154,7 @@ export default function AdminDebtorDetails() {
 
     const { valid, invalidFormat, tooLarge } = partitionFiles(selectedFiles);
     if (invalidFormat.length > 0) {
-      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: JPEG, PNG, PDF, DOC, DOCX, ZIP, MP3`);
+      toast.error(`Недопустимый формат: ${invalidFormat.join(', ')}. Форматы: ${FILE_FORMATS_LABEL}`);
     }
     if (tooLarge.length > 0) {
       toast.error(`Превышен допустимый размер: ${tooLarge.join(', ')}. ${FILE_SIZE_LIMITS_LABEL}.`);
