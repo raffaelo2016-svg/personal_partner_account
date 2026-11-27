@@ -2,9 +2,10 @@
 
 Эндпоинты закрыты отдельным токеном шлюза, а не пользовательской сессией:
 кабинет не умеет ходить во внешнюю сеть, поэтому обмен инициирует шлюз.
-"""
 
-from __future__ import annotations
+Без ``from __future__ import annotations``: FastAPI 0.115 не разворачивает
+строковые аннотации тела запроса и падает на генерации OpenAPI.
+"""
 
 import hmac
 from datetime import UTC, datetime
