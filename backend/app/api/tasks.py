@@ -18,8 +18,10 @@ from app.schemas.task import (
     TaskRead,
     TaskReviewRequest,
     TaskStats,
+    TaskStatusAction,
     TaskUpdate,
 )
+from app.services.bitrix_task_integration import apply_partner_status
 from app.services.task_service import (
     TASK_FILE_MAX_SIZE_BYTES,
     create_task,
@@ -305,6 +307,27 @@ async def review_task_endpoint(
         db,
         task_id,
         body.action,
+        user_id=str(current_user.id),
+        partner_id=partner_id,
+    )
+    await db.commit()
+    return result
+
+
+@router.post("/{task_id}/status", response_model=TaskDetailRead)
+async def change_task_status_endpoint(
+    task_id: str,
+    body: TaskStatusAction,
+    db: AsyncSession = Depends(get_db),  # noqa: B008
+    current_user: User = Depends(get_current_user),  # noqa: B008
+):
+    """Действие партнёра по задаче от ЮРИТЕХ: в работу, выполнено или отклонено."""
+    partner_id = await _resolve_partner_id(db, current_user)
+    result = await apply_partner_status(
+        db,
+        task_id,
+        action=body.status,
+        reject_reason=body.reject_reason,
         user_id=str(current_user.id),
         partner_id=partner_id,
     )

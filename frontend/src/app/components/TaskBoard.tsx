@@ -1,5 +1,5 @@
 import { Link } from 'react-router';
-import { AlertCircle, Calendar, CheckCircle, Clock, MessageSquare, Paperclip } from 'lucide-react';
+import { AlertCircle, Calendar, CheckCircle, Clock, MessageSquare, Paperclip, XCircle } from 'lucide-react';
 import type { TaskData } from '../api/tasks';
 import { formatTaskDeadline, isTaskOverdue } from '../utils/taskDeadline';
 
@@ -14,10 +14,12 @@ const COLUMNS = [
   { key: 'in_progress', title: 'В работе', dot: 'bg-blue-500', empty: 'В работе пусто' },
   { key: 'review', title: 'На проверке', dot: 'bg-purple-500', empty: 'На проверке пусто' },
   { key: 'done', title: 'Готово', dot: 'bg-green-500', empty: 'Готовых задач нет' },
+  { key: 'rejected', title: 'Отклонено', dot: 'bg-red-500', empty: 'Отклонённых задач нет' },
 ] as const;
 
 function columnFor(task: TaskData): string {
   if (task.status === 'completed') return 'done';
+  if (task.status === 'rejected') return 'rejected';
   if (task.review_requested_at) return 'review';
   if (task.status === 'in_progress') return 'in_progress';
   return 'new';
@@ -38,7 +40,7 @@ export default function TaskBoard({ tasks, basePath, showPartner = false }: Task
   });
 
   return (
-    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
       {COLUMNS.map((column) => {
         const items = grouped.get(column.key) ?? [];
         return (
@@ -59,6 +61,8 @@ export default function TaskBoard({ tasks, basePath, showPartner = false }: Task
                 items.map((task) => {
                   const priority = PRIORITY[task.priority] ?? PRIORITY.medium;
                   const overdue = isTaskOverdue(task);
+                  const rejected = task.status === 'rejected';
+                  const isGatewayTask = task.origin === 'bitrix_gateway';
                   return (
                     <Link
                       key={task.id}
@@ -69,21 +73,28 @@ export default function TaskBoard({ tasks, basePath, showPartner = false }: Task
                         <span className={`mt-0.5 h-5 w-1 shrink-0 rounded-full ${
                           task.status === 'completed'
                             ? 'bg-green-400'
-                            : task.review_requested_at
-                              ? 'bg-purple-400'
-                              : overdue
-                                ? 'bg-red-400'
-                                : task.status === 'in_progress'
-                                  ? 'bg-blue-400'
-                                  : 'bg-yellow-400'
+                            : rejected
+                              ? 'bg-red-400'
+                              : task.review_requested_at
+                                ? 'bg-purple-400'
+                                : overdue
+                                  ? 'bg-red-400'
+                                  : task.status === 'in_progress'
+                                    ? 'bg-blue-400'
+                                    : 'bg-yellow-400'
                         }`} />
                         <div className="min-w-0 flex-1">
                           <p className="line-clamp-2 text-sm font-semibold leading-snug text-gray-900 group-hover:text-pink-700">
                             {task.title}
                           </p>
                           <p className="mt-1 truncate text-xs text-gray-500">
-                            {task.client_name || 'Без клиента'}
+                            {task.client_name || task.bitrix_client_name || 'Без клиента'}
                           </p>
+                          {isGatewayTask && task.bitrix_author_name && (
+                            <p className="mt-0.5 truncate text-[10px] text-gray-400">
+                              Автор: {task.bitrix_author_name}
+                            </p>
+                          )}
                         </div>
                         {!!task.unread_count && (
                           <span className="rounded-full bg-pink-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
@@ -117,9 +128,11 @@ export default function TaskBoard({ tasks, basePath, showPartner = false }: Task
                           <span className="ml-auto truncate">{task.partner_name}</span>
                         )}
                         {!showPartner && (
-                          <span className="ml-auto inline-flex items-center gap-1">
+                          <span className="ml-auto inline-flex items-center gap-1" title={isGatewayTask ? 'Задача ведётся в Битриксе' : undefined}>
                             {task.status === 'completed' ? (
                               <CheckCircle className="h-3 w-3 text-green-500" />
+                            ) : rejected ? (
+                              <XCircle className="h-3 w-3 text-red-500" />
                             ) : (
                               <Calendar className="h-3 w-3" />
                             )}

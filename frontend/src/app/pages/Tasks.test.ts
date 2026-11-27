@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
+import { isTaskOverdue, taskDisplayStatus } from '../utils/taskDeadline';
+import { TASK_STATUS_LABELS, isFinalTaskStatus, taskStatusLabel } from '../utils/taskStatus';
 
 describe('task priority maps', () => {
   const PRIORITY_LABELS: Record<string, string> = { low: 'Низкий', medium: 'Средний', high: 'Высокий' };
-  const PRIORITY_COLORS: Record<string, string> = { low: 'bg-gray', medium: 'bg-yellow', high: 'bg-red' };
 
   it.each(['low', 'medium', 'high'])('label for %s exists', (p) => {
     expect(PRIORITY_LABELS[p]).toBeTruthy();
@@ -14,35 +15,57 @@ describe('task priority maps', () => {
 });
 
 describe('task status maps', () => {
-  const STATUS_LABELS: Record<string, string> = {
-    pending: 'Ожидает', in_progress: 'В работе', completed: 'Завершена', overdue: 'Просрочена',
-  };
-
-  it.each(['pending', 'in_progress', 'completed', 'overdue'])('label for %s', (s) => {
-    expect(STATUS_LABELS[s]).toBeTruthy();
+  it.each(['pending', 'in_progress', 'review', 'completed', 'rejected', 'overdue'])('label for %s', (s) => {
+    expect(TASK_STATUS_LABELS[s]).toBeTruthy();
   });
 
-  it('all 4 statuses', () => expect(Object.keys(STATUS_LABELS)).toHaveLength(4));
+  it('rejected → «Отклонено»', () => {
+    expect(taskStatusLabel('rejected')).toBe('Отклонено');
+  });
+
+  it('all 6 statuses', () => expect(Object.keys(TASK_STATUS_LABELS)).toHaveLength(6));
+
+  it('completed and rejected are final', () => {
+    expect(isFinalTaskStatus('completed')).toBe(true);
+    expect(isFinalTaskStatus('rejected')).toBe(true);
+    expect(isFinalTaskStatus('in_progress')).toBe(false);
+    expect(isFinalTaskStatus('overdue')).toBe(false);
+  });
 });
 
 describe('task direction filter', () => {
   function getAssignedTo(direction: 'my' | 'from_uritech'): string {
-    return direction === 'my' ? 'partner' : 'uritech';
+    return direction === 'my' ? 'uritech' : 'partner';
   }
 
-  it('my → partner', () => expect(getAssignedTo('my')).toBe('partner'));
-  it('from_uritech → uritech', () => expect(getAssignedTo('from_uritech')).toBe('uritech'));
+  it('my → uritech', () => expect(getAssignedTo('my')).toBe('uritech'));
+  it('from_uritech → partner', () => expect(getAssignedTo('from_uritech')).toBe('partner'));
 });
 
 describe('overdue detection', () => {
-  function isOverdue(dueDate: string, status: string): boolean {
-    if (status === 'completed') return false;
-    return new Date(dueDate) < new Date();
-  }
+  const now = Date.parse('2026-11-27T12:00:00Z');
 
-  it('past date + pending → overdue', () => expect(isOverdue('2020-01-01', 'pending')).toBe(true));
-  it('future date + pending → not overdue', () => expect(isOverdue('2099-01-01', 'pending')).toBe(false));
-  it('past date + completed → not overdue', () => expect(isOverdue('2020-01-01', 'completed')).toBe(false));
+  it('past date + pending → overdue', () => {
+    expect(isTaskOverdue({ due_date: '2020-01-01', status: 'pending' }, now)).toBe(true);
+  });
+
+  it('future date + pending → not overdue', () => {
+    expect(isTaskOverdue({ due_date: '2099-01-01', status: 'pending' }, now)).toBe(false);
+  });
+
+  it('past date + completed → not overdue', () => {
+    expect(isTaskOverdue({ due_date: '2020-01-01', status: 'completed' }, now)).toBe(false);
+  });
+
+  it('past date + rejected → not overdue', () => {
+    expect(isTaskOverdue({ due_date: '2020-01-01', status: 'rejected' }, now)).toBe(false);
+  });
+
+  it('rejected with a past exact deadline stays rejected, not overdue', () => {
+    const task = { due_at: '2020-01-01T10:00:00Z', status: 'rejected' };
+    expect(isTaskOverdue(task, now)).toBe(false);
+    expect(taskDisplayStatus(task, now)).toBe('rejected');
+  });
 });
 
 describe('completion percent', () => {

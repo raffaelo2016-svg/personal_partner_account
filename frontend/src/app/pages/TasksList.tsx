@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo, useEffect } from 'react';
-import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List } from 'lucide-react';
+import { CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle, Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List, Info, XCircle } from 'lucide-react';
 import { Link } from 'react-router';
 import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
 import { useClients } from '../hooks/useClients';
@@ -155,10 +155,10 @@ export default function TasksList() {
     id: t.id,
     title: t.title,
     description: t.description ?? '',
-    client: { id: t.client_id, name: t.client_name ?? 'Общая задача' },
+    client: { id: t.client_id, name: t.client_name ?? t.bitrix_client_name ?? 'Общая задача' },
     assignedBy: t.assigned_to as 'partner' | 'uritech',
     assignedTo: t.assigned_to as 'partner' | 'uritech',
-    status: t.status as 'pending' | 'in_progress' | 'completed' | 'overdue',
+    status: t.status as 'pending' | 'in_progress' | 'completed' | 'rejected' | 'overdue',
     priority: t.priority as 'low' | 'medium' | 'high',
     due_date: t.due_date,
     due_at: t.due_at,
@@ -167,6 +167,9 @@ export default function TasksList() {
     completedAt: t.completed_at ?? undefined,
     bitrixSyncStatus: t.bitrix_sync_status,
     bitrixSyncErrorCode: t.bitrix_sync_error_code,
+    origin: t.origin,
+    bitrixAuthorName: t.bitrix_author_name,
+    rejectReason: t.reject_reason,
   }));
 
   const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -188,6 +191,7 @@ export default function TasksList() {
       review: { label: 'На проверке', color: 'bg-purple-50 text-purple-700 border-purple-200', icon: Clock },
       in_progress: { label: 'В работе', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle },
       completed: { label: 'Выполнено', color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle },
+      rejected: { label: 'Отклонено', color: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
       overdue: { label: 'Просрочено', color: 'bg-red-50 text-red-700 border-red-200', icon: AlertCircle },
     };
     return statusMap[status as keyof typeof statusMap] || statusMap.pending;
@@ -207,8 +211,11 @@ export default function TasksList() {
     pending: statsData?.pending ?? 0,
     in_progress: statsData?.in_progress ?? 0,
     completed: statsData?.completed ?? 0,
+    rejected: statsData?.rejected ?? 0,
     overdue: statsData?.overdue ?? 0,
   };
+
+  const withCount = (label: string, count: number) => (count > 0 ? `${label} · ${count}` : label);
 
   return (
     <div className="p-8 space-y-6">
@@ -278,7 +285,7 @@ export default function TasksList() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-600">Всего задач</p>
@@ -306,6 +313,13 @@ export default function TasksList() {
             <CheckCircle className="w-5 h-5 text-green-600" />
           </div>
           <p className="text-3xl font-bold text-green-900">{stats.completed}</p>
+        </div>
+        <div className="bg-red-50 rounded-2xl border border-red-200 p-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-red-700">Отклонено</p>
+            <XCircle className="w-5 h-5 text-red-600" />
+          </div>
+          <p className="text-3xl font-bold text-red-900">{stats.rejected}</p>
         </div>
         <div className="bg-red-50 rounded-2xl border border-red-200 p-6">
           <div className="flex items-center justify-between mb-2">
@@ -338,10 +352,11 @@ export default function TasksList() {
             onChange={setFilterStatus}
             options={[
               { value: 'all', label: 'Все статусы' },
-              { value: 'pending', label: 'Ожидает' },
-              { value: 'in_progress', label: 'В работе' },
-              { value: 'review', label: 'На проверке' },
-              { value: 'completed', label: 'Выполнено' },
+              { value: 'pending', label: withCount('Ожидает', stats.pending) },
+              { value: 'in_progress', label: withCount('В работе', stats.in_progress) },
+              { value: 'review', label: withCount('На проверке', statsData?.review ?? 0) },
+              { value: 'completed', label: withCount('Выполнено', stats.completed) },
+              { value: 'rejected', label: withCount('Отклонено', stats.rejected) },
             ]}
           />
           <CustomSelect
@@ -431,19 +446,29 @@ export default function TasksList() {
                     </div>
                     <div className="flex items-center gap-2">
                       {direction === 'from_uritech' ? (
-                        <CustomSelect
-                          value={task.displayStatus}
-                          onChange={(val) => handleStatusChange(task.id, val)}
-                          options={[
-                            { value: 'pending', label: 'Ожидает' },
-                            ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
-                            ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
-                            { value: 'in_progress', label: 'В работе' },
-                            { value: 'completed', label: 'Выполнено' },
-                          ]}
-                          size="sm"
-                          triggerClassName={statusInfo.color}
-                        />
+                        task.origin === 'bitrix_gateway' ? (
+                          <span
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${statusInfo.color}`}
+                            title="Задача ведётся в Битриксе — статус меняется в карточке задачи"
+                          >
+                            <StatusIcon className="w-4 h-4" />
+                            {statusInfo.label}
+                          </span>
+                        ) : (
+                          <CustomSelect
+                            value={task.displayStatus}
+                            onChange={(val) => handleStatusChange(task.id, val)}
+                            options={[
+                              { value: 'pending', label: 'Ожидает' },
+                              ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
+                              ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
+                              { value: 'in_progress', label: 'В работе' },
+                              { value: 'completed', label: 'Выполнено' },
+                            ]}
+                            size="sm"
+                            triggerClassName={statusInfo.color}
+                          />
+                        )
                       ) : (
                         <span className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${statusInfo.color}`}>
                           <StatusIcon className="w-4 h-4" />
@@ -478,12 +503,14 @@ export default function TasksList() {
                       )}
                     </div>
                   </div>
-                  <div className="flex items-center gap-6 text-sm">
+                  <div className="flex flex-wrap items-center gap-6 text-sm">
                     {task.client.id ? (
                       <Link to={`/dashboard/clients/${task.client.id}`} className="flex items-center gap-2 text-blue-600 hover:text-blue-700">
                         <User className="w-4 h-4" />
                         {task.client.name}
                       </Link>
+                    ) : task.client.name !== 'Общая задача' ? (
+                      <span className="flex items-center gap-2 text-gray-600"><User className="w-4 h-4" />{task.client.name}</span>
                     ) : (
                       <span className="flex items-center gap-2 text-gray-600"><User className="w-4 h-4" />Общая задача</span>
                     )}
@@ -497,18 +524,34 @@ export default function TasksList() {
                     <span className="text-gray-500">
                       {task.assignedTo === 'partner' ? 'От Юритех' : 'Для ЮРИТЕХ'}
                     </span>
+                    {task.bitrixAuthorName && (
+                      <span className="flex items-center gap-2 text-gray-600">
+                        <User className="w-4 h-4" />
+                        Автор: {task.bitrixAuthorName}
+                      </span>
+                    )}
                   </div>
+                  {task.status === 'rejected' && task.rejectReason && (
+                    <p className="mt-2 text-sm text-red-700">Причина отклонения: {task.rejectReason}</p>
+                  )}
                   <div className="mt-3">
-                    <BitrixSyncStatus
-                      compact
-                      status={task.bitrixSyncStatus}
-                      errorCode={task.bitrixSyncErrorCode}
-                      isRetrying={retryTaskMutation.isPending && retryTaskMutation.variables === task.id}
-                      onRetry={task.assignedTo === 'partner' ? undefined : () => retryTaskMutation.mutate(task.id, {
-                        onSuccess: () => toast.success('Задача снова поставлена в очередь Битрикс24'),
-                        onError: () => toast.error('Не удалось повторить отправку задачи'),
-                      })}
-                    />
+                    {task.origin === 'bitrix_gateway' ? (
+                      <p className="flex items-center gap-1.5 text-xs text-gray-500">
+                        <Info className="w-3.5 h-3.5" />
+                        Задача ведётся в Битриксе — название и срок меняются там, в кабинете доступен только статус
+                      </p>
+                    ) : (
+                      <BitrixSyncStatus
+                        compact
+                        status={task.bitrixSyncStatus}
+                        errorCode={task.bitrixSyncErrorCode}
+                        isRetrying={retryTaskMutation.isPending && retryTaskMutation.variables === task.id}
+                        onRetry={task.assignedTo === 'partner' ? undefined : () => retryTaskMutation.mutate(task.id, {
+                          onSuccess: () => toast.success('Задача снова поставлена в очередь Битрикс24'),
+                          onError: () => toast.error('Не удалось повторить отправку задачи'),
+                        })}
+                      />
+                    )}
                   </div>
                 </div>
               </div>

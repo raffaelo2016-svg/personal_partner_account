@@ -1,3 +1,5 @@
+import { isFinalTaskStatus } from './taskStatus';
+
 export interface TaskDeadline {
   due_date?: string | null;
   due_at?: string | null;
@@ -16,13 +18,14 @@ export function taskDeadlineTimestamp(task: TaskDeadline): number | null {
 }
 
 export function isTaskOverdue(task: TaskDeadline, now = Date.now()): boolean {
+  if (isFinalTaskStatus(task.status)) return false;
   const deadline = taskDeadlineTimestamp(task);
-  return task.status !== 'completed' && deadline !== null && deadline < now;
+  return deadline !== null && deadline < now;
 }
 
 // Old stored overdue statuses can remain after a deadline was moved or removed.
 export function taskDisplayStatus(task: TaskDeadline, now = Date.now()): string {
-  if (task.status === 'completed') return 'completed';
+  if (isFinalTaskStatus(task.status)) return task.status ?? 'completed';
   if (task.review_requested_at) return 'review';
   if (isTaskOverdue(task, now)) return 'overdue';
   return task.status === 'overdue' ? 'pending' : (task.status ?? 'pending');

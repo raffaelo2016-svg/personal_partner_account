@@ -10,6 +10,33 @@ from app.models.base import Base, TimestampMixin
 from app.models.types import UTCDateTime
 
 
+class BitrixTaskStatusChange(Base, TimestampMixin):
+    """История смены статуса задачи в рамках интеграции с Битрикс24.
+
+    Отдельная таблица, а не событие задачи: шлюз забирает изменения по
+    ``changed_at`` и не должен видеть эхо собственных обновлений. Поэтому
+    сюда попадают только изменения со стороны кабинета (``origin='cabinet'``),
+    и запись переживает потерю ``next_since`` на стороне шлюза.
+    """
+
+    __tablename__ = "bitrix_task_status_changes"
+    __table_args__ = (
+        Index("ix_bitrix_task_status_changes_changed", "changed_at"),
+        Index("ix_bitrix_task_status_changes_task", "task_id", "changed_at"),
+        Index("ix_bitrix_task_status_changes_remote", "bitrix_task_id"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("tasks.id", ondelete="CASCADE"), index=True)
+    bitrix_task_id: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20))
+    changed_at: Mapped[datetime] = mapped_column(UTCDateTime)
+    author_name: Mapped[str] = mapped_column(String(255))
+    author_user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), default=None)
+    reject_reason: Mapped[str | None] = mapped_column(Text, default=None)
+    origin: Mapped[str] = mapped_column(String(20), default="cabinet")
+
+
 class BitrixEntityMap(Base, TimestampMixin):
     """Stable link between one cabinet object and one Bitrix24 object."""
 

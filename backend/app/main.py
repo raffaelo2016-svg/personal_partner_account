@@ -28,6 +28,7 @@ from app.api.clients import router as clients_router
 from app.api.dashboard import router as dashboard_router
 from app.api.files import router as files_router
 from app.api.finance import router as finance_router
+from app.api.integration import router as integration_router
 from app.api.news import admin_router as admin_news_router
 from app.api.news import router as news_router
 from app.api.notifications import router as notifications_router
@@ -40,6 +41,7 @@ from app.config import settings
 from app.core.exceptions import AppException
 from app.core.rate_limit import limiter
 from app.database import engine
+from app.services.bitrix_task_integration import IntegrationError
 
 # ── Logging setup ─────────────────────────────────────────────────
 
@@ -251,6 +253,14 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         path=request.url.path,
         errors=fields,
     )
+    # Контракт шлюза требует 400 invalid_payload вместо стандартного 422.
+    if request.url.path.startswith("/api/integration/"):
+        detail = "; ".join(f"{' → '.join(str(p) for p in e['loc'])}: {e['msg']}" for e in clean)
+        return JSONResponse(
+            status_code=400,
+            content={"error": "invalid_payload", "detail": detail or "Некорректные данные задачи"},
+            headers=_cors_headers(request),
+        )
     return JSONResponse(
         status_code=422,
         content={"detail": clean, "code": "VALIDATION_ERROR"},
@@ -272,6 +282,22 @@ async def app_exception_handler(request: Request, exc: AppException):
     return JSONResponse(
         status_code=exc.status_code,
         content={"detail": exc.detail, "code": exc.code},
+        headers=_cors_headers(request),
+    )
+
+
+@app.exception_handler(IntegrationError)
+async def integration_exception_handler(request: Request, exc: IntegrationError) -> JSONResponse:
+    logger.warning(
+        "integration_error",
+        method=request.method,
+        path=request.url.path,
+        status=exc.status_code,
+        code=exc.code,
+    )
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"error": exc.code, "detail": exc.detail},
         headers=_cors_headers(request),
     )
 
@@ -316,6 +342,8 @@ app.add_exception_handler(RateLimitExceeded, rate_limit_handler)  # type: ignore
 
 # ── Routers ──────────────────────────────────────────────────────
 
+# Контракт шлюза фиксирован ТЗ: /api/integration/tasks, без версии в пути.
+app.include_router(integration_router, prefix="/api")
 app.include_router(auth_router, prefix="/api/v1")
 app.include_router(bitrix24_integration_router, prefix="/api/v1")
 app.include_router(chat_router, prefix="/api/v1")

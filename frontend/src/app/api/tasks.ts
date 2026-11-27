@@ -1,12 +1,20 @@
 import apiClient from './client';
 import type { BitrixSyncStatus } from './clients';
 
+/** Кабинетная задача или задача, пришедшая из Битрикс24 через шлюз. */
+export type TaskOrigin = 'cabinet' | 'bitrix_gateway';
+
+export type TaskStatus = 'pending' | 'in_progress' | 'review' | 'completed' | 'rejected' | 'overdue';
+
+/** Статус задачи в терминах шлюза Битрикс24. */
+export type TaskBitrixStatus = 'new' | 'in_progress' | 'done' | 'rejected';
+
 export interface TaskData {
   id: string;
   client_id: string | null;
   title: string;
   description?: string | null;
-  status: string;
+  status: TaskStatus;
   priority: string;
   assigned_to: string;
   created_by: string;
@@ -28,6 +36,17 @@ export interface TaskData {
   files_count?: number;
   messages_count?: number;
   unread_count?: number;
+  /** Происхождение задачи: «cabinet» — создана в кабинете, «bitrix_gateway» — пришла из Битрикса. */
+  origin: TaskOrigin;
+  /** Кто поставил задачу в Битриксе (для карточек из Битрикса). */
+  bitrix_author_name?: string | null;
+  /** Клиент из Битрикса, если локальная карточка клиента не привязана. */
+  bitrix_client_name?: string | null;
+  bitrix_status?: TaskBitrixStatus | null;
+  /** Причина отклонения задачи партнёром. */
+  reject_reason?: string | null;
+  /** Когда статус задачи последний раз менялся (в кабинете или в Битриксе). */
+  status_changed_at?: string | null;
 }
 
 export interface TaskClientBrief {
@@ -84,6 +103,8 @@ export interface TaskPermissions {
   can_approve: boolean;
   can_return: boolean;
   can_delete_task: boolean;
+  /** Задача из Битрикса: партнёр может менять только статус. */
+  can_change_status: boolean;
 }
 
 export interface TaskDetailData extends TaskData {
@@ -95,6 +116,15 @@ export interface TaskDetailData extends TaskData {
 }
 
 export type TaskReviewAction = 'request' | 'approve' | 'return';
+
+/** Действие партнёра по задаче от ЮРИТЕХ. */
+export type TaskPartnerAction = 'in_progress' | 'done' | 'rejected';
+
+export interface TaskStatusPayload {
+  status: TaskPartnerAction;
+  /** Обязателен при status === 'rejected' (иначе бэкенд отвечает 422). */
+  reject_reason?: string;
+}
 
 export interface TaskFilters {
   status?: string;
@@ -133,6 +163,7 @@ export interface TaskStats {
   in_progress: number;
   review?: number;
   completed: number;
+  rejected: number;
   overdue: number;
   completion_percent: number;
 }
@@ -229,6 +260,15 @@ export async function resendTaskMessage(
 
 export async function reviewTask(id: string, action: TaskReviewAction): Promise<TaskDetailData> {
   const res = await apiClient.post<TaskDetailData>(`/tasks/${id}/review`, { action });
+  return res.data;
+}
+
+/** Действие партнёра по задаче от ЮРИТЕХ: в работу, выполнено или отклонено. */
+export async function changeTaskStatus(
+  id: string,
+  payload: TaskStatusPayload,
+): Promise<TaskDetailData> {
+  const res = await apiClient.post<TaskDetailData>(`/tasks/${id}/status`, payload);
   return res.data;
 }
 

@@ -596,6 +596,14 @@ async def _import_remote_task(
         receipt.attempts += 1
         return True
 
+    # Задачу уже принял шлюз (или она создана в кабинете). Второй раз её не
+    # заводим: у партнёра был бы дубль одной и той же задачи.
+    already_in_cabinet = await db.scalar(
+        select(Task.id).where(Task.bitrix_task_id == receipt.remote_entity_id).limit(1)
+    )
+    if already_in_cabinet is not None:
+        return _mark_task_event_ignored(receipt, "TASK_ALREADY_IN_CABINET")
+
     partner, client, error_code = await _remote_task_target(db, remote_task)
     if error_code:
         return _mark_task_event_failure(receipt, error_code)

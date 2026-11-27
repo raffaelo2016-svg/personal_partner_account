@@ -10,6 +10,7 @@ celery = Celery(
         "app.tasks.bitrix24_sync",
         "app.tasks.overdue_fees",
         "app.tasks.overdue_tasks",
+        "app.tasks.bitrix_task_notifications",
     ],
 )
 celery.conf.task_acks_late = True
@@ -43,6 +44,10 @@ celery.conf.beat_schedule = {
     "reconcile-bitrix24-sync": {
         "task": "app.tasks.bitrix24_sync.reconcile_bitrix_sync",
         "schedule": crontab(minute="*/5"),
+    },
+    "notify-bitrix-task-deadlines": {
+        "task": "app.tasks.bitrix_task_notifications.notify_bitrix_task_deadlines",
+        "schedule": crontab(minute=0),
     },
     "discover-bitrix24-partner-tasks": {
         "task": "app.tasks.bitrix24_sync.discover_bitrix_partner_tasks",

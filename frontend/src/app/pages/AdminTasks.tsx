@@ -2,7 +2,7 @@ import { useState, useMemo, useCallback, useEffect } from 'react';
 import { Link, useSearchParams } from 'react-router';
 import {
   CheckSquare, Plus, Calendar, User, AlertCircle, Clock, CheckCircle,
-  Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List,
+  Filter, Search, X, Loader2, Trash2, Edit2, LayoutGrid, List, XCircle,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { useInfiniteTasks, useTaskStats, useCreateTask, useUpdateTask, useDeleteTask, useRetryTaskBitrix } from '../hooks/useTasks';
@@ -199,7 +199,7 @@ export default function AdminTasks() {
     client: { id: t.client_id, name: t.client_name ?? 'Общая задача' },
     partnerName: t.partner_name,
     assignedTo: t.assigned_to as 'partner' | 'uritech',
-    status: t.status as 'pending' | 'in_progress' | 'completed' | 'overdue',
+    status: t.status as 'pending' | 'in_progress' | 'completed' | 'rejected' | 'overdue',
     priority: t.priority as 'low' | 'medium' | 'high',
     due_date: t.due_date,
     due_at: t.due_at,
@@ -208,6 +208,8 @@ export default function AdminTasks() {
     completedAt: t.completed_at ?? undefined,
     bitrixSyncStatus: t.bitrix_sync_status,
     bitrixSyncErrorCode: t.bitrix_sync_error_code,
+    origin: t.origin,
+    bitrixAuthorName: t.bitrix_author_name,
   }));
 
   const priorityWeight: Record<string, number> = { high: 0, medium: 1, low: 2 };
@@ -227,6 +229,7 @@ export default function AdminTasks() {
       review: { label: 'На проверке', color: 'bg-purple-50 text-purple-700 border-purple-200', icon: Clock },
       in_progress: { label: 'В работе', color: 'bg-blue-50 text-blue-700 border-blue-200', icon: AlertCircle },
       completed: { label: 'Выполнено', color: 'bg-green-50 text-green-700 border-green-200', icon: CheckCircle },
+      rejected: { label: 'Отклонено', color: 'bg-red-50 text-red-700 border-red-200', icon: XCircle },
       overdue: { label: 'Просрочено', color: 'bg-red-50 text-red-700 border-red-200', icon: AlertCircle },
     };
     return statusMap[status as keyof typeof statusMap] || statusMap.pending;
@@ -246,6 +249,7 @@ export default function AdminTasks() {
     pending: statsData?.pending ?? 0,
     in_progress: statsData?.in_progress ?? 0,
     completed: statsData?.completed ?? 0,
+    rejected: statsData?.rejected ?? 0,
     overdue: statsData?.overdue ?? 0,
   };
 
@@ -317,7 +321,7 @@ export default function AdminTasks() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
         <div className="bg-white rounded-2xl border border-gray-200 p-6">
           <div className="flex items-center justify-between mb-2">
             <p className="text-sm text-gray-600">Всего задач</p>
@@ -345,6 +349,13 @@ export default function AdminTasks() {
             <CheckCircle className="w-5 h-5 text-green-600" />
           </div>
           <p className="text-3xl font-bold text-green-900">{stats.completed}</p>
+        </div>
+        <div className="bg-red-50 rounded-2xl border border-red-200 p-6">
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-sm text-red-700">Отклонено</p>
+            <XCircle className="w-5 h-5 text-red-600" />
+          </div>
+          <p className="text-3xl font-bold text-red-900">{stats.rejected}</p>
         </div>
         <div className="bg-red-50 rounded-2xl border border-red-200 p-6">
           <div className="flex items-center justify-between mb-2">
@@ -381,6 +392,7 @@ export default function AdminTasks() {
               { value: 'in_progress', label: 'В работе' },
               { value: 'review', label: 'На проверке' },
               { value: 'completed', label: 'Выполнено' },
+              { value: 'rejected', label: 'Отклонено' },
             ]}
           />
           <CustomSelect
@@ -472,33 +484,45 @@ export default function AdminTasks() {
                         <p className="text-sm text-gray-600 mb-3">{task.description}</p>
                       </div>
                       <div className="flex items-center gap-2">
-                        <CustomSelect
-                          value={task.displayStatus}
-                          onChange={(val) => handleStatusChange(task.id, val)}
-                          options={[
-                            { value: 'pending', label: 'Ожидает' },
-                            ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
-                            ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
-                            { value: 'in_progress', label: 'В работе' },
-                            { value: 'completed', label: 'Выполнено' },
-                          ]}
-                          size="sm"
-                          triggerClassName={statusInfo.color}
-                        />
-                        <button
-                          onClick={() => setEditingTask({
-                            id: task.id,
-                            title: task.title,
-                            description: task.description,
-                            priority: task.priority,
-                            ...taskDeadlineFields(task),
-                            deadlineChanged: false,
-                          })}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                          title="Редактировать задачу"
-                        >
-                          <Edit2 className="w-4 h-4" />
-                        </button>
+                        {task.origin === 'bitrix_gateway' ? (
+                          <span
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border ${statusInfo.color}`}
+                            title="Задача ведётся в Битриксе — правки делаются там"
+                          >
+                            <StatusIcon className="w-4 h-4" />
+                            {statusInfo.label}
+                          </span>
+                        ) : (
+                          <CustomSelect
+                            value={task.displayStatus}
+                            onChange={(val) => handleStatusChange(task.id, val)}
+                            options={[
+                              { value: 'pending', label: 'Ожидает' },
+                              ...(task.displayStatus === 'overdue' ? [{ value: 'overdue', label: 'Просрочено', disabled: true }] : []),
+                              ...(task.displayStatus === 'review' ? [{ value: 'review', label: 'На проверке', disabled: true }] : []),
+                              { value: 'in_progress', label: 'В работе' },
+                              { value: 'completed', label: 'Выполнено' },
+                            ]}
+                            size="sm"
+                            triggerClassName={statusInfo.color}
+                          />
+                        )}
+                        {task.origin !== 'bitrix_gateway' && (
+                          <button
+                            onClick={() => setEditingTask({
+                              id: task.id,
+                              title: task.title,
+                              description: task.description,
+                              priority: task.priority,
+                              ...taskDeadlineFields(task),
+                              deadlineChanged: false,
+                            })}
+                            className="p-1.5 rounded-lg text-gray-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            title="Редактировать задачу"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                        )}
                         <button
                           onClick={() => handleDeleteTask(task.id, task.title)}
                           className="p-1.5 rounded-lg text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"

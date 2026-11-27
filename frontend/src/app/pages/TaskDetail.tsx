@@ -12,6 +12,7 @@ import {
   FileSpreadsheet,
   FileText,
   History,
+  Info,
   Loader2,
   MessageSquare,
   Paperclip,
@@ -23,6 +24,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
+  useChangeTaskStatus,
   useDeleteTaskFile,
   useResendTaskMessage,
   useSendTaskMessage,
@@ -34,6 +36,7 @@ import {
 } from '../hooks/useTasks';
 import { taskFileUrl, type TaskDetailData, type TaskEventData, type TaskFileData, type TaskMessageData } from '../api/tasks';
 import { formatTaskDeadline, isTaskOverdue } from '../utils/taskDeadline';
+import { isFinalTaskStatus, taskStatusLabel } from '../utils/taskStatus';
 import { formatDateTime } from '../utils/formatDate';
 import { formatFileSize } from '../utils/files';
 
@@ -47,12 +50,16 @@ function clampChatWidth(value: number) {
   return Math.min(CHAT_MAX_WIDTH, Math.max(CHAT_MIN_WIDTH, Math.round(value)));
 }
 
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'Ожидает',
-  in_progress: 'В работе',
-  completed: 'Выполнено',
-  overdue: 'Просрочено',
-};
+// localStorage может быть недоступен (приватный режим, ограничения браузера).
+function storedChatWidth(): number {
+  if (typeof window === 'undefined') return 380;
+  try {
+    const stored = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY));
+    return Number.isFinite(stored) && stored > 0 ? clampChatWidth(stored) : 380;
+  } catch {
+    return 380;
+  }
+}
 
 const PRIORITY_LABELS: Record<string, string> = {
   low: 'Низкий',
@@ -62,20 +69,20 @@ const PRIORITY_LABELS: Record<string, string> = {
 
 function taskState(task: TaskDetailData): string {
   if (task.status === 'completed') return 'completed';
+  if (task.status === 'rejected') return 'rejected';
   if (task.review_requested_at) return 'review';
   if (isTaskOverdue(task)) return 'overdue';
   return task.status === 'overdue' ? 'pending' : task.status;
 }
 
 function stateLabel(task: TaskDetailData): string {
-  const state = taskState(task);
-  if (state === 'review') return 'На проверке';
-  return STATUS_LABELS[state] ?? state;
+  return taskStatusLabel(taskState(task));
 }
 
 function stateClasses(task: TaskDetailData): string {
   const state = taskState(task);
   if (state === 'completed') return 'bg-green-50 text-green-700 border-green-200';
+  if (state === 'rejected') return 'bg-red-50 text-red-700 border-red-200';
   if (state === 'review') return 'bg-purple-50 text-purple-700 border-purple-200';
   if (state === 'overdue') return 'bg-red-50 text-red-700 border-red-200';
   if (state === 'in_progress') return 'bg-blue-50 text-blue-700 border-blue-200';
@@ -89,15 +96,32 @@ function fileIcon(mime: string) {
   return File;
 }
 
+function payloadText(payload: Record<string, unknown>, key: string): string | null {
+  const value = payload[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function eventActor(event: TaskEventData): string | null {
+  if (event.actor_name) return event.actor_name;
+  return payloadText(event.payload, 'actor_name') ?? payloadText(event.payload, 'bitrix_author');
+}
+
 function eventText(event: TaskEventData): string {
   const name = typeof event.payload.name === 'string' ? event.payload.name : 'документ';
+  const fromBitrix = event.payload.origin === 'bitrix_gateway';
   switch (event.type) {
     case 'created':
-      return 'Задача создана';
+      return fromBitrix ? 'Задача поступила из Битрикса' : 'Задача создана';
     case 'status_changed': {
       const to = typeof event.payload.to === 'string' ? event.payload.to : '';
-      return `Статус изменён на «${STATUS_LABELS[to] ?? to}»`;
+      const reason = typeof event.payload.reject_reason === 'string' ? event.payload.reject_reason.trim() : '';
+      const base = fromBitrix
+        ? `Статус изменён из Битрикса на «${taskStatusLabel(to)}»`
+        : `Статус изменён на «${taskStatusLabel(to)}»`;
+      return reason ? `${base}. Причина: ${reason}` : base;
     }
+    case 'deadline_changed':
+      return fromBitrix ? 'Срок изменён в Битриксе' : 'Срок задачи изменён';
     case 'review_requested':
       return 'Задача отправлена на проверку';
     case 'review_approved':
@@ -185,6 +209,7 @@ export default function TaskDetail() {
   const { data: messagesData } = useTaskMessages(id);
   const updateTask = useUpdateTask();
   const reviewTask = useTaskReview(id);
+  const changeStatus = useChangeTaskStatus(id);
   const uploadFile = useUploadTaskFile(id);
   const deleteFile = useDeleteTaskFile(id);
   const sendMessage = useSendTaskMessage(id);
@@ -193,11 +218,10 @@ export default function TaskDetail() {
   const [text, setText] = useState('');
   const [progress, setProgress] = useState<number | null>(null);
   const [showUpload, setShowUpload] = useState(false);
-  const [chatWidth, setChatWidth] = useState(() => {
-    if (typeof window === 'undefined') return 380;
-    const stored = Number(window.localStorage.getItem(CHAT_WIDTH_STORAGE_KEY));
-    return Number.isFinite(stored) && stored > 0 ? clampChatWidth(stored) : 380;
-  });
+  const [rejectOpen, setRejectOpen] = useState(false);
+  const [rejectReason, setRejectReason] = useState('');
+  const [rejectError, setRejectError] = useState<string | null>(null);
+  const [chatWidth, setChatWidth] = useState(storedChatWidth);
   const splitRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -220,22 +244,31 @@ export default function TaskDetail() {
     }
   }, [chatWidth]);
 
-  const canStart =
-    !!task &&
+  const isGatewayTask = task?.origin === 'bitrix_gateway';
+  // Задачу из Битрикса закрывает партнёр: только в работу, выполнено или отклонено.
+  const canChangeStatus = !!task?.permissions.can_change_status;
+  const taskIsFinal = isFinalTaskStatus(task?.status);
+  const canStart = !!task && !isGatewayTask &&
     task.status === 'pending' &&
     !task.review_requested_at &&
     ((!task.permissions.is_admin && task.assigned_to === 'partner') ||
       (task.permissions.is_admin && task.assigned_to === 'uritech'));
-  const canRequestReview = !!task?.permissions.can_request_review;
-  const canApprove = !!task?.permissions.can_approve;
-  const canReturn = !!task?.permissions.can_return;
+  const canRequestReview = !!task?.permissions.can_request_review && !isGatewayTask;
+  const canApprove = !!task?.permissions.can_approve && !isGatewayTask;
+  const canReturn = !!task?.permissions.can_return && !isGatewayTask;
   const canCompleteDirectly =
     !!task &&
+    !isGatewayTask &&
     task.permissions.is_admin &&
     task.assigned_to === 'uritech' &&
     task.status === 'in_progress' &&
     !task.review_requested_at;
-  const canReopen = !!task && task.permissions.is_admin && task.status === 'completed';
+  const canReopen = !!task && !isGatewayTask && task.permissions.is_admin && task.status === 'completed';
+
+  const canTakePartner = canChangeStatus && !taskIsFinal && task?.status !== 'in_progress';
+  const canCompletePartner = canChangeStatus && !taskIsFinal;
+  const canRejectPartner = canChangeStatus && !taskIsFinal;
+  const canReopenPartner = canChangeStatus && taskIsFinal;
 
   const statusChip = useMemo(() => (task ? stateLabel(task) : ''), [task]);
 
@@ -330,6 +363,45 @@ export default function TaskDetail() {
     }
   };
 
+  const handlePartnerStatus = async (status: 'in_progress' | 'done') => {
+    try {
+      await changeStatus.mutateAsync({ status });
+      toast.success(status === 'done' ? 'Задача выполнена' : 'Задача взята в работу');
+    } catch {
+      toast.error('Не удалось изменить статус задачи');
+    }
+  };
+
+  const openRejectModal = () => {
+    setRejectReason('');
+    setRejectError(null);
+    setRejectOpen(true);
+  };
+
+  const closeRejectModal = () => {
+    if (changeStatus.isPending) return;
+    setRejectOpen(false);
+    setRejectReason('');
+    setRejectError(null);
+  };
+
+  const submitRejection = async () => {
+    const reason = rejectReason.trim();
+    if (!reason) {
+      setRejectError('Укажите причину отклонения — без неё отклонить задачу нельзя');
+      return;
+    }
+    try {
+      await changeStatus.mutateAsync({ status: 'rejected', reject_reason: reason });
+      toast.success('Задача отклонена');
+      setRejectOpen(false);
+      setRejectReason('');
+      setRejectError(null);
+    } catch {
+      toast.error('Не удалось отклонить задачу');
+    }
+  };
+
   const handleSend = async () => {
     const clean = text.trim();
     if (!clean || sendMessage.isPending) return;
@@ -372,6 +444,17 @@ export default function TaskDetail() {
         <span className="truncate">{task.title}</span>
       </div>
 
+      {isGatewayTask && (
+        <div className="mb-4 flex items-start gap-2.5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <p className="leading-relaxed">
+            Задача ведётся в Битриксе: название, описание и срок меняются там.
+            {task.bitrix_author_name ? <> Автор задачи в Битриксе: <span className="font-medium">{task.bitrix_author_name}</span>.</> : null}
+            {' '}В кабинете можно изменить только статус.
+          </p>
+        </div>
+      )}
+
       <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
@@ -398,6 +481,11 @@ export default function TaskDetail() {
                 <User className="h-4 w-4" />
                 {task.client.full_name}
               </Link>
+            ) : task.bitrix_client_name ? (
+              <span className="inline-flex items-center gap-1">
+                <User className="h-4 w-4" />
+                {task.bitrix_client_name}
+              </span>
             ) : (
               <span>Без клиента</span>
             )}
@@ -413,6 +501,46 @@ export default function TaskDetail() {
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {canTakePartner && (
+            <button
+              type="button"
+              onClick={() => void handlePartnerStatus('in_progress')}
+              disabled={changeStatus.isPending}
+              className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-medium text-blue-700 hover:bg-blue-100 disabled:opacity-50"
+            >
+              Взять в работу
+            </button>
+          )}
+          {canCompletePartner && (
+            <button
+              type="button"
+              onClick={() => void handlePartnerStatus('done')}
+              disabled={changeStatus.isPending}
+              className="rounded-xl bg-green-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-green-700 disabled:opacity-50"
+            >
+              Выполнено
+            </button>
+          )}
+          {canRejectPartner && (
+            <button
+              type="button"
+              onClick={openRejectModal}
+              disabled={changeStatus.isPending}
+              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2.5 text-sm font-medium text-red-700 hover:bg-red-100 disabled:opacity-50"
+            >
+              Отклонить
+            </button>
+          )}
+          {canReopenPartner && (
+            <button
+              type="button"
+              onClick={() => void handlePartnerStatus('in_progress')}
+              disabled={changeStatus.isPending}
+              className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Вернуть в работу
+            </button>
+          )}
           {canStart && (
             <button
               type="button"
@@ -484,6 +612,31 @@ export default function TaskDetail() {
               {task.description || 'Описание не заполнено.'}
             </p>
           </section>
+
+          {task.status === 'rejected' && (
+            <section className="rounded-2xl border border-red-200 bg-red-50 p-5 lg:p-6">
+              <h2 className="flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-red-700">
+                <AlertCircle className="h-4 w-4" />
+                Причина отклонения
+              </h2>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-red-900">
+                {task.reject_reason || 'Причина не указана.'}
+              </p>
+            </section>
+          )}
+
+          {!task.client && isGatewayTask && task.bitrix_client_name && (
+            <section className="rounded-2xl border border-gray-200 bg-white p-5 lg:p-6">
+              <h2 className="text-sm font-semibold uppercase tracking-wide text-gray-500">Клиент</h2>
+              <p className="mt-2 inline-flex items-center gap-2 text-lg font-semibold text-gray-900">
+                <User className="h-5 w-5 text-gray-400" />
+                {task.bitrix_client_name}
+              </p>
+              <p className="mt-1 text-sm text-gray-500">
+                Клиент указан в задаче Битрикса. Локальная карточка клиента не привязана.
+              </p>
+            </section>
+          )}
 
           {task.client && (
             <section className="rounded-2xl border border-gray-200 bg-white p-5 lg:p-6">
@@ -614,6 +767,7 @@ export default function TaskDetail() {
               <div className="space-y-3">
                 {events.map((event) => {
                   const Icon = eventIcon(event);
+                  const actor = eventActor(event);
                   return (
                     <div key={event.id} className="flex items-start gap-3">
                       <div className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gray-100 text-gray-500">
@@ -621,8 +775,8 @@ export default function TaskDetail() {
                       </div>
                       <div className="min-w-0 flex-1">
                         <p className="text-sm text-gray-700">
-                          {event.actor_name ? <span className="font-medium">{event.actor_name}</span> : null}
-                          {event.actor_name ? ' · ' : ''}
+                          {actor ? <span className="font-medium">{actor}</span> : null}
+                          {actor ? ' · ' : ''}
                           {eventText(event)}
                         </p>
                         <p className="mt-0.5 text-xs text-gray-400">{formatDateTime(event.created_at)}</p>
@@ -743,6 +897,67 @@ export default function TaskDetail() {
               <Upload className="mb-2 h-7 w-7 text-gray-400" />
               <span className="text-sm font-medium text-gray-700">Выбрать файл</span>
             </button>
+          </div>
+        </div>
+      )}
+
+      {rejectOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" role="presentation">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="reject-task-title"
+            className="w-full max-w-md rounded-2xl bg-white p-6 shadow-xl"
+          >
+            <div className="flex items-start justify-between">
+              <div>
+                <h3 id="reject-task-title" className="text-lg font-semibold text-gray-900">Отклонить задачу</h3>
+                <p className="mt-1 text-sm text-gray-500">Причина уйдёт постановщику в Битриксе и сохранится в истории.</p>
+              </div>
+              <button type="button" onClick={closeRejectModal} className="rounded-lg p-1 text-gray-400 hover:bg-gray-100">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <label htmlFor="reject-reason" className="mt-5 block text-sm font-medium text-gray-700">
+              Причина отклонения <span className="text-red-500">*</span>
+            </label>
+            <textarea
+              id="reject-reason"
+              rows={4}
+              maxLength={1000}
+              value={rejectReason}
+              onChange={(event) => {
+                setRejectReason(event.target.value);
+                if (rejectError) setRejectError(null);
+              }}
+              placeholder="Почему задачу нельзя выполнить"
+              aria-invalid={rejectError ? true : undefined}
+              aria-describedby={rejectError ? 'reject-reason-error' : undefined}
+              className="mt-2 w-full resize-none rounded-xl border border-gray-200 bg-gray-50 px-3 py-2.5 text-sm text-gray-800 outline-none focus:border-pink-300 focus:bg-white"
+            />
+            {rejectError && (
+              <p id="reject-reason-error" role="alert" className="mt-2 text-sm text-red-600">
+                {rejectError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={closeRejectModal}
+                disabled={changeStatus.isPending}
+                className="rounded-xl border border-gray-300 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Отмена
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitRejection()}
+                disabled={changeStatus.isPending}
+                className="rounded-xl bg-red-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-red-700 disabled:opacity-50"
+              >
+                {changeStatus.isPending ? 'Отклоняем…' : 'Отклонить'}
+              </button>
+            </div>
           </div>
         </div>
       )}

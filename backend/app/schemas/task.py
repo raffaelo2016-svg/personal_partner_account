@@ -97,6 +97,8 @@ class TaskPermissions(BaseModel):
     can_approve: bool
     can_return: bool
     can_delete_task: bool
+    # Задача пришла из Битрикса через шлюз: партнёр может менять только статус.
+    can_change_status: bool = False
 
 
 class TaskRead(BaseModel):
@@ -128,6 +130,13 @@ class TaskRead(BaseModel):
     bitrix_published: bool = True
     bitrix_sync_requested_at: datetime | None = None
     bitrix_synced_at: datetime | None = None
+    # Интеграция «Битрикс24 -> ЛКП»: происхождение и данные постановщика.
+    origin: str = "cabinet"
+    bitrix_author_name: str | None = None
+    bitrix_client_name: str | None = None
+    bitrix_status: str | None = None
+    reject_reason: str | None = None
+    status_changed_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -148,11 +157,33 @@ class TaskReviewRequest(BaseModel):
     action: Literal["request", "approve", "return"]
 
 
+class TaskStatusAction(BaseModel):
+    """Действие партнёра по задаче от ЮРИТЕХ."""
+
+    status: Literal["in_progress", "done", "rejected"]
+    reject_reason: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("reject_reason")
+    @classmethod
+    def normalize_reason(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = " ".join(value.split()).strip()
+        return cleaned or None
+
+    @model_validator(mode="after")
+    def require_reason_for_rejection(self) -> "TaskStatusAction":
+        if self.status == "rejected" and not self.reject_reason:
+            raise ValueError("Укажите причину отклонения")
+        return self
+
+
 class TaskStats(BaseModel):
     total: int
     pending: int
     in_progress: int
     review: int = 0
     completed: int
+    rejected: int = 0
     overdue: int
     completion_percent: float

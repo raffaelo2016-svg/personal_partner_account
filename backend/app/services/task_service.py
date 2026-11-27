@@ -90,7 +90,7 @@ def _partner_scope(partner_id: str):
 def _overdue_condition(now: datetime | None = None):
     now = now or datetime.now(UTC)
     return and_(
-        Task.status != "completed",
+        Task.status.not_in(("completed", "rejected")),
         or_(
             and_(Task.due_at.is_not(None), Task.due_at < now),
             and_(Task.due_at.is_(None), Task.due_date.is_not(None), Task.due_date < now.astimezone(MOSCOW).date()),
@@ -99,8 +99,9 @@ def _overdue_condition(now: datetime | None = None):
 
 
 def _effective_status(task: Task, now: datetime | None = None) -> str:
-    if task.status == "completed":
-        return "completed"
+    # Выполненная и отклонённая задача — финальные: срок по ним не просрочивает.
+    if task.status in ("completed", "rejected"):
+        return task.status
     now = now or datetime.now(UTC)
     deadline = task.due_at
     if deadline is not None:
@@ -123,6 +124,10 @@ def _authorize_partner(task: Task, partner_id: str | None) -> None:
     if owner_id is None and task.client is not None:
         owner_id = task.client.partner_id
     if owner_id is None or str(owner_id) != partner_id:
+        # Для задач из Битрикса отвечаем 404: не подтверждаем существование
+        # чужой задачи (критерий приёмки 3 в ТЗ).
+        if (task.origin or "cabinet") == "bitrix_gateway":
+            raise NotFound("Task not found")
         raise Forbidden("Access denied")
 
 
@@ -168,6 +173,12 @@ def _task_to_read(
         bitrix_published=t.bitrix_published,
         bitrix_sync_requested_at=t.bitrix_sync_requested_at,
         bitrix_synced_at=t.bitrix_synced_at,
+        origin=t.origin or "cabinet",
+        bitrix_author_name=t.bitrix_author_name,
+        bitrix_client_name=t.bitrix_client_name,
+        bitrix_status=t.bitrix_status,
+        reject_reason=t.reject_reason,
+        status_changed_at=t.status_changed_at,
     )
 
 
@@ -439,8 +450,15 @@ async def get_task_detail(
         unread_count=unread_count,
     )
     partner_is_executor = task.assigned_to == "partner"
+    # Задачи из Битрикса живут по своему контуру: партнёр сразу завершает или
+    # отклоняет их, без внутренней проверки ЮРИТЕХ.
+    is_gateway_task = (task.origin or "cabinet") == "bitrix_gateway"
     can_request_review = (
-        not is_admin and partner_is_executor and task.status == "in_progress" and task.review_requested_at is None
+        not is_admin
+        and partner_is_executor
+        and not is_gateway_task
+        and task.status == "in_progress"
+        and task.review_requested_at is None
     )
     names = await _author_names(session, messages=messages, events=events, files=files)
     return TaskDetailRead(
@@ -457,6 +475,7 @@ async def get_task_detail(
             can_approve=is_admin and partner_is_executor and task.review_requested_at is not None,
             can_return=is_admin and partner_is_executor and task.review_requested_at is not None,
             can_delete_task=is_admin,
+            can_change_status=not is_admin and is_gateway_task,
         ),
     )
 
@@ -736,6 +755,8 @@ async def review_task(
     is_admin = partner_id is None
     now = datetime.now(UTC)
 
+    if (task.origin or "cabinet") == "bitrix_gateway":
+        raise BadRequest("Задача из Битрикс24 закрывается напрямую: «Выполнено» или «Отклонить»")
     if task.assigned_to != "partner":
         raise BadRequest("Review is available only for tasks assigned to a partner")
 
@@ -971,6 +992,14 @@ async def update_task(
     _authorize_partner(task, partner_id)
 
     update_data = data.model_dump(exclude_unset=True)
+    if (task.origin or "cabinet") == "bitrix_gateway":
+        return await _update_gateway_task(
+            session,
+            task,
+            update_data,
+            partner_id=partner_id,
+            user_id=user_id,
+        )
     if partner_id:
         if task.assigned_to == "partner" and set(update_data) - {"status"}:
             raise Forbidden("Only task status can be changed by the receiving partner")
@@ -1024,6 +1053,39 @@ async def update_task(
     return _task_to_read(task)
 
 
+async def _update_gateway_task(
+    session: AsyncSession,
+    task: Task,
+    update_data: dict,
+    *,
+    partner_id: str | None,
+    user_id: str | None,
+) -> TaskRead:
+    """Правки задачи из Битрикса: кабинет меняет только статус.
+
+    Название, срок, описание и адресат живут в Битриксе, иначе ближайшая же
+    синхронизация затрёт правку из кабинета.
+    """
+    from app.services.bitrix_task_integration import apply_partner_status
+
+    extra = set(update_data) - {"status"}
+    if extra:
+        raise BadRequest("Задача пришла из Битрикс24: название, срок и описание меняются в Битриксе")
+    action = {"in_progress": "in_progress", "completed": "done"}.get(update_data.get("status") or "")
+    if action is None:
+        raise BadRequest("Недопустимый статус для задачи из Битрикс24")
+    if not user_id:
+        raise BadRequest("Не указан автор изменения")
+    return await apply_partner_status(
+        session,
+        str(task.id),
+        action=action,
+        reject_reason=None,
+        user_id=user_id,
+        partner_id=partner_id,
+    )
+
+
 async def delete_task(
     session: AsyncSession,
     task_id: str,
@@ -1071,6 +1133,7 @@ async def get_task_stats(
         await session.execute(base.where(Task.review_requested_at.is_not(None), Task.status != "completed"))
     ).scalar() or 0
     completed = (await session.execute(base.where(Task.status == "completed"))).scalar() or 0
+    rejected = (await session.execute(base.where(Task.status == "rejected"))).scalar() or 0
     overdue = (await session.execute(base.where(overdue_condition))).scalar() or 0
     return TaskStats(
         total=total,
@@ -1078,6 +1141,7 @@ async def get_task_stats(
         in_progress=in_progress,
         review=review,
         completed=completed,
+        rejected=rejected,
         overdue=overdue,
         completion_percent=round((completed / total) * 100, 1) if total else 0.0,
     )

@@ -4,7 +4,7 @@ import uuid
 from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text
+from sqlalchemy import CheckConstraint, ForeignKey, Index, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base, TimestampMixin
@@ -25,6 +25,15 @@ class Task(Base, TimestampMixin):
             name="ck_tasks_bitrix_sync_status",
         ),
         Index("ix_tasks_bitrix_sync_status", "bitrix_sync_status"),
+        # Задача, пришедшая из Битрикса через шлюз, уникальна по номеру задачи:
+        # повторная доставка обновляет её, а не создаёт вторую.
+        Index(
+            "uq_tasks_gateway_bitrix_task_id",
+            "bitrix_task_id",
+            unique=True,
+            postgresql_where=text("origin = 'bitrix_gateway'"),
+            sqlite_where=text("origin = 'bitrix_gateway'"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -54,6 +63,25 @@ class Task(Base, TimestampMixin):
     # Диалог чата задачи в Битрикс24 (``chat<ID>``). Через него идёт обсуждение
     # задачи: сообщения из кабинета уходят в чат, ответы из Битрикс24 — обратно.
     bitrix_chat_dialog_id: Mapped[str | None] = mapped_column(String(50), default=None)
+
+    # Происхождение задачи: "cabinet" — создана в кабинете, "bitrix_gateway" —
+    # пришла от шлюза по ТЗ «Передача задач из Битрикс24 в ЛКП».
+    origin: Mapped[str] = mapped_column(String(20), default="cabinet", server_default="cabinet")
+    # Адресат и автор на стороне Битрикс24: ссылку партнёру не показываем,
+    # она нужна только интеграции.
+    bitrix_url: Mapped[str | None] = mapped_column(String(500), default=None)
+    bitrix_author_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    bitrix_author_id: Mapped[str | None] = mapped_column(String(50), default=None)
+    # Клиент по задаче приходит из Битрикса подписью; локальная карточка клиента
+    # привязывается только при точном совпадении сделки и партнёра.
+    bitrix_client_name: Mapped[str | None] = mapped_column(String(255), default=None)
+    bitrix_deal_id: Mapped[str | None] = mapped_column(String(100), default=None)
+    # Последний статус из Битрикса (new / in_progress / done / rejected) и
+    # момент изменения на его стороне — по нему разрешаются конфликты.
+    bitrix_status: Mapped[str | None] = mapped_column(String(20), default=None)
+    bitrix_updated_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
+    reject_reason: Mapped[str | None] = mapped_column(Text, default=None)
+    status_changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime, default=None)
 
     partner: Mapped[Partner | None] = relationship("Partner")
     client: Mapped[Client | None] = relationship("Client")

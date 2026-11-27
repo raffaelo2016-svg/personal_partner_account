@@ -18,7 +18,9 @@ import {
   reviewTask,
   updateTask,
   retryTaskBitrix,
+  changeTaskStatus,
   type TaskReviewAction,
+  type TaskStatusPayload,
 } from '../api/tasks';
 
 export function useTasks(filters: TaskFilters = {}) {
@@ -193,6 +195,21 @@ export function useTaskReview(taskId: string | undefined) {
       queryClient.setQueryData(['task', taskId], data);
       queryClient.invalidateQueries({ queryKey: ['tasks'] });
       queryClient.invalidateQueries({ queryKey: ['taskStats'] });
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] });
+    },
+  });
+}
+
+/** Действие партнёра по задаче из Битрикса: в работу, выполнено или отклонено. */
+export function useChangeTaskStatus(taskId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (payload: TaskStatusPayload) => changeTaskStatus(taskId!, payload),
+    onSuccess: (data) => {
+      queryClient.setQueryData(['task', taskId], data);
+      queryClient.invalidateQueries({ queryKey: ['tasks'] });
+      queryClient.invalidateQueries({ queryKey: ['taskStats'] });
+      queryClient.invalidateQueries({ queryKey: ['urgentTasks'] });
       queryClient.invalidateQueries({ queryKey: ['task', taskId] });
     },
   });

@@ -26,6 +26,7 @@ import {
   Image,
   File,
   FileSpreadsheet,
+  XCircle,
 } from 'lucide-react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import ClientProgressBar from '../components/ClientProgressBar';
@@ -702,21 +703,28 @@ export default function ClientDetails() {
               <div className="space-y-3">
                 {clientTasks.map((task) => {
                   const isCompleted = task.status === 'completed';
+                  const isRejected = task.status === 'rejected';
                   const isInProgress = task.status === 'in_progress';
                   const bg = isCompleted
                     ? 'bg-green-50 border-green-200'
-                    : isInProgress
-                      ? 'bg-blue-50 border-blue-200'
-                      : 'bg-yellow-50 border-yellow-200';
-                  const Icon = isCompleted ? CheckCircle : isInProgress ? AlertCircle : Clock;
+                    : isRejected
+                      ? 'bg-red-50 border-red-200'
+                      : isInProgress
+                        ? 'bg-blue-50 border-blue-200'
+                        : 'bg-yellow-50 border-yellow-200';
+                  const Icon = isCompleted ? CheckCircle : isRejected ? XCircle : isInProgress ? AlertCircle : Clock;
                   const iconColor = isCompleted
                     ? 'text-green-600'
-                    : isInProgress
-                      ? 'text-blue-600'
-                      : 'text-yellow-600';
+                    : isRejected
+                      ? 'text-red-600'
+                      : isInProgress
+                        ? 'text-blue-600'
+                        : 'text-yellow-600';
                   const statusLabel = isCompleted
                     ? `Выполнено ${task.completed_at ? formatDate(task.completed_at) : ''}`
-                    : `${isInProgress ? 'В работе' : 'Ожидает'} • Срок: ${formatTaskDeadline(task)}`;
+                    : isRejected
+                      ? `Отклонено${task.reject_reason ? ` • Причина: ${task.reject_reason}` : ''}`
+                      : `${isInProgress ? 'В работе' : 'Ожидает'} • Срок: ${formatTaskDeadline(task)}`;
 
                   return (
                     <div key={task.id} className={`p-3 rounded-lg border ${bg}`}>

@@ -94,6 +94,14 @@ class Settings(BaseSettings):
     BITRIX_RETRY_MAX_SECONDS: int = 3600
     BITRIX_PROCESSING_STALE_MINUTES: int = 15
     BITRIX_RECONCILE_AFTER_HOURS: int = 24
+    # Приёмная сторона интеграции «Битрикс24 -> ЛКП». Шлюз ЮРИТЕХ присылает
+    # задачи и забирает изменения статусов по токену из заголовка
+    # X-Integration-Token. Пустой токен = приём выключен (503), а не «пускаем всех».
+    BITRIX_INTEGRATION_TOKEN: str = ""
+    BITRIX_INTEGRATION_RATE_LIMIT: str = "600/minute"
+    # Публичный адрес кабинета: из него собираются ссылки в уведомлениях.
+    BITRIX_INTEGRATION_LINK_BASE: str = "/dashboard/tasks"
+
     BITRIX_CHAT_SUPPORT_USER_IDS: str = "[]"
     BITRIX_CHAT_PROVISION_BATCH_SIZE: int = 25
     BITRIX_CHAT_EXCLUDED_PARTNER_TERMS: str = (

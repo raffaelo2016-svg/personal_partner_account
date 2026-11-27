@@ -2,7 +2,12 @@ from app.models.agent import Agent, AgentAccrual, AgentPayoutRequest
 from app.models.audit_log import AuditLog
 from app.models.base import Base
 from app.models.bitrix_installation import BitrixInstallation
-from app.models.bitrix_sync import BitrixEntityMap, BitrixInboundEvent, BitrixOutboxOperation
+from app.models.bitrix_sync import (
+    BitrixEntityMap,
+    BitrixInboundEvent,
+    BitrixOutboxOperation,
+    BitrixTaskStatusChange,
+)
 from app.models.chat import ChatMessage, ChatMessageEvent, ChatRoom
 from app.models.chat_attachment_assignment import ChatAttachmentAssignment
 from app.models.client import Client
@@ -31,6 +36,7 @@ __all__ = [
     "BitrixEntityMap",
     "BitrixInboundEvent",
     "BitrixOutboxOperation",
+    "BitrixTaskStatusChange",
     "BootstrapToken",
     "ChatMessage",
     "ChatMessageEvent",
