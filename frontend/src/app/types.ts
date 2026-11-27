@@ -28,6 +28,8 @@ export interface Partner {
   legal_address?: string | null;
   postal_address?: string | null;
   kpp?: string | null;
+  region?: string | null;
+  timezone?: string | null;
   court_fee_per_client: number;
   payment_term_days: number;
   free_client_limit: number;

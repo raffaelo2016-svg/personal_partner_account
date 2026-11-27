@@ -44,6 +44,8 @@ test.describe('Admin Partners', () => {
     await page.locator('text=E2E Company').click();
     await page.waitForTimeout(1500);
     await expect(page).toHaveURL(/\/admin\/partners\//);
+    await expect(page.getByText('Сейчас у партнёра')).toBeVisible();
+    await expect(page.getByText(/^UTC[+-]\d/)).toBeVisible();
   });
 });
 

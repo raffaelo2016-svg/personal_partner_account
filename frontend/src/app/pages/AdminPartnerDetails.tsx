@@ -22,6 +22,7 @@ import { useTimezone } from '@/app/contexts/TimezoneContext';
 import { toast } from 'sonner';
 import type { Partner, PartnerUpdate } from '@/app/types';
 import CaseArbitrLink from '../components/CaseArbitrLink';
+import { PartnerLocalTime } from '../components/PartnerLocalTime';
 
 const STATUS_LABELS: Record<string, string> = {
   active: 'Активный',
@@ -492,7 +493,8 @@ export default function AdminPartnerDetails() {
             <p className="text-gray-600 mt-1">Детальная информация о партнере</p>
           </div>
         </div>
-        <div className="flex gap-3">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <PartnerLocalTime region={partner.region} />
           <button
             onClick={() => setShowEdit(true)}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
